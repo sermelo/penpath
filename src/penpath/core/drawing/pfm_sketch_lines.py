@@ -236,10 +236,12 @@ def _add_squiggle(
     squiggle_length: int,
     max_deviation: float,
     rng: random.Random,
+    bounds: tuple[int, int] | None = None,
 ) -> list[tuple[float, float]]:
     """Add perpendicular noise (squiggle) to a line segment.
 
     Returns list of (x, y) points forming a squiggly line.
+    If bounds (width, height) provided, clamps points to image bounds.
     """
     dx = x1 - x0
     dy = y1 - y0
@@ -265,9 +267,19 @@ def _add_squiggle(
         squiggle_x = base_x + perp_x * noise
         squiggle_y = base_y + perp_y * noise
 
+        if bounds:
+            w, h = bounds
+            squiggle_x = max(0.0, min(float(w - 1), squiggle_x))
+            squiggle_y = max(0.0, min(float(h - 1), squiggle_y))
+
         points.append((squiggle_x, squiggle_y))
 
-    points.append((float(x1), float(y1)))
+    end_x, end_y = float(x1), float(y1)
+    if bounds:
+        w, h = bounds
+        end_x = max(0.0, min(float(w - 1), end_x))
+        end_y = max(0.0, min(float(h - 1), end_y))
+    points.append((end_x, end_y))
     return points
 
 
@@ -368,7 +380,14 @@ def sketch_lines(
             link_points = [(float(last_x), float(last_y)), (float(darkest_x), float(darkest_y))]
             if settings.squiggle_enabled:
                 link_points = _add_squiggle(
-                    last_x, last_y, darkest_x, darkest_y, squiggle_min_len, squiggle_max_dev, rng
+                    last_x,
+                    last_y,
+                    darkest_x,
+                    darkest_y,
+                    squiggle_min_len,
+                    squiggle_max_dev,
+                    rng,
+                    (w, h),
                 )
             if len(link_points) >= 2:
                 line = LineString(link_points)
@@ -438,7 +457,14 @@ def sketch_lines(
             # Add segment to squiggle
             if settings.squiggle_enabled and s > 0:
                 segment_points = _add_squiggle(
-                    current_x, current_y, next_x, next_y, squiggle_min_len, squiggle_max_dev, rng
+                    current_x,
+                    current_y,
+                    next_x,
+                    next_y,
+                    squiggle_min_len,
+                    squiggle_max_dev,
+                    rng,
+                    (w, h),
                 )
                 squiggle_points.extend(segment_points[1:])  # Skip duplicate start point
             else:

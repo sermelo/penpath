@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
+import random
 
 import numpy as np
 import pytest
@@ -117,7 +117,7 @@ class TestSketchLinesAlgorithm:
     def test_basic_output(self):
         """Test that algorithm produces valid LineStrings."""
         img = self._create_test_image()
-        settings = SketchLinesSettings(seed=42, line_density=0.5, max_lines=100)
+        settings = SketchLinesSettings(seed=42, line_density=0.5)
         lines = sketch_lines(img, settings)
 
         assert isinstance(lines, list)
@@ -141,7 +141,7 @@ class TestSketchLinesAlgorithm:
         lines2 = sketch_lines(img, settings2)
 
         assert len(lines1) == len(lines2)
-        for l1, l2 in zip(lines1, lines2):
+        for l1, l2 in zip(lines1, lines2, strict=False):
             assert l1.equals(l2)
 
     def test_different_seeds_produce_different_output(self):
@@ -299,8 +299,8 @@ class TestSketchLinesAlgorithm:
     def test_line_density_affects_count(self):
         """Test that higher line_density produces more lines."""
         img = self._create_test_image(200, 200)
-        settings_low = SketchLinesSettings(seed=42, line_density=0.1, max_lines=1000)
-        settings_high = SketchLinesSettings(seed=42, line_density=2.0, max_lines=1000)
+        settings_low = SketchLinesSettings(seed=42, line_density=0.1)
+        settings_high = SketchLinesSettings(seed=42, line_density=2.0)
 
         lines_low = sketch_lines(img, settings_low)
         lines_high = sketch_lines(img, settings_high)
@@ -451,7 +451,7 @@ class TestSampleLineLuminance:
 
     def test_out_of_bounds(self):
         luminance = np.full((100, 100), 128.0, dtype=np.float32)
-        avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 150, 10, 5)
+        _avg, ex, _ey = self._sample_line_luminance(luminance, 10, 10, 150, 10, 5)
         # Should stop at boundary
         assert ex < 100
 
@@ -484,9 +484,6 @@ class TestFindDarkestPixel:
         assert 0 <= y < 100
 
 
-import random
-
-
 class TestFindDarkestLine:
     """Tests for darkest line finding."""
 
@@ -514,7 +511,7 @@ class TestFindDarkestLine:
         # Dark line going right from center
         luminance[50, 50:80] = 50.0
         rng = random.Random(42)
-        avg, ex, ey = self._find_darkest_line(
+        avg, ex, _ey = self._find_darkest_line(
             luminance, 50, 50, 5, 30, 0.0, 45.0, 8, False, rng
         )
         assert avg < 150.0
@@ -523,7 +520,7 @@ class TestFindDarkestLine:
     def test_shading_mode_two_directions(self):
         luminance = np.full((100, 100), 128.0, dtype=np.float32)
         rng = random.Random(42)
-        avg, ex, ey = self._find_darkest_line(
+        _avg, ex, ey = self._find_darkest_line(
             luminance, 50, 50, 5, 30, 90.0, 45.0, 8, True, rng
         )
         # In shading mode, only tests 2 directions (90 and 270)
@@ -570,7 +567,7 @@ class TestAddSquiggle:
         rng = random.Random(42)
         points = self._add_squiggle(0, 0, 0, 100, 10, 5.0, rng)
         # Points should deviate in x direction (perpendicular to vertical line)
-        for x, y in points[1:-1]:
+        for x, _y in points[1:-1]:
             assert abs(x) <= 5.0  # Within max_deviation
 
 
