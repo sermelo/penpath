@@ -231,7 +231,7 @@ class TestProject:
                 image=ImageRef(path=img_path, filters=FilterPipeline(), dpi=300),
                 paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
                 pen=Pen(name="fine", width_mm=0.3),
-                pfm=PFMSettings(pfm_type="sketch_lines"),
+                pfm=SketchLinesPFM(),
                 output_path=out_path,
             )
 
@@ -247,7 +247,7 @@ class TestProject:
             image=ImageRef(path=img_path, filters=FilterPipeline(), dpi=300),
             paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
             pen=Pen(name="fine", width_mm=0.3, color="#FF0000", opacity=0.8),
-            pfm=PFMSettings(pfm_type="sketch_lines"),
+            pfm=SketchLinesPFM(),
             output_path=out_path,
         )
         vpype_data = project.model_dump_for_vpype()

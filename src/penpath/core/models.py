@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -168,6 +168,10 @@ class SketchLinesPFM(PFMSettings):
     settings: SketchLinesSettings = Field(default_factory=SketchLinesSettings)
 
 
+# Discriminated union for PFM settings
+PFMSettingsUnion = Annotated[SketchLinesPFM, Field(discriminator="pfm_type")]
+
+
 class Project(BaseModel):
     """Complete project configuration for penpath.
 
@@ -179,8 +183,8 @@ class Project(BaseModel):
         Paper configuration.
     pen : Pen
         Pen configuration.
-    pfm : PFMSettings
-        Pen Follower Module settings.
+    pfm : PFMSettingsUnion
+        Pen Follower Module settings (discriminated union).
     output_path : Path
         Output SVG file path.
     """
@@ -188,7 +192,7 @@ class Project(BaseModel):
     image: ImageRef
     paper: Paper
     pen: Pen
-    pfm: PFMSettings
+    pfm: PFMSettingsUnion
     output_path: Path
 
     @field_validator("output_path")
@@ -213,6 +217,7 @@ class Project(BaseModel):
 __all__ = [
     "ImageRef",
     "PFMSettings",
+    "PFMSettingsUnion",
     "Paper",
     "Pen",
     "Project",
