@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any
 
 from PIL import Image
+from pydantic import BaseModel, ConfigDict, Field
 
 from penpath.core.image.filters import (
     box_blur,
@@ -21,12 +21,13 @@ from penpath.core.image.filters import (
 )
 
 
-@dataclass
-class FilterStep:
+class FilterStep(BaseModel):
     """A single filter step in the pipeline."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str
-    kwargs: dict[str, Any] = field(default_factory=dict)
+    kwargs: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
 
 
@@ -78,7 +79,7 @@ def list_filters() -> list[str]:
     return sorted(_FILTER_REGISTRY.keys())
 
 
-class FilterPipeline:
+class FilterPipeline(BaseModel):
     """Pipeline for composing and applying image filters in sequence.
 
     Each step in the pipeline has a filter name, keyword arguments, and an
@@ -92,9 +93,9 @@ class FilterPipeline:
     >>> result = pipeline.apply(image)
     """
 
-    def __init__(self) -> None:
-        """Initialize an empty filter pipeline."""
-        self._steps: list[FilterStep] = []
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    steps: list[FilterStep] = Field(default_factory=list)
 
     def add_step(self, filter_name: str, **kwargs: Any) -> int:
         """Add a filter step to the end of the pipeline.
@@ -119,8 +120,8 @@ class FilterPipeline:
         # Validate filter exists
         get_filter(filter_name)
         step = FilterStep(name=filter_name, kwargs=kwargs, enabled=True)
-        self._steps.append(step)
-        return len(self._steps) - 1
+        self.steps.append(step)
+        return len(self.steps) - 1
 
     def remove_step(self, index: int) -> None:
         """Remove a filter step by index.
@@ -135,9 +136,9 @@ class FilterPipeline:
         IndexError
             If index is out of range.
         """
-        if not 0 <= index < len(self._steps):
-            raise IndexError(f"Step index {index} out of range (0-{len(self._steps) - 1})")
-        self._steps.pop(index)
+        if not 0 <= index < len(self.steps):
+            raise IndexError(f"Step index {index} out of range (0-{len(self.steps) - 1})")
+        self.steps.pop(index)
 
     def enable_step(self, index: int) -> None:
         """Enable a filter step by index.
@@ -152,9 +153,9 @@ class FilterPipeline:
         IndexError
             If index is out of range.
         """
-        if not 0 <= index < len(self._steps):
-            raise IndexError(f"Step index {index} out of range (0-{len(self._steps) - 1})")
-        self._steps[index].enabled = True
+        if not 0 <= index < len(self.steps):
+            raise IndexError(f"Step index {index} out of range (0-{len(self.steps) - 1})")
+        self.steps[index].enabled = True
 
     def disable_step(self, index: int) -> None:
         """Disable a filter step by index.
@@ -169,9 +170,9 @@ class FilterPipeline:
         IndexError
             If index is out of range.
         """
-        if not 0 <= index < len(self._steps):
-            raise IndexError(f"Step index {index} out of range (0-{len(self._steps) - 1})")
-        self._steps[index].enabled = False
+        if not 0 <= index < len(self.steps):
+            raise IndexError(f"Step index {index} out of range (0-{len(self.steps) - 1})")
+        self.steps[index].enabled = False
 
     def reorder(self, from_idx: int, to_idx: int) -> None:
         """Move a filter step from one position to another.
@@ -188,13 +189,13 @@ class FilterPipeline:
         IndexError
             If either index is out of range.
         """
-        if not 0 <= from_idx < len(self._steps):
-            raise IndexError(f"From index {from_idx} out of range (0-{len(self._steps) - 1})")
-        if not 0 <= to_idx < len(self._steps):
-            raise IndexError(f"To index {to_idx} out of range (0-{len(self._steps) - 1})")
+        if not 0 <= from_idx < len(self.steps):
+            raise IndexError(f"From index {from_idx} out of range (0-{len(self.steps) - 1})")
+        if not 0 <= to_idx < len(self.steps):
+            raise IndexError(f"To index {to_idx} out of range (0-{len(self.steps) - 1})")
 
-        step = self._steps.pop(from_idx)
-        self._steps.insert(to_idx, step)
+        step = self.steps.pop(from_idx)
+        self.steps.insert(to_idx, step)
 
     def apply(self, image: Image.Image) -> Image.Image:
         """Apply all enabled filter steps to an image in order.
@@ -211,7 +212,7 @@ class FilterPipeline:
         """
         result = image
         applied_any = False
-        for step in self._steps:
+        for step in self.steps:
             if not step.enabled:
                 continue
             filter_fn = get_filter(step.name)
@@ -236,7 +237,7 @@ class FilterPipeline:
                     "kwargs": step.kwargs,
                     "enabled": step.enabled,
                 }
-                for step in self._steps
+                for step in self.steps
             ]
         }
 
@@ -272,25 +273,25 @@ class FilterPipeline:
             # Validate filter exists
             get_filter(name)
             step = FilterStep(name=name, kwargs=kwargs, enabled=enabled)
-            pipeline._steps.append(step)
+            pipeline.steps.append(step)
         return pipeline
 
     def __len__(self) -> int:
         """Return the number of steps in the pipeline."""
-        return len(self._steps)
+        return len(self.steps)
 
     def __getitem__(self, index: int) -> FilterStep:
         """Get a step by index."""
-        return self._steps[index]
+        return self.steps[index]
 
-    def __iter__(self) -> Iterator[FilterStep]:
+    def __iter__(self) -> Any:
         """Iterate over steps."""
-        return iter(self._steps)
+        return iter(self.steps)
 
     def __repr__(self) -> str:
         """Return a string representation of the pipeline."""
         parts = []
-        for i, s in enumerate(self._steps):
+        for i, s in enumerate(self.steps):
             kwargs_str = ", ".join(f"{k}={v!r}" for k, v in s.kwargs.items())
             disabled_str = " [disabled]" if not s.enabled else ""
             parts.append(f"{i}: {s.name}({kwargs_str}){disabled_str}")
