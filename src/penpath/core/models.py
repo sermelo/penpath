@@ -74,6 +74,8 @@ class Paper(BaseModel):
         Margin around the drawable area in millimetres.
     background_color : str
         Paper background color as hex string or named CSS color.
+    dpi : int
+        Output DPI for coordinate system (pixels per inch).
     """
 
     name: str = Field(..., min_length=1)
@@ -81,6 +83,7 @@ class Paper(BaseModel):
     height_mm: float = Field(..., gt=0.0, le=2000.0)
     margin_mm: float = Field(default=10.0, ge=0.0, le=100.0)
     background_color: str = Field(default="#FFFFFF")
+    dpi: int = Field(default=300, ge=72, le=2400)
 
     @field_validator("background_color")
     @classmethod
