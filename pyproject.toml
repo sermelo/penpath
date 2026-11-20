@@ -64,6 +64,7 @@ preview = true
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["float-equality-comparison"]
 "tests/**/*.py" = ["float-equality-comparison"]
+"src/penpath/core/__init__.py" = ["non-empty-init-module"]
 
 [tool.ruff.format]
 quote-style = "double"

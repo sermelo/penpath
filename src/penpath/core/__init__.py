@@ -33,12 +33,26 @@ from penpath.core.models import (
     Paper,
     Pen,
     PFMSettings,
+    PFMSettingsUnion,
     Project,
     SketchLinesPFM,
 )
+from penpath.core.project import (
+    PROJECT_FILE_VERSION,
+    ProjectLoadError,
+    ProjectSaveError,
+    load_yaml,
+    save_yaml,
+)
+
+# Rebuild Pydantic models that have forward references
+# FilterPipeline is imported above, so ImageRef can now be fully resolved
+ImageRef.model_rebuild()
+Project.model_rebuild()
 
 __all__ = [
     "DEFAULT_PAPER_DPI",
+    "PROJECT_FILE_VERSION",
     "DitherMethod",
     "FilterPipeline",
     "FilterStep",
@@ -46,9 +60,12 @@ __all__ = [
     "ImageLoadError",
     "ImageRef",
     "PFMSettings",
+    "PFMSettingsUnion",
     "Paper",
     "Pen",
     "Project",
+    "ProjectLoadError",
+    "ProjectSaveError",
     "SketchLinesPFM",
     "UnsupportedFormatError",
     "box_blur",
@@ -61,10 +78,12 @@ __all__ = [
     "invert",
     "list_filters",
     "load_image",
+    "load_yaml",
     "merge_lines",
     "mm_to_pixels",
     "pixels_to_mm",
     "posterize",
+    "save_yaml",
     "simplify",
     "simplify_line",
     "threshold",
