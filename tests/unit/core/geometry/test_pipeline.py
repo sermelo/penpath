@@ -232,12 +232,12 @@ class TestOptimizeIntegration:
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
 
         # Create lines where trunk is separate from branches
-        # so linemerge can join the trunk
+# so linemerge can join the trunk
         lines = [
             LineString([(0, 0), (100, 0)]),      # Main trunk start
             LineString([(100, 0), (200, 0)]),    # Trunk continuation
             LineString([(200, 0), (200, 100)]),  # Branch at end
-            LineString([(200, 0), (200, -100)]), # Another branch at end
+            LineString([(200, 0), (200, -100)]),  # Another branch at end
         ]
 
         result = optimize(
