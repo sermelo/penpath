@@ -122,16 +122,18 @@ def _greedy_nearest_neighbour(
     return sorted_lines
 
 
-def _two_opt(lines: list[LineString]) -> list[LineString]:
+def _two_opt(lines: list[LineString], max_iterations: int = 10) -> list[LineString]:
     """Apply 2-opt optimization to reduce travel distance.
 
-    Iteratively tries swapping pairs of lines to see if it reduces
-    the total pen-up travel distance.
+    Iteratively tries reversing segments to see if it reduces
+    the total pen-up travel distance. Limited iterations for performance.
 
     Parameters
     ----------
     lines : list[LineString]
-        Lines to optimize (modified in place and returned).
+        Lines to optimize.
+    max_iterations : int
+        Maximum number of optimization passes.
 
     Returns
     -------
@@ -141,35 +143,25 @@ def _two_opt(lines: list[LineString]) -> list[LineString]:
     if len(lines) < 3:
         return lines
 
-    # Work with a copy to avoid modifying during iteration issues
     lines = list(lines)
-    improved = True
+    best_distance = _travel_distance(lines)
 
-    while improved:
+    for _ in range(max_iterations):
         improved = False
-        best_distance = _travel_distance(lines)
 
-        # Try all pairs (i, j) where i < j
-        for i in range(len(lines) - 1):
-            for j in range(i + 1, len(lines)):
-                # Create candidate by swapping lines[i] and lines[j]
-                candidate = lines[:]
-                candidate[i], candidate[j] = candidate[j], candidate[i]
+        # Try reversing each line to see if it reduces distance
+        for i in range(len(lines)):
+            # Try reversing line i
+            candidate = lines[:]
+            candidate[i] = _reverse_line(candidate[i])
+            dist = _travel_distance(candidate)
+            if dist < best_distance:
+                best_distance = dist
+                lines = candidate
+                improved = True
 
-                # Also try reversing one or both
-                for rev_i in (False, True):
-                    for rev_j in (False, True):
-                        test_candidate = candidate[:]
-                        if rev_i:
-                            test_candidate[i] = _reverse_line(test_candidate[i])
-                        if rev_j:
-                            test_candidate[j] = _reverse_line(test_candidate[j])
-
-                        dist = _travel_distance(test_candidate)
-                        if dist < best_distance:
-                            best_distance = dist
-                            lines = test_candidate
-                            improved = True
+        if not improved:
+            break
 
     return lines
 

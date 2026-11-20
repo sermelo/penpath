@@ -1,0 +1,341 @@
+"""Info command for penpath - show presets, capabilities, and image details."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import click
+from rich.console import Console
+from rich.table import Table
+
+from penpath.cli.config import load_config
+from penpath.core.drawing.registry import get_pfm, list_pfms
+from penpath.core.image.load import load_image
+from penpath.core.image.pipeline import list_filters
+from penpath.presets.papers import get_paper, list_papers
+from penpath.presets.pens import get_pen, list_pens
+from penpath.presets.pfms import list_pfm_presets
+
+if TYPE_CHECKING:
+    pass
+
+console = Console()
+
+
+def _output_format(data: dict[str, Any], fmt: str) -> None:
+    """Output data in the specified format."""
+    if fmt == "json":
+        console.print_json(json.dumps(data, indent=2, default=str))
+    elif fmt == "yaml":
+        import yaml
+
+        console.print(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    else:  # table
+        _print_table(data)
+
+
+def _print_table(data: dict[str, Any]) -> None:
+    """Print data as a rich table."""
+    for key, value in data.items():
+        if isinstance(value, list):
+            table = Table(title=key.replace("_", " ").title())
+            if value and isinstance(value[0], dict):
+                # Add columns from first item
+                for col in value[0]:
+                    table.add_column(col)
+                for item in value:
+                    table.add_row(*[str(item.get(c, "")) for c in value[0]])
+            else:
+                table.add_column("Value")
+                for item in value:
+                    table.add_row(str(item))
+            console.print(table)
+        elif isinstance(value, dict):
+            table = Table(title=key.replace("_", " ").title())
+            table.add_column("Property")
+            table.add_column("Value")
+            for k, v in value.items():
+                table.add_row(k, str(v))
+            console.print(table)
+        else:
+            console.print(f"[bold]{key}:[/bold] {value}")
+
+
+@click.group(name="info")
+def info_group() -> None:
+    """Show information about presets, capabilities, and images."""
+
+
+@info_group.command(name="pens")
+@click.option(
+    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
+)
+@click.option(
+    "--config", "-c", "config_path", type=click.Path(path_type=Path),
+    help="Config file path"
+)
+def info_pens(fmt: str, config_path: Path | None) -> None:
+    """List built-in pen presets."""
+    config = load_config(config_path)
+
+    # Built-in presets
+    builtin_pens = []
+    for name in list_pens():
+        pen = get_pen(name)
+        builtin_pens.append(
+            {
+                "name": name,
+                "width_mm": pen.width,
+                "color": pen.color,
+                "opacity": pen.opacity,
+                "source": "builtin",
+            }
+        )
+
+    # Config presets
+    config_pens = []
+    for name, pen in config.pens.items():
+        config_pens.append(
+            {
+                "name": name,
+                "width_mm": pen.width,
+                "color": pen.color,
+                "opacity": pen.opacity,
+                "source": "config",
+            }
+        )
+
+    data = {"builtin_pens": builtin_pens, "config_pens": config_pens}
+    _output_format(data, fmt)
+
+
+@info_group.command(name="papers")
+@click.option(
+    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
+)
+@click.option(
+    "--config", "-c", "config_path", type=click.Path(path_type=Path),
+    help="Config file path"
+)
+def info_papers(fmt: str, config_path: Path | None) -> None:
+    """List built-in paper presets."""
+    config = load_config(config_path)
+
+    # Built-in presets
+    builtin_papers = []
+    for name in list_papers():
+        paper = get_paper(name)
+        builtin_papers.append(
+            {
+                "name": name,
+                "width_mm": paper.width,
+                "height_mm": paper.height,
+                "margin_mm": paper.margin,
+                "source": "builtin",
+            }
+        )
+
+    # Config presets
+    config_papers = []
+    for name, paper in config.papers.items():
+        config_papers.append(
+            {
+                "name": name,
+                "width_mm": paper.width,
+                "height_mm": paper.height,
+                "margin_mm": paper.margin,
+                "source": "config",
+            }
+        )
+
+    data = {"builtin_papers": builtin_papers, "config_papers": config_papers}
+    _output_format(data, fmt)
+
+
+@info_group.command(name="pfms")
+@click.option(
+    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
+)
+def info_pfms(fmt: str) -> None:
+    """List available PFMs (Pen Follower Modules)."""
+    registered = list_pfms()
+    presets = list_pfm_presets()
+
+    pfm_data = []
+    for name in registered:
+        _, settings_model = get_pfm(name)
+        # Get default settings
+        default_settings = settings_model()
+        pfm_data.append(
+            {
+                "name": name,
+                "settings_model": settings_model.__name__,
+                "default_settings": default_settings.model_dump(),
+                "presets": [
+                    p for p in presets if p.startswith(name) or name == "sketch_lines"
+                ],
+            }
+        )
+
+    data = {"available_pfms": pfm_data, "presets": presets}
+    _output_format(data, fmt)
+
+
+@info_group.command(name="filters")
+@click.option(
+    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
+)
+def info_filters(fmt: str) -> None:
+    """List available image filters with parameters."""
+    filters = list_filters()
+
+    # Define filter parameter info
+    filter_info = {
+        "grayscale": {
+            "description": "Convert to single channel",
+            "params": {
+                "method": "luminance|lightness|average|red|green|blue (default: luminance)"
+            },
+        },
+        "threshold": {
+            "description": "Binarize image (2 levels)",
+            "params": {
+                "level": "0-255 (default: 128)",
+                "dither": "none|floyd_steinberg|ordered (default: none)",
+            },
+        },
+        "posterize": {
+            "description": "Reduce to N tonal levels",
+            "params": {
+                "levels": "2-256 (default: 4)",
+                "dither": "none|floyd_steinberg|ordered (default: none)",
+            },
+        },
+        "gaussian_blur": {
+            "description": "Gaussian blur",
+            "params": {"radius": "float >= 0 (default: 2.0)"},
+        },
+        "box_blur": {
+            "description": "Box blur",
+            "params": {"radius": "int >= 0 (default: 2)"},
+        },
+        "contrast": {
+            "description": "Adjust contrast",
+            "params": {"factor": "float >= 0, 1.0 = no change (default: 1.0)"},
+        },
+        "brightness": {
+            "description": "Adjust brightness",
+            "params": {"factor": "float >= 0, 1.0 = no change (default: 1.0)"},
+        },
+        "gamma": {
+            "description": "Gamma correction",
+            "params": {"gamma": "float > 0, 1.0 = no change (default: 1.0)"},
+        },
+        "invert": {
+            "description": "Invert colors (negative)",
+            "params": {},
+        },
+    }
+
+    filter_data = []
+    for name in filters:
+        info = filter_info.get(name, {"description": "", "params": {}})
+        filter_data.append(
+            {
+                "name": name,
+                "description": info["description"],
+                "parameters": info["params"],
+            }
+        )
+
+    data = {"filters": filter_data}
+    _output_format(data, fmt)
+
+
+@info_group.command(name="image")
+@click.argument("image_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
+)
+def info_image(image_path: Path, fmt: str) -> None:
+    """Show image details (size, mode, EXIF, DPI)."""
+    try:
+        image = load_image(image_path)
+    except Exception as e:
+        raise click.ClickException(f"Failed to load image: {e}") from e
+
+    # Get EXIF data
+    exif_data = {}
+    try:
+        exif = image.getexif()
+        if exif:
+            for tag_id, value in exif.items():
+                exif_data[str(tag_id)] = str(value)
+    except Exception:
+        pass
+
+    data = {
+        "path": str(image_path),
+        "format": image.format,
+        "mode": image.mode,
+        "size": {"width": image.width, "height": image.height},
+        "dpi": image.info.get("dpi", (72, 72)),
+        "exif": exif_data if exif_data else "No EXIF data",
+    }
+
+    _output_format(data, fmt)
+
+
+@info_group.command(name="config")
+@click.option(
+    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
+)
+@click.option(
+    "--config", "-c", "config_path", type=click.Path(path_type=Path),
+    help="Config file path"
+)
+@click.option(
+    "--project", "-p", "project_path",
+    type=click.Path(exists=True, path_type=Path), help="Project file path"
+)
+def info_config(fmt: str, config_path: Path | None, project_path: Path | None) -> None:
+    """Show resolved configuration (config + project + defaults)."""
+    config = load_config(config_path)
+
+    data = {
+        "config_file": str(config_path) if config_path else "default",
+        "default_pen": config.default_pen,
+        "default_paper": config.default_paper,
+        "output_dir": config.output_dir,
+        "pens": {
+            name: {"width": p.width, "color": p.color, "opacity": p.opacity}
+            for name, p in config.pens.items()
+        },
+        "papers": {
+            name: {"width": p.width, "height": p.height, "margin": p.margin}
+            for name, p in config.papers.items()
+        },
+    }
+
+    if project_path:
+        try:
+            from penpath.core.project import load_yaml
+
+            project = load_yaml(project_path)
+            data["project"] = {
+                "input": str(project.image.path),
+                "filters": project.image.filters.to_dict(),
+                "paper": project.paper.model_dump(),
+                "pen": project.pen.model_dump(),
+                "pfm": project.pfm.model_dump(),
+                "output": str(project.output_path),
+            }
+        except Exception as e:
+            data["project_error"] = str(e)
+
+    _output_format(data, fmt)
+
+
+__all__ = ["info_group"]

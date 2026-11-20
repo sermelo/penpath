@@ -5,23 +5,42 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from PIL import Image
 
 from penpath.cli.main import main
 
 
+@pytest.fixture
+def runner() -> CliRunner:
+    return CliRunner()
+
+
+@pytest.fixture
+def temp_config_dir(monkeypatch: pytest.MonkeyPatch) -> Path:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_dir = Path(tmpdir) / "penpath"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(config_dir.parent))
+        yield config_dir
+
+
+@pytest.fixture
+def test_image(tmp_path: Path) -> Path:
+    """Create a simple test image."""
+    img_path = tmp_path / "test_input.png"
+    img = Image.new("RGB", (100, 100), "white")
+    pixels = img.load()
+    for y in range(100):
+        for x in range(100):
+            val = int(255 * (1 - (x + y) / 200))
+            if 25 < x < 75 and 25 < y < 75:
+                val = int(val * 0.3)
+            pixels[x, y] = (val, val, val)
+    img.save(img_path)
+    return img_path
+
+
 class TestCLI:
-    @pytest.fixture
-    def runner(self) -> CliRunner:
-        return CliRunner()
-
-    @pytest.fixture
-    def temp_config_dir(self, monkeypatch: pytest.MonkeyPatch) -> Path:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir) / "penpath"
-            config_dir.mkdir(parents=True, exist_ok=True)
-            monkeypatch.setenv("XDG_CONFIG_HOME", str(config_dir.parent))
-            yield config_dir
-
     def test_help(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
@@ -108,7 +127,144 @@ default_paper = "a3"
         assert result.exit_code == 0
 
 
+class TestConvertCommand:
+    """Tests for the convert command."""
+
+    def test_convert_basic(self, runner: CliRunner, test_image: Path, tmp_path: Path) -> None:
+        """Test basic convert command with --no-vpype."""
+        output_path = tmp_path / "output.svg"
+        args = ["convert", str(test_image), "-o", str(output_path), "--no-vpype"]
+        result = runner.invoke(main, args)
+        assert result.exit_code == 0
+        assert output_path.exists()
+        assert "SVG saved to:" in result.output
+
+        # Verify SVG content
+        svg_content = output_path.read_text()
+        assert "<svg" in svg_content
+        assert "</svg>" in svg_content
+        assert "viewBox" in svg_content
+        assert "pen-" in svg_content  # Layer for pen
+
+    def test_convert_with_filters(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """Test convert with explicit filters."""
+        output_path = tmp_path / "output.svg"
+        args = [
+            "convert",
+            str(test_image),
+            "-o",
+            str(output_path),
+            "--no-vpype",
+            "-f",
+            "grayscale",
+            "-f",
+            "threshold:level=128",
+        ]
+        result = runner.invoke(main, args)
+        assert result.exit_code == 0
+        assert output_path.exists()
+
+    def test_convert_with_pen_paper(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """Test convert with custom pen and paper."""
+        output_path = tmp_path / "output.svg"
+        args = [
+            "convert",
+            str(test_image),
+            "-o",
+            str(output_path),
+            "--no-vpype",
+            "--pen",
+            "bold",
+            "--paper",
+            "a3",
+        ]
+        result = runner.invoke(main, args)
+        assert result.exit_code == 0
+        assert output_path.exists()
+
+    def test_convert_invalid_input(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test convert with non-existent input file."""
+        output_path = tmp_path / "output.svg"
+        result = runner.invoke(main, ["convert", "nonexistent.png", "-o", str(output_path)])
+        assert result.exit_code != 0
+        assert "not found" in result.output.lower() or "error" in result.output.lower()
+
+    def test_convert_invalid_pen(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """Test convert with invalid pen preset."""
+        output_path = tmp_path / "output.svg"
+        args = [
+            "convert",
+            str(test_image),
+            "-o",
+            str(output_path),
+            "--no-vpype",
+            "--pen",
+            "nonexistent",
+        ]
+        result = runner.invoke(main, args)
+        assert result.exit_code != 0
+        assert "unknown pen" in result.output.lower()
+
+
+class TestInfoCommand:
+    """Tests for the info command."""
+
+    def test_info_pens(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "pens"])
+        assert result.exit_code == 0
+        assert "fine" in result.output
+        assert "bold" in result.output
+        assert "builtin" in result.output
+        assert "config" in result.output
+
+    def test_info_pens_json(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "pens", "--format", "json"])
+        assert result.exit_code == 0
+        import json
+        data = json.loads(result.output)
+        assert "builtin_pens" in data
+        assert "config_pens" in data
+
+    def test_info_papers(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "papers"])
+        assert result.exit_code == 0
+        assert "a4" in result.output
+        assert "a3" in result.output
+
+    def test_info_pfms(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "pfms"])
+        assert result.exit_code == 0
+        assert "sketch_lines" in result.output
+
+    def test_info_filters(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "filters"])
+        assert result.exit_code == 0
+        assert "grayscale" in result.output
+        assert "threshold" in result.output
+
+    def test_info_config(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "config"])
+        assert result.exit_code == 0
+        assert "default_pen" in result.output
+        assert "default_paper" in result.output
+
+    def test_info_image(self, runner: CliRunner, test_image: Path) -> None:
+        result = runner.invoke(main, ["info", "image", str(test_image)])
+        assert result.exit_code == 0
+        assert "100" in result.output  # Image dimensions
+        assert "RGB" in result.output or "L" in result.output
+
+
 class TestMainModule:
+    CWD = ("/home/paperclip/.paperclip/instances/default/projects/"
+           "f76284ac-2a49-40a6-b858-fb4e88a04f17/8629db6d-47e6-45d0-965d-2befba253fd7/penpath")
+
     def test_main_module_execution(self) -> None:
         import subprocess
 
@@ -116,7 +272,7 @@ class TestMainModule:
             ["python", "-m", "penpath", "--help"],
             capture_output=True,
             text=True,
-            cwd="/home/paperclip/.paperclip/instances/default/projects/f76284ac-2a49-40a6-b858-fb4e88a04f17/8629db6d-47e6-45d0-965d-2befba253fd7/penpath",
+            cwd=self.CWD,
         )
         assert result.returncode == 0
         assert "penpath" in result.stdout
@@ -128,7 +284,7 @@ class TestMainModule:
             ["penpath", "--help"],
             capture_output=True,
             text=True,
-            cwd="/home/paperclip/.paperclip/instances/default/projects/f76284ac-2a49-40a6-b858-fb4e88a04f17/8629db6d-47e6-45d0-965d-2befba253fd7/penpath",
+            cwd=self.CWD,
         )
         assert result.returncode == 0
         assert "penpath" in result.stdout
