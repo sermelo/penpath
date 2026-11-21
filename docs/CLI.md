@@ -346,9 +346,14 @@ penpath convert photo.jpg -o art.svg \
 ### Project-Based Workflow
 
 ```bash
-# Create project file from template (copy and edit)
-cp docs/project_template.yaml portrait.yaml
-# Or create manually from the minimal example above
+# Create project file from the minimal example (copy and edit)
+cat > portrait.yaml << 'EOF'
+version: 1
+input:
+  path: "photo.jpg"
+output:
+  path: "plot.svg"
+EOF
 # Edit portrait.yaml to taste
 penpath convert --project portrait.yaml
 # Iterate: edit YAML, re-run

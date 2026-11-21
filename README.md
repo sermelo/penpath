@@ -73,7 +73,6 @@ penpath works without vpype but output will be less optimized.
 | `penpath convert` | Photo → SVG (main command) |
 | `penpath info` | List presets, show image details, inspect config |
 | `penpath config` | Manage user configuration (~/.config/penpath/config.toml) |
-| `penpath project` | Create/validate project files |
 
 See [docs/CLI.md](docs/CLI.md) for complete reference.
 
@@ -108,8 +107,7 @@ penpath convert photo.jpg --no-vpype
 Save your entire pipeline in a YAML file for version control and iteration.
 
 ```bash
-# Create a starter project file
-penpath project template -o my_project.yaml
+# Create a project file manually (see minimal example below)
 # Edit my_project.yaml to taste
 penpath convert --project my_project.yaml
 ```
@@ -192,8 +190,7 @@ penpath convert photo.jpg -o art.svg \
 ### Project-Based Iteration
 
 ```bash
-# Create project interactively or from template
-penpath project create -o portrait.yaml
+# Create project file manually from the minimal example
 # Edit portrait.yaml: tweak filters, PFM settings, pen, paper
 penpath convert --project portrait.yaml
 # Re-run after edits — same results every time
