@@ -49,7 +49,6 @@ htmlcov/
 dmypy.json
 
 # UV
-uv.lock
 
 # OS
 .DS_Store
