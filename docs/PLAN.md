@@ -68,7 +68,7 @@ penpath/
 
 **External Tools**: `vpype` (user-installed, `pip install vpype`)
 
-**Python Version**: ≥3.11 (stdlib `tomllib`, `zoneinfo`, `dataclasses`)
+**Python Version**: ≥3.14 (stdlib `tomllib`, `zoneinfo`, `dataclasses`)
 
 ---
 

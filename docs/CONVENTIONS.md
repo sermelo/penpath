@@ -9,7 +9,7 @@
 
 | Item | Version / Tool | Notes |
 |------|----------------|-------|
-| Python | ≥3.11 | `tomllib`, `zoneinfo`, `dataclasses`, `typing.Self` |
+| Python | ≥3.14 | `tomllib`, `zoneinfo`, `dataclasses`, `typing.Self` |
 | Package Manager | `uv` (preferred) or `pip` | `uv sync` for reproducible installs |
 | Build Backend | `hatchling` | `pyproject.toml` only, no `setup.py` |
 | Formatter | `ruff format` | 100-char line length |
@@ -18,7 +18,7 @@
 | Test Runner | `pytest` | `pytest -xvs` for dev, `pytest --cov` for CI |
 | Pre-commit | `pre-commit` | `ruff format`, `ruff check`, `mypy`, `pytest` |
 
-**CI Matrix**: Python 3.11, 3.12, 3.13 on Ubuntu latest
+**CI Matrix**: Python 3.14 on Ubuntu latest
 
 ---
 
@@ -55,7 +55,7 @@ penpath/
 
 ### Formatting (ruff)
 - Line length: 100
-- Target version: py311
+- Target version: py314
 - Quote style: double
 - Indent: 4 spaces
 - Trailing commas: always (where valid)
@@ -212,7 +212,7 @@ name = "penpath"
 version = "0.1.0"
 description = "Photo to plottable SVG CLI"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "typer>=0.12,<1",
     "rich>=13,<14",
@@ -231,14 +231,14 @@ optional-dependencies = {
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py314"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "T20", "PTH", "SIM", "RUF"]
 ignore = ["D"]  # docstrings handled separately
 
 [tool.mypy]
 strict = true
-python_version = "3.11"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_ignores = true
 

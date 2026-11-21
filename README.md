@@ -345,7 +345,7 @@ Output SVG (layers per pen, viewBox from paper)
 
 ## Requirements
 
-- Python ≥ 3.11
+- Python ≥ 3.14
 - `vpype` (optional, for best output) — `pip install vpype`
 - System dependencies for `shapely` (GEOS) — usually via wheels
 

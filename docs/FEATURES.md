@@ -110,7 +110,7 @@
 | vpype pipeline | Shell out to `vpype` CLI (installed separately). Input: raw geometries → `linemerge linesimplify reloop linesort write`. Keeps penpath lightweight. |
 | SVG export | `svgwrite` — generate `<g id="pen-...">` layers, inkscape:groupmode, viewBox from paper. |
 | Project file | Pydantic model → YAML (human-readable, diffable). Round-trip safe. |
-| CLI config | `tomllib` (stdlib 3.11+) / `tomli` fallback. `~/.config/penpath/config.toml`. |
+| CLI config | `tomllib` (stdlib 3.14+) / `tomli` fallback. `~/.config/penpath/config.toml`. |
 
 ---
 
@@ -118,7 +118,7 @@
 
 | Runtime | Purpose | Install |
 |---------|---------|---------|
-| Python ≥3.11 | Core | — |
+| Python ≥3.14 | Core | — |
 | Pillow | Image I/O, filters | `pip install pillow` |
 | NumPy | Sketch Lines math | `pip install numpy` |
 | shapely | Geometry ops (simplify, merge) | `pip install shapely` |
