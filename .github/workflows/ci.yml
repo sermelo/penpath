@@ -109,19 +109,19 @@ jobs:
       - name: Verify wheel contents
         run: |
           uv run python -c "
-import zipfile
-import sys
-wheel = [f for f in __import__('glob').glob('dist/*.whl')][0]
-with zipfile.ZipFile(wheel, 'r') as z:
-    files = z.namelist()
-    print('Wheel contents:')
-    for f in sorted(files):
-        print(f'  {f}')
-    # Check for key files
-    assert any('penpath/cli/main.py' in f for f in files), 'Missing CLI entry point'
-    assert any('penpath/__init__.py' in f for f in files), 'Missing package init'
-    assert any('penpath/py.typed' in f for f in files), 'Missing py.typed marker'
-    print('✓ Wheel verification passed')
+            import zipfile
+            import sys
+            wheel = [f for f in __import__('glob').glob('dist/*.whl')][0]
+            with zipfile.ZipFile(wheel, 'r') as z:
+                files = z.namelist()
+                print('Wheel contents:')
+                for f in sorted(files):
+                    print(f'  {f}')
+                # Check for key files
+                assert any('penpath/cli/main.py' in f for f in files), 'Missing CLI entry point'
+                assert any('penpath/__init__.py' in f for f in files), 'Missing package init'
+                assert any('penpath/py.typed' in f for f in files), 'Missing py.typed marker'
+                print('✓ Wheel verification passed')
           "
 
       - name: Test install from wheel
