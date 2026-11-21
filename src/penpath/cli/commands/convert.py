@@ -149,7 +149,7 @@ def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
                 opacity=1.0,
                 pen_type=pen_type,  # type: ignore
             )
-        except ValueError, IndexError:
+        except (ValueError, IndexError):
             pass
 
     raise click.BadParameter(
@@ -209,7 +209,7 @@ def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
                 height_mm=height_mm,
                 margin_mm=margin_mm,
             )
-        except ValueError, IndexError:
+        except (ValueError, IndexError):
             pass
 
     raise click.BadParameter(

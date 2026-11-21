@@ -8,6 +8,9 @@ from shapely import LineString
 from penpath.core.models import Paper, Pen
 from penpath.core.output.vpype import run_vpype
 
+# Skip all tests in this module if vpype is not installed
+pytest.importorskip("vpype", reason="vpype not installed, skipping vpype tests")
+
 
 class TestRunVpype:
     """Tests for run_vpype function."""

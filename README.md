@@ -2,10 +2,9 @@
 
 **Photo to plottable SVG CLI** — Turn photos into beautiful, optimized pen plotter paths using the Sketch Lines algorithm.
 
-[![PyPI version](https://img.shields.io/pypi/v/penpath.svg)](https://pypi.org/project/penpath/)
 [![Python versions](https://img.shields.io/pypi/pyversions/penpath.svg)](https://pypi.org/project/penpath/)
 [![License](https://img.shields.io/pypi/l/penpath.svg)](LICENSE)
-[![Build status](https://github.com/sergio-merino/penpath/workflows/CI/badge.svg)](https://github.com/sergio-merino/penpath/actions)
+[![Build status](https://github.com/sermelo/penpath/workflows/CI/badge.svg)](https://github.com/sermelo/penpath/actions)
 
 ---
 
@@ -37,9 +36,9 @@ pip install penpath
 ### From source (development)
 
 ```bash
-git clone https://github.com/sergio-merino/penpath.git
+git clone https://github.com/sermelo/penpath.git
 cd penpath
-uv sync --group dev  # or: pip install -e ".[dev]"
+uv sync --extra dev  # or: pip install -e ".[dev]"
 ```
 
 ### External dependency: `vpype`
@@ -363,5 +362,5 @@ MIT — see [LICENSE](LICENSE).
 - **Technical Plan**: [docs/PLAN.md](docs/PLAN.md)
 - **Conventions**: [docs/CONVENTIONS.md](docs/CONVENTIONS.md)
 - **Testing**: [docs/TESTING.md](docs/TESTING.md)
-- **Issues**: [GitHub Issues](https://github.com/sergio-merino/penpath/issues)
+- **Issues**: [GitHub Issues](https://github.com/sermelo/penpath/issues)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md) (if exists)

@@ -16,6 +16,9 @@ from penpath.core.image.load import load_image
 from penpath.core.models import Paper, Pen
 from penpath.core.output.vpype import run_vpype
 
+# Skip all tests in this module if vpype is not installed
+pytest.importorskip("vpype", reason="vpype not installed, skipping integration tests")
+
 
 class TestFullPipelineIntegration:
     """Integration tests for the complete photo-to-SVG pipeline."""

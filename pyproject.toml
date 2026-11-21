@@ -16,6 +16,9 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
@@ -40,17 +43,20 @@ dev = [
     "pre-commit",
     "hatch",
 ]
+test = [
+    "vpype>=1.15",
+]
 docs = [
     "mkdocs",
     "mkdocs-material",
 ]
 
 [project.urls]
-Homepage = "https://github.com/sergio-merino/penpath"
-Repository = "https://github.com/sergio-merino/penpath"
-Issues = "https://github.com/sergio-merino/penpath/issues"
-Documentation = "https://github.com/sergio-merino/penpath/tree/main/docs"
-Changelog = "https://github.com/sergio-merino/penpath/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/sermelo/penpath"
+Repository = "https://github.com/sermelo/penpath"
+Issues = "https://github.com/sermelo/penpath/issues"
+Documentation = "https://github.com/sermelo/penpath/tree/main/docs"
+Changelog = "https://github.com/sermelo/penpath/blob/main/CHANGELOG.md"
 
 [project.scripts]
 penpath = "penpath.cli.main:main"
@@ -88,7 +94,7 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-xvs --strict-markers"
+addopts = "-vs --strict-markers"
 
 [dependency-groups]
 dev = [

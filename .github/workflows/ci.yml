@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
 
       - name: Install system dependencies
         run: |
@@ -31,10 +31,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev
-
-      - name: Install dev dependencies
-        run: uv pip install mypy ruff pytest pytest-cov
+        run: uv sync --extra dev
 
       - name: Run ruff check
         run: uv run ruff check src tests
@@ -52,7 +49,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
 
       - name: Install system dependencies
         run: |
@@ -65,7 +62,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Install dev dependencies
         run: uv pip install mypy types-PyYAML
@@ -83,7 +80,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
 
       - name: Install system dependencies
         run: |
@@ -96,7 +93,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Install dev dependencies
         run: uv pip install pytest pytest-cov
@@ -105,7 +102,7 @@ jobs:
         run: uv pip install 'vpype>=1.15'
 
       - name: Run unit tests with coverage
-        run: uv run pytest tests/unit -xvs --cov=penpath --cov-fail-under=75 --cov-report=term-missing
+        run: uv run pytest tests/unit -vs --cov=penpath --cov-fail-under=75 --cov-report=term-missing
 
   integration:
     name: Integration Tests
@@ -118,7 +115,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
 
       - name: Install system dependencies
         run: |
@@ -131,7 +128,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Install dev dependencies
         run: uv pip install pytest pytest-cov
@@ -140,7 +137,7 @@ jobs:
         run: uv pip install 'vpype>=1.15'
 
       - name: Run integration tests
-        run: uv run pytest tests/integration -xvs
+        run: uv run pytest tests/integration -vs
 
   build:
     name: Build Wheel
@@ -153,7 +150,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
 
       - name: Install system dependencies
         run: |
@@ -166,7 +163,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Build wheel
         run: uv build --wheel
@@ -209,7 +206,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: "3.12"
 
       - name: Install system dependencies
         run: |
@@ -222,7 +219,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --extra dev
 
       - name: Install dev dependencies
         run: uv pip install pytest pytest-cov
