@@ -192,10 +192,10 @@ jobs:
       - name: Test install from wheel
         run: |
           uv pip install dist/*.whl
-          penpath --help
-          penpath convert --help
-          penpath info --help
-          penpath config --help
+          uv run penpath --help
+          uv run penpath convert --help
+          uv run penpath info --help
+          uv run penpath config --help
 
   coverage-report:
     name: Coverage Report
