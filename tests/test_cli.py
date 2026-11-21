@@ -193,9 +193,7 @@ class TestConvertCommand:
         assert result.exit_code != 0
         assert "not found" in result.output.lower() or "error" in result.output.lower()
 
-    def test_convert_invalid_pen(
-        self, runner: CliRunner, test_image: Path, tmp_path: Path
-    ) -> None:
+    def test_convert_invalid_pen(self, runner: CliRunner, test_image: Path, tmp_path: Path) -> None:
         """Test convert with invalid pen preset."""
         output_path = tmp_path / "output.svg"
         args = [
@@ -227,6 +225,7 @@ class TestInfoCommand:
         result = runner.invoke(main, ["info", "pens", "--format", "json"])
         assert result.exit_code == 0
         import json
+
         data = json.loads(result.output)
         assert "builtin_pens" in data
         assert "config_pens" in data
@@ -262,8 +261,10 @@ class TestInfoCommand:
 
 
 class TestMainModule:
-    CWD = ("/home/paperclip/.paperclip/instances/default/projects/"
-           "f76284ac-2a49-40a6-b858-fb4e88a04f17/8629db6d-47e6-45d0-965d-2befba253fd7/penpath")
+    CWD = (
+        "/home/paperclip/.paperclip/instances/default/projects/"
+        "f76284ac-2a49-40a6-b858-fb4e88a04f17/8629db6d-47e6-45d0-965d-2befba253fd7/penpath"
+    )
 
     def test_main_module_execution(self) -> None:
         import subprocess

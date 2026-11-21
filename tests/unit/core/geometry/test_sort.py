@@ -29,7 +29,7 @@ class TestSortLines:
         """Should pick line closest to start_point first."""
         lines = [
             LineString([(100, 100), (200, 100)]),  # Far from origin
-            LineString([(0, 0), (50, 0)]),         # Near origin
+            LineString([(0, 0), (50, 0)]),  # Near origin
         ]
         result = sort_lines(lines, start_point=Point(0, 0))
         # First line should be the one starting at (0, 0)
@@ -38,7 +38,7 @@ class TestSortLines:
     def test_sort_lines_reverses_direction(self):
         """Should reverse line direction if it reduces travel distance."""
         lines = [
-            LineString([(100, 0), (0, 0)]),   # Points toward origin (backwards)
+            LineString([(100, 0), (0, 0)]),  # Points toward origin (backwards)
             LineString([(0, 100), (100, 100)]),
         ]
         result = sort_lines(lines, start_point=Point(0, 0))
@@ -50,7 +50,7 @@ class TestSortLines:
         """Should order three lines by nearest neighbour."""
         lines = [
             LineString([(200, 0), (300, 0)]),  # Far right
-            LineString([(0, 0), (100, 0)]),    # Left
+            LineString([(0, 0), (100, 0)]),  # Left
             LineString([(100, 0), (200, 0)]),  # Middle
         ]
         result = sort_lines(lines, start_point=Point(0, 0))
@@ -90,10 +90,10 @@ class TestSortLines:
         # Create a case where greedy makes a suboptimal choice
         # Lines arranged such that greedy picks wrong order
         lines = [
-            LineString([(0, 0), (10, 0)]),      # A: start at origin
-            LineString([(20, 10), (30, 10)]),   # B: upper right
+            LineString([(0, 0), (10, 0)]),  # A: start at origin
+            LineString([(20, 10), (30, 10)]),  # B: upper right
             LineString([(20, -10), (30, -10)]),  # C: lower right
-            LineString([(10, 0), (20, 0)]),     # D: middle connector
+            LineString([(10, 0), (20, 0)]),  # D: middle connector
         ]
         result = sort_lines(lines, start_point=Point(0, 0))
 

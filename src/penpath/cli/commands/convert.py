@@ -99,9 +99,7 @@ def _parse_pfm_settings(settings: Iterable[str]) -> dict[str, str]:
     result = {}
     for setting in settings:
         if "=" not in setting:
-            raise click.BadParameter(
-                f"Invalid PFM setting format: {setting}. Use KEY=VALUE"
-            )
+            raise click.BadParameter(f"Invalid PFM setting format: {setting}. Use KEY=VALUE")
         key, value = setting.split("=", 1)
         result[key.strip()] = value.strip()
     return result
@@ -155,8 +153,7 @@ def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
             pass
 
     raise click.BadParameter(
-        f"Unknown pen: '{pen_spec}'. Use a preset name or inline format "
-        "'width,color,type'"
+        f"Unknown pen: '{pen_spec}'. Use a preset name or inline format 'width,color,type'"
     )
 
 
@@ -228,9 +225,7 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> SketchLi
 
     # Check if it's a registered PFM
     if pfm_name not in list_pfms() and pfm_name not in list_pfm_presets():
-        raise click.BadParameter(
-            f"Unknown PFM: '{pfm_name}'. Available: {list_pfms()}"
-        )
+        raise click.BadParameter(f"Unknown PFM: '{pfm_name}'. Available: {list_pfms()}")
 
     # Get base settings from preset or default
     if pfm_name in list_pfm_presets():
@@ -309,14 +304,10 @@ def _run_convert_pipeline(
     progress.update(task_id, description="Exporting SVG...", advance=20)
     if use_vpype:
         try:
-            svg_bytes = run_vpype(
-                optimized_lines, project.paper, [project.pen], vpype_path
-            )
+            svg_bytes = run_vpype(optimized_lines, project.paper, [project.pen], vpype_path)
             project.output_path.write_bytes(svg_bytes)
         except FileNotFoundError:
-            console.print(
-                "[yellow]vpype not found, falling back to direct SVG export[/yellow]"
-            )
+            console.print("[yellow]vpype not found, falling back to direct SVG export[/yellow]")
             export_svg(
                 optimized_lines,
                 project.paper,
@@ -340,35 +331,43 @@ def _run_convert_pipeline(
 @click.command(name="convert")
 @click.argument("input_path", type=click.Path(exists=True, path_type=Path))
 @click.option(
-    "-o", "--output", "output_path", type=click.Path(path_type=Path),
-    help="Output SVG path"
+    "-o", "--output", "output_path", type=click.Path(path_type=Path), help="Output SVG path"
 )
 @click.option(
-    "--project", "-p", "project_path",
-    type=click.Path(exists=True, path_type=Path), help="Project YAML file"
+    "--project",
+    "-p",
+    "project_path",
+    type=click.Path(exists=True, path_type=Path),
+    help="Project YAML file",
 )
 @click.option(
-    "--filter", "-f", "filter_specs", multiple=True,
-    help="Filter to apply (repeatable). Format: name:param=value"
+    "--filter",
+    "-f",
+    "filter_specs",
+    multiple=True,
+    help="Filter to apply (repeatable). Format: name:param=value",
 )
 @click.option("--no-auto-orient", is_flag=True, help="Disable EXIF auto-orientation")
 @click.option("--pfm", "pfm_name", help="PFM algorithm to use (default: sketch_lines)")
 @click.option(
-    "--pfm-setting", "-s", "pfm_settings", multiple=True,
-    help="PFM setting override (repeatable). Format: KEY=VALUE"
+    "--pfm-setting",
+    "-s",
+    "pfm_settings",
+    multiple=True,
+    help="PFM setting override (repeatable). Format: KEY=VALUE",
 )
 @click.option("--pen", "pen_spec", help="Pen preset or inline 'width,color,type'")
 @click.option("--paper", "paper_spec", help="Paper preset or inline 'WIDTHxHEIGHT[,margins]'")
 @click.option("--no-vpype", is_flag=True, help="Skip vpype optimization (use direct SVG export)")
 @click.option("--vpype-path", default="vpype", help="Path to vpype executable")
 @click.option(
-    "--layer-per-pen/--single-layer", default=True,
-    help="SVG layer structure (default: layer-per-pen)"
+    "--layer-per-pen/--single-layer",
+    default=True,
+    help="SVG layer structure (default: layer-per-pen)",
 )
 @click.option("--dpi", type=int, default=300, help="Image DPI for coordinate scaling")
 @click.option(
-    "--config", "-c", "config_path",
-    type=click.Path(path_type=Path), help="Config file path"
+    "--config", "-c", "config_path", type=click.Path(path_type=Path), help="Config file path"
 )
 @click.pass_context
 def convert_cmd(

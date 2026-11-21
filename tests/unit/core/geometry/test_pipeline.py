@@ -85,7 +85,7 @@ class TestOptimize:
         # 3. Scrambled order that needs sorting
         lines = [
             LineString([(300, 0), (310, 5), (320, 0), (330, 5), (340, 0)]),  # Segment 3
-            LineString([(0, 0), (10, 5), (20, 0), (30, 5), (40, 0)]),        # Segment 0
+            LineString([(0, 0), (10, 5), (20, 0), (30, 5), (40, 0)]),  # Segment 0
             LineString([(100, 0), (110, 5), (120, 0), (130, 5), (140, 0)]),  # Segment 1
             LineString([(200, 0), (210, 5), (220, 0), (230, 5), (240, 0)]),  # Segment 2
         ]
@@ -232,10 +232,10 @@ class TestOptimizeIntegration:
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
 
         # Create lines where trunk is separate from branches
-# so linemerge can join the trunk
+        # so linemerge can join the trunk
         lines = [
-            LineString([(0, 0), (100, 0)]),      # Main trunk start
-            LineString([(100, 0), (200, 0)]),    # Trunk continuation
+            LineString([(0, 0), (100, 0)]),  # Main trunk start
+            LineString([(100, 0), (200, 0)]),  # Trunk continuation
             LineString([(200, 0), (200, 100)]),  # Branch at end
             LineString([(200, 0), (200, -100)]),  # Another branch at end
         ]

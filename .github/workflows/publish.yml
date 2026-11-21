@@ -1,0 +1,67 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write  # Required for trusted publishing
+  contents: read
+
+jobs:
+  publish:
+    name: Build & Publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Verify build artifacts
+        run: |
+          ls -la dist/
+          uv run python -c "
+import zipfile
+import tarfile
+import sys
+
+# Verify wheel
+wheel = [f for f in __import__('glob').glob('dist/*.whl')][0]
+with zipfile.ZipFile(wheel, 'r') as z:
+    files = z.namelist()
+    print(f'Wheel: {wheel}')
+    print(f'  Files: {len(files)}')
+    assert any('penpath/cli/main.py' in f for f in files), 'Missing CLI entry point in wheel'
+    assert any('penpath/__init__.py' in f for f in files), 'Missing package init in wheel'
+    assert any('penpath/py.typed' in f for f in files), 'Missing py.typed marker in wheel'
+    print('  ✓ Wheel verification passed')
+
+# Verify sdist
+sdist = [f for f in __import__('glob').glob('dist/*.tar.gz')][0]
+with tarfile.open(sdist, 'r:gz') as t:
+    files = t.getnames()
+    print(f'Sdist: {sdist}')
+    print(f'  Files: {len(files)}')
+    assert any('src/penpath/cli/main.py' in f for f in files), 'Missing CLI entry point in sdist'
+    assert any('src/penpath/__init__.py' in f for f in files), 'Missing package init in sdist'
+    assert any('pyproject.toml' in f for f in files), 'Missing pyproject.toml in sdist'
+    print('  ✓ Sdist verification passed')
+          "
+
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+          skip-existing: true

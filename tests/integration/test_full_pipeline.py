@@ -97,12 +97,12 @@ class TestFullPipelineIntegration:
 
         # Verify we can parse the SVG and it has reasonable content
         import xml.etree.ElementTree as ET
+
         root = ET.fromstring(svg_bytes)
         assert root.tag.endswith("svg")
         # Should have at least one path or group
         has_content = any(
-            elem.tag.endswith(("path", "g", "line", "polyline"))
-            for elem in root.iter()
+            elem.tag.endswith(("path", "g", "line", "polyline")) for elem in root.iter()
         )
         assert has_content
 
@@ -137,12 +137,11 @@ class TestFullPipelineIntegration:
 
         # Parse SVG and count paths
         import xml.etree.ElementTree as ET
+
         root = ET.fromstring(svg_bytes)
 
         # Count path/polyline elements (vpype may output either)
-        path_count = sum(
-            1 for elem in root.iter() if elem.tag.endswith(("path", "polyline"))
-        )
+        path_count = sum(1 for elem in root.iter() if elem.tag.endswith(("path", "polyline")))
 
         # vpype's linemerge/linesort may further reduce count
         # Just verify we have some output

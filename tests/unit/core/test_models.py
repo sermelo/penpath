@@ -146,6 +146,7 @@ class TestImageRef:
         img_path = tmp_path / "test.png"
         img_path.write_bytes(b"fake png")
         from penpath.core.image.pipeline import FilterPipeline
+
         img_ref = ImageRef(path=img_path, filters=FilterPipeline(), dpi=300)
         assert img_ref.path == img_path
         assert img_ref.dpi == 300
@@ -153,12 +154,14 @@ class TestImageRef:
     def test_image_ref_missing_file(self):
         """Test that missing file raises error."""
         from penpath.core.image.pipeline import FilterPipeline
+
         with pytest.raises(Exception, match="not found"):
             ImageRef(path=Path("/nonexistent.png"), filters=FilterPipeline())
 
     def test_image_ref_directory(self, tmp_path):
         """Test that directory path raises error."""
         from penpath.core.image.pipeline import FilterPipeline
+
         with pytest.raises(Exception, match="not a file"):
             ImageRef(path=tmp_path, filters=FilterPipeline())
 
@@ -191,6 +194,7 @@ class TestSketchLinesPFM:
     def test_sketch_lines_pfm_custom(self):
         """Test SketchLinesPFM with custom settings."""
         from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+
         custom = SketchLinesSettings(line_density=2.0, min_length=5.0)
         pfm = SketchLinesPFM(settings=custom)
         assert pfm.settings.line_density == 2.0

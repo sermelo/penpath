@@ -496,7 +496,7 @@ class TestErrorHandling:
         invalid_file.write_text(
             f"""version: {PROJECT_FILE_VERSION}
 image:
-  path: "{tmp_path / 'input.png'}"
+  path: "{tmp_path / "input.png"}"
   filters:
     steps: []
   dpi: 300

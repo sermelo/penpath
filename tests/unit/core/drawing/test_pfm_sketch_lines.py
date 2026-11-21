@@ -377,6 +377,7 @@ class TestBresenhamLine:
 
     def _bresenham_line(self, x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
         from penpath.core.drawing.pfm_sketch_lines import _bresenham_line
+
         return _bresenham_line(x0, y0, x1, y1)
 
     def test_horizontal_line(self):
@@ -425,6 +426,7 @@ class TestSampleLineLuminance:
         min_length: int,
     ) -> tuple[float, int, int]:
         from penpath.core.drawing.pfm_sketch_lines import _sample_line_luminance
+
         return _sample_line_luminance(luminance, x0, y0, x1, y1, min_length)
 
     def test_uniform_luminance(self):
@@ -466,6 +468,7 @@ class TestFindDarkestPixel:
         rng: random.Random,
     ) -> tuple[int, int]:
         from penpath.core.drawing.pfm_sketch_lines import _find_darkest_pixel
+
         return _find_darkest_pixel(luminance, sample_step, rng)
 
     def test_finds_dark_region(self):
@@ -501,9 +504,18 @@ class TestFindDarkestLine:
         rng: random.Random,
     ) -> tuple[float, int, int]:
         from penpath.core.drawing.pfm_sketch_lines import _find_darkest_line
+
         return _find_darkest_line(
-            luminance, x0, y0, min_length, max_length,
-            start_angle, angle_step, num_tests, shading, rng
+            luminance,
+            x0,
+            y0,
+            min_length,
+            max_length,
+            start_angle,
+            angle_step,
+            num_tests,
+            shading,
+            rng,
         )
 
     def test_finds_dark_direction(self):
@@ -511,18 +523,14 @@ class TestFindDarkestLine:
         # Dark line going right from center
         luminance[50, 50:80] = 50.0
         rng = random.Random(42)
-        avg, ex, _ey = self._find_darkest_line(
-            luminance, 50, 50, 5, 30, 0.0, 45.0, 8, False, rng
-        )
+        avg, ex, _ey = self._find_darkest_line(luminance, 50, 50, 5, 30, 0.0, 45.0, 8, False, rng)
         assert avg < 150.0
         assert ex > 50  # Should go right
 
     def test_shading_mode_two_directions(self):
         luminance = np.full((100, 100), 128.0, dtype=np.float32)
         rng = random.Random(42)
-        _avg, ex, ey = self._find_darkest_line(
-            luminance, 50, 50, 5, 30, 90.0, 45.0, 8, True, rng
-        )
+        _avg, ex, ey = self._find_darkest_line(luminance, 50, 50, 5, 30, 90.0, 45.0, 8, True, rng)
         # In shading mode, only tests 2 directions (90 and 270)
         assert 0 <= ex < 100
         assert 0 <= ey < 100
@@ -542,6 +550,7 @@ class TestAddSquiggle:
         rng: random.Random,
     ) -> list[tuple[float, float]]:
         from penpath.core.drawing.pfm_sketch_lines import _add_squiggle
+
         return _add_squiggle(x0, y0, x1, y1, squiggle_length, max_deviation, rng)
 
     def test_no_squiggle_short_line(self):
@@ -585,6 +594,7 @@ class TestShouldErase:
         rng: random.Random,
     ) -> bool:
         from penpath.core.drawing.pfm_sketch_lines import _should_erase
+
         return _should_erase(luminance, x, y, erase_min, erase_max, tone, rng)
 
     def test_dark_pixel_less_likely_erase(self):
@@ -592,8 +602,7 @@ class TestShouldErase:
         rng = random.Random(42)
         # Dark pixels should be less likely to erase (lower erase threshold)
         erase_count = sum(
-            1 for _ in range(1000)
-            if self._should_erase(luminance, 50, 50, 1.0, 255.0, 0.5, rng)
+            1 for _ in range(1000) if self._should_erase(luminance, 50, 50, 1.0, 255.0, 0.5, rng)
         )
         # With dark pixel (lum=50/255=0.196), threshold should be low
         assert erase_count < 200  # Less than 20% erase rate
@@ -602,8 +611,7 @@ class TestShouldErase:
         luminance = np.full((100, 100), 200.0, dtype=np.float32)  # Light
         rng = random.Random(42)
         erase_count = sum(
-            1 for _ in range(1000)
-            if self._should_erase(luminance, 50, 50, 1.0, 255.0, 0.5, rng)
+            1 for _ in range(1000) if self._should_erase(luminance, 50, 50, 1.0, 255.0, 0.5, rng)
         )
         # With light pixel (lum=200/255=0.784), threshold should be higher
         assert erase_count > 500  # More than 50% erase rate
