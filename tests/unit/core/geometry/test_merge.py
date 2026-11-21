@@ -135,8 +135,8 @@ class TestMergeLines:
     def test_merge_lines_complex_branch(self):
         """Branching lines should only merge collinear sequences."""
         lines = [
-            LineString([(0, 0), (100, 0)]),      # Horizontal
-            LineString([(100, 0), (200, 0)]),    # Continues horizontal
+            LineString([(0, 0), (100, 0)]),  # Horizontal
+            LineString([(100, 0), (200, 0)]),  # Continues horizontal
             LineString([(100, 0), (100, 100)]),  # Branch up
         ]
         result = merge_lines(lines, angle_tol_deg=5.0, dist_tol_mm=0.1, paper_dpi=300)
@@ -247,8 +247,8 @@ class TestMergeLinesRealWorld:
         """Zero distance tolerance should only join exact endpoints."""
         lines = [
             LineString([(0, 0), (100, 0)]),
-            LineString([(100, 0), (200, 0)]),      # Exact endpoint
-            LineString([(201, 0), (300, 0)]),      # 1 pixel gap
+            LineString([(100, 0), (200, 0)]),  # Exact endpoint
+            LineString([(201, 0), (300, 0)]),  # 1 pixel gap
         ]
         result = merge_lines(lines, angle_tol_deg=5.0, dist_tol_mm=0.0, paper_dpi=300)
         assert len(result) == 2  # First two join, third separate

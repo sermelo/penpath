@@ -102,14 +102,10 @@ def _scale_and_translate_geometries(
     scaled_geom_height_svg = geom_height_px * pixel_to_svg
 
     translate_x = (
-        margin_svg_x
-        + (drawable_width_svg - scaled_geom_width_svg) / 2
-        - min_x * pixel_to_svg
+        margin_svg_x + (drawable_width_svg - scaled_geom_width_svg) / 2 - min_x * pixel_to_svg
     )
     translate_y = (
-        margin_svg_y
-        + (drawable_height_svg - scaled_geom_height_svg) / 2
-        - min_y * pixel_to_svg
+        margin_svg_y + (drawable_height_svg - scaled_geom_height_svg) / 2 - min_y * pixel_to_svg
     )
 
     # Transform all geometries
@@ -121,8 +117,7 @@ def _scale_and_translate_geometries(
         if len(coords) < 2:
             continue
         new_coords = [
-            (x * pixel_to_svg + translate_x, y * pixel_to_svg + translate_y)
-            for x, y in coords
+            (x * pixel_to_svg + translate_x, y * pixel_to_svg + translate_y) for x, y in coords
         ]
         transformed.append(LineString(new_coords))
 

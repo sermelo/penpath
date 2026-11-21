@@ -128,19 +128,21 @@ def run_vpype(
             cmd.extend(["script", "--layer", str(layer_id), str(temp_files[-1])])
 
         # Add optimization pipeline
-        cmd.extend([
-            "linemerge",
-            "linesimplify",
-            "reloop",
-            "linesort",
-            "write",
-            "--page-size",
-            paper.to_vpype_page_size(),
-            "--center",
-            "--format",
-            "SVG",
-            "-",  # Write to stdout
-        ])
+        cmd.extend(
+            [
+                "linemerge",
+                "linesimplify",
+                "reloop",
+                "linesort",
+                "write",
+                "--page-size",
+                paper.to_vpype_page_size(),
+                "--center",
+                "--format",
+                "SVG",
+                "-",  # Write to stdout
+            ]
+        )
 
         result = subprocess.run(
             cmd,
@@ -152,8 +154,7 @@ def run_vpype(
 
     except FileNotFoundError as e:
         raise FileNotFoundError(
-            f"vpype executable not found at '{vpype_path}'. "
-            f"Install it with: pip install vpype"
+            f"vpype executable not found at '{vpype_path}'. Install it with: pip install vpype"
         ) from e
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else "Unknown error"

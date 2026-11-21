@@ -69,12 +69,9 @@ def info_group() -> None:
 
 
 @info_group.command(name="pens")
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 @click.option(
-    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
-)
-@click.option(
-    "--config", "-c", "config_path", type=click.Path(path_type=Path),
-    help="Config file path"
+    "--config", "-c", "config_path", type=click.Path(path_type=Path), help="Config file path"
 )
 def info_pens(fmt: str, config_path: Path | None) -> None:
     """List built-in pen presets."""
@@ -112,12 +109,9 @@ def info_pens(fmt: str, config_path: Path | None) -> None:
 
 
 @info_group.command(name="papers")
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 @click.option(
-    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
-)
-@click.option(
-    "--config", "-c", "config_path", type=click.Path(path_type=Path),
-    help="Config file path"
+    "--config", "-c", "config_path", type=click.Path(path_type=Path), help="Config file path"
 )
 def info_papers(fmt: str, config_path: Path | None) -> None:
     """List built-in paper presets."""
@@ -155,9 +149,7 @@ def info_papers(fmt: str, config_path: Path | None) -> None:
 
 
 @info_group.command(name="pfms")
-@click.option(
-    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
-)
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 def info_pfms(fmt: str) -> None:
     """List available PFMs (Pen Follower Modules)."""
     registered = list_pfms()
@@ -173,9 +165,7 @@ def info_pfms(fmt: str) -> None:
                 "name": name,
                 "settings_model": settings_model.__name__,
                 "default_settings": default_settings.model_dump(),
-                "presets": [
-                    p for p in presets if p.startswith(name) or name == "sketch_lines"
-                ],
+                "presets": [p for p in presets if p.startswith(name) or name == "sketch_lines"],
             }
         )
 
@@ -184,9 +174,7 @@ def info_pfms(fmt: str) -> None:
 
 
 @info_group.command(name="filters")
-@click.option(
-    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
-)
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 def info_filters(fmt: str) -> None:
     """List available image filters with parameters."""
     filters = list_filters()
@@ -195,9 +183,7 @@ def info_filters(fmt: str) -> None:
     filter_info = {
         "grayscale": {
             "description": "Convert to single channel",
-            "params": {
-                "method": "luminance|lightness|average|red|green|blue (default: luminance)"
-            },
+            "params": {"method": "luminance|lightness|average|red|green|blue (default: luminance)"},
         },
         "threshold": {
             "description": "Binarize image (2 levels)",
@@ -256,9 +242,7 @@ def info_filters(fmt: str) -> None:
 
 @info_group.command(name="image")
 @click.argument("image_path", type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
-)
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 def info_image(image_path: Path, fmt: str) -> None:
     """Show image details (size, mode, EXIF, DPI)."""
     try:
@@ -289,16 +273,16 @@ def info_image(image_path: Path, fmt: str) -> None:
 
 
 @info_group.command(name="config")
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 @click.option(
-    "--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table"
+    "--config", "-c", "config_path", type=click.Path(path_type=Path), help="Config file path"
 )
 @click.option(
-    "--config", "-c", "config_path", type=click.Path(path_type=Path),
-    help="Config file path"
-)
-@click.option(
-    "--project", "-p", "project_path",
-    type=click.Path(exists=True, path_type=Path), help="Project file path"
+    "--project",
+    "-p",
+    "project_path",
+    type=click.Path(exists=True, path_type=Path),
+    help="Project file path",
 )
 def info_config(fmt: str, config_path: Path | None, project_path: Path | None) -> None:
     """Show resolved configuration (config + project + defaults)."""

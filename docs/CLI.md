@@ -10,15 +10,17 @@
 
 | Option | Short | Env Var | Description |
 |--------|-------|---------|-------------|
-| `--config PATH` | `-c` | `PENPATH_CONFIG` | Config file path (default: `~/.config/penpath/config.toml`) |
+| `--config PATH` | `-c` | — | Config file path (default: `~/.config/penpath/config.toml` or `$XDG_CONFIG_HOME/penpath/config.toml`) |
 | `--project PATH` | `-p` | — | Project file (YAML) — loads all settings |
 | `--verbose` | `-v` | — | Increase log level (repeat: `-vv`, `-vvv`) |
 | `--quiet` | `-q` | — | Suppress non-error output |
-| `--no-color` | — | `NO_COLOR` | Disable colored output |
+| `--no-color` | — | `NO_COLOR` | Disable colored output (standard) |
 | `--version` | `-V` | — | Show version and exit |
 | `--help` | `-h` | — | Show help for command |
 
 **Priority**: CLI flags > Project file > Config file > Defaults
+
+**Note**: Config file location follows XDG spec: `$XDG_CONFIG_HOME/penpath/config.toml` or `~/.config/penpath/config.toml`.
 
 ---
 
@@ -83,18 +85,16 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | Name | Params | Description |
 |------|--------|-------------|
 | `grayscale` | `method=luminance\|lightness\|average\|red\|green\|blue` | Convert to single channel |
-| `threshold` | `levels=2-256`, `dither=none\|floyd-steinberg\|ordered` | Posterize to N levels |
-| `blur` | `radius=0.5-10`, `type=gaussian\|box` | Blur filter |
-| `contrast` | `factor=0.1-3.0` | Contrast adjustment |
-| `brightness` | `factor=0.1-3.0` | Brightness adjustment |
-| `gamma` | `value=0.1-3.0` | Gamma correction |
-| `invert` | (none) | Invert colors |
-| `crop` | `left,top,right,bottom` (px or %) | Crop image |
-| `resize` | `width,height` or `scale=0.1-10` | Resize image |
-| `rotate` | `angle=-180-180` | Rotate image |
-| `fit` | `mode=contain\|cover\|stretch`, `dpi=72-600` | Fit to paper (implies resize) |
+| `threshold` | `level=0-255`, `dither=none\|floyd_steinberg\|ordered` | Binarize image (2 levels) |
+| `posterize` | `levels=2-256`, `dither=none\|floyd_steinberg\|ordered` | Reduce to N tonal levels |
+| `gaussian_blur` | `radius=float>=0` | Gaussian blur |
+| `box_blur` | `radius=int>=0` | Box blur |
+| `contrast` | `factor=float>=0` | Contrast adjustment (1.0 = no change) |
+| `brightness` | `factor=float>=0` | Brightness adjustment (1.0 = no change) |
+| `gamma` | `gamma=float>0` | Gamma correction (1.0 = no change) |
+| `invert` | (none) | Invert colors (negative) |
 
-**Example**: `-f grayscale -f "threshold:levels=4,dither=floyd-steinberg" -f "blur:radius=1.5"`
+**Example**: `-f grayscale -f "threshold:level=128,dither=floyd_steinberg" -f "gaussian_blur:radius=1.5"`
 
 #### Examples
 
@@ -103,13 +103,13 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 penpath convert photo.jpg
 
 # With custom settings
-penpath convert photo.jpg -o plot.svg -f grayscale -f "threshold:levels=4" -s line_density=0.5 -s seed=42
+penpath convert photo.jpg -o plot.svg -f grayscale -f "posterize:levels=4" -s line_density=0.5 -s seed=42
 
 # Using project file
 penpath convert --project my_project.yaml
 
 # Override project settings
-penpath convert --project my_project.yaml --pen "0.5,#FF0000,rollerball" -o red_plot.svg
+penpath convert --project my_project.yaml --pen "0.5,#FF0000" -o red_plot.svg
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
@@ -175,11 +175,8 @@ penpath config [SUBCOMMAND] [OPTIONS]
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `default_paper` | string | `a4` | Paper preset for `convert` |
-| `default_pen` | string | `default` | Pen preset for `convert` |
-| `default_pfm` | string | `sketch_lines` | PFM for `convert` |
-| `vpype_path` | string | `vpype` | Path to vpype executable |
+| `default_pen` | string | `fine` | Pen preset for `convert` |
 | `output_dir` | string | `.` | Default output directory |
-| `log_level` | string | `INFO` | Default log level |
 
 #### Examples
 
@@ -187,38 +184,8 @@ penpath config [SUBCOMMAND] [OPTIONS]
 penpath config show
 penpath config init
 penpath config set default_paper a3
-penpath config get vpype_path
+penpath config get default_pen
 penpath config edit
-```
-
----
-
-### `penpath project` — Project File Helpers
-
-```bash
-penpath project [SUBCOMMAND] [OPTIONS]
-```
-
-#### Subcommands
-
-| Subcommand | Description |
-|------------|-------------|
-| `create` | Interactive wizard → writes `project.yaml` |
-| `validate PATH` | Validate project file, print resolved settings |
-| `template` | Print minimal project.yaml template |
-
-#### Options
-
-| Option | Description |
-|--------|-------------|
-| `--output PATH` | `-o` | Output path for `create`/`template` (default: `project.yaml`) |
-
-#### Examples
-
-```bash
-penpath project create -o my_project.yaml
-penpath project validate my_project.yaml
-penpath project template --output project.yaml
 ```
 
 ---
@@ -236,12 +203,11 @@ input:
 filters:
   - grayscale:
       method: luminance
-  - threshold:
+  - posterize:
       levels: 4
-      dither: floyd-steinberg
-  - blur:
+      dither: floyd_steinberg
+  - gaussian_blur:
       radius: 1.0
-      type: gaussian
 
 pfm:
   name: sketch_lines
@@ -256,18 +222,16 @@ pfm:
     seed: null
 
 pen:
-  name: default
+  name: fine
   # or inline:
   # width_mm: 0.3
   # color: "#000000"
-  # type: fineliner
 
 paper:
   name: a4
   # or inline:
   # size_mm: [210, 297]
-  # margins_mm: [10, 10, 10, 10]
-  # background: "#FFFFFF"
+  # margin_mm: 10
 
 output:
   path: "plot.svg"
@@ -291,48 +255,55 @@ output:
 ```toml
 # penpath user config
 default_paper = "a4"
-default_pen = "default"
-default_pfm = "sketch_lines"
-vpype_path = "vpype"
+default_pen = "fine"
 output_dir = "."
-log_level = "INFO"
+
+# Custom pens (optional)
+[pens.my_pen]
+width = 0.4
+color = "#000000"
+opacity = 1.0
+
+# Custom papers (optional)
+[papers.my_paper]
+width = 300.0
+height = 200.0
+margin = 15.0
 ```
 
 ---
 
 ## Pen Presets (Built-in)
 
-| Name | Width (mm) | Color | Type | Description |
-|------|------------|-------|------|-------------|
-| `default` | 0.3 | `#000000` | fineliner | General purpose |
-| `fineliner_03` | 0.3 | `#000000` | fineliner | Fine detail |
-| `fineliner_05` | 0.5 | `#000000` | fineliner | Standard |
-| `rollerball_05` | 0.5 | `#000000` | rollerball | Smooth flow |
-| `rollerball_07` | 0.7 | `#000000` | rollerball | Bold |
-| `fountain_f` | 0.4 | `#000000` | fountain | Fine nib |
-| `fountain_m` | 0.6 | `#000000` | fountain | Medium nib |
-| `marker_10` | 1.0 | `#000000` | marker | Broad strokes |
-| `red_03` | 0.3 | `#FF0000` | fineliner | Red accent |
-| `blue_03` | 0.3 | `#0000FF` | fineliner | Blue accent |
+| Name | Width (mm) | Color | Description |
+|------|------------|-------|-------------|
+| `fine` | 0.3 | Black | General purpose (default) |
+| `medium` | 0.5 | Black | Standard lines |
+| `bold` | 0.8 | Black | Bold strokes |
+| `extra_fine` | 0.2 | Black | Very fine detail |
+| `brush` | 1.0 | Black | Broad brush strokes |
+| `red_fine` | 0.3 | Red | Red accent |
+| `blue_fine` | 0.3 | Blue | Blue accent |
+| `green_fine` | 0.3 | Green | Green accent |
 
-**Inline Format**: `WIDTH,COLOR,TYPE` — e.g., `0.4,#FF6600,fountain`
+**Inline Format**: `WIDTH,COLOR` — e.g., `0.4,#FF6600` (color defaults to black if omitted)
 
 ---
 
 ## Paper Presets (Built-in)
 
-| Name | Size (mm) | Margins (mm) | Orientation |
-|------|-----------|--------------|-------------|
-| `a4` | 210 × 297 | 10 all sides | Portrait |
-| `a4_landscape` | 297 × 210 | 10 all sides | Landscape |
-| `a3` | 297 × 420 | 15 all sides | Portrait |
-| `a3_landscape` | 420 × 297 | 15 all sides | Landscape |
-| `letter` | 216 × 279 | 10 all sides | Portrait |
-| `letter_landscape` | 279 × 216 | 10 all sides | Landscape |
-| `square_200` | 200 × 200 | 10 all sides | Square |
-| `postcard` | 148 × 105 | 5 all sides | Portrait |
+| Name | Size (mm) | Margins (mm) |
+|------|-----------|--------------|
+| `a4` | 210 × 297 | 10 all sides |
+| `a3` | 297 × 420 | 10 all sides |
+| `a5` | 148 × 210 | 10 all sides |
+| `letter` | 215.9 × 279.4 | 10 all sides |
+| `legal` | 215.9 × 355.6 | 10 all sides |
+| `tabloid` | 279.4 × 431.8 | 10 all sides |
+| `square_200` | 200 × 200 | 10 all sides |
+| `square_300` | 300 × 300 | 10 all sides |
 
-**Inline Format**: `WIDTHxHEIGHT[,MARGINS]` — e.g., `210x297,10` or `300x200,15,10,15,10` (T,R,B,L)
+**Inline Format**: `WIDTHxHEIGHT[,MARGIN]` — e.g., `210x297,10` or `300x200,15`
 
 ---
 
@@ -349,12 +320,11 @@ log_level = "INFO"
 
 ## Environment Variables
 
-| Variable | Equivalent Flag | Description |
-|----------|-----------------|-------------|
-| `PENPATH_CONFIG` | `--config` | Config file path |
-| `NO_COLOR` | `--no-color` | Disable colors |
-| `EDITOR` | `config edit` | Editor for `config edit` |
-| `PENPATH_VTYPE_PATH` | `--vpype-path` | vpype executable path |
+| Variable | Description |
+|----------|-------------|
+| `NO_COLOR` | Disable colors (standard, respected by `rich`) |
+| `EDITOR` | Editor for `config edit` command |
+| `XDG_CONFIG_HOME` | Base directory for config (default: `~/.config`) |
 
 ---
 
@@ -365,19 +335,20 @@ log_level = "INFO"
 penpath convert photo.jpg
 # → photo_plot.svg
 ```
-
 ### Reproducible Art Print
+
 ```bash
 penpath convert photo.jpg -o art.svg \
-  -f grayscale -f "threshold:levels=6,dither=floyd-steinberg" \
+  -f grayscale -f "posterize:levels=6,dither=floyd_steinberg" \
   -s line_density=0.4 -s shading=true -s seed=12345 \
-  --pen fineliner_03 --paper a4
+  --pen fine --paper a4
 ```
-
 ### Project-Based Workflow
+
 ```bash
-# Create project
-penpath project create -o portrait.yaml
+# Create project file from template (copy and edit)
+cp docs/project_template.yaml portrait.yaml
+# Or create manually from the minimal example above
 # Edit portrait.yaml to taste
 penpath convert --project portrait.yaml
 # Iterate: edit YAML, re-run
@@ -389,22 +360,11 @@ for img in photos/*.jpg; do
   penpath convert "$img" -o "output/$(basename "$img" .jpg).svg" --project batch.yaml
 done
 ```
-
 ### Debug Pipeline Stages
+
 ```bash
 # See what filters do
 penpath info image photo.jpg
-penpath convert photo.jpg -f grayscale -f threshold --no-vpype -o debug.svg
+penpath convert photo.jpg -f grayscale -f posterize --no-vpype -o debug.svg
 # Inspect debug.svg in browser/Inkscape
 ```
-
----
-
-## Hidden / Debug Commands (Not in `--help`)
-
-| Command | Purpose |
-|---------|---------|
-| `penpath _dump-config` | Print full resolved config as JSON |
-| `penpath _version-json` | Machine-readable version info |
-
-*Subject to change/removal without notice.*
