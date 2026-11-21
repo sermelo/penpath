@@ -31,7 +31,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Run ruff check
         run: uv run ruff check src tests
@@ -62,7 +62,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Run mypy
         run: uv run mypy --strict src
@@ -90,7 +90,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Run unit tests with coverage
         run: uv run pytest tests/unit -xvs --cov=penpath --cov-fail-under=75 --cov-report=term-missing
@@ -119,7 +119,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Install vpype
         run: pip install vpype
@@ -151,7 +151,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Build wheel
         run: uv build --wheel
@@ -207,7 +207,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Run tests with coverage XML
         run: uv run pytest tests/unit --cov=penpath --cov-report=xml --cov-report=term-missing
