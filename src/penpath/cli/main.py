@@ -4,6 +4,8 @@ import click
 
 from penpath import __version__
 from penpath.cli.commands.config_cmd import config_group
+from penpath.cli.commands.convert import convert_cmd
+from penpath.cli.commands.info import info_group
 
 
 @click.group(
@@ -19,6 +21,8 @@ def main(ctx: click.Context) -> None:
 
 
 main.add_command(config_group)
+main.add_command(convert_cmd)
+main.add_command(info_group)
 
 
 if __name__ == "__main__":
