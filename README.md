@@ -1,6 +1,6 @@
 # penpath
 
-**Photo to plottable SVG CLI** — Turn photos into beautiful, optimized pen plotter paths using the Sketch Lines algorithm.
+Free software that takes you from an image to a finished pen plot: simple by default, customizable when needed. Use it as a Python library, from the command line, or through AI agents.
 
 [![Python versions](https://img.shields.io/pypi/pyversions/penpath.svg)](https://pypi.org/project/penpath/)
 [![License](https://img.shields.io/pypi/l/penpath.svg)](LICENSE)
