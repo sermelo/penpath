@@ -44,6 +44,11 @@ from penpath.core.project import (
     load_yaml,
     save_yaml,
 )
+from penpath.core.simulation import (
+    PenStroke,
+    compute_machine_cost,
+    simulate_plot,
+)
 
 # Rebuild Pydantic models that have forward references
 # FilterPipeline is imported above, so ImageRef can now be fully resolved
@@ -63,6 +68,7 @@ __all__ = [
     "PFMSettingsUnion",
     "Paper",
     "Pen",
+    "PenStroke",
     "Project",
     "ProjectLoadError",
     "ProjectSaveError",
@@ -70,6 +76,7 @@ __all__ = [
     "UnsupportedFormatError",
     "box_blur",
     "brightness",
+    "compute_machine_cost",
     "contrast",
     "gamma",
     "gaussian_blur",
@@ -86,5 +93,6 @@ __all__ = [
     "save_yaml",
     "simplify",
     "simplify_line",
+    "simulate_plot",
     "threshold",
 ]
