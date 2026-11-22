@@ -33,6 +33,7 @@ dependencies = [
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
     "tomli-w>=1,<2",
+    "vpype[test]>=1.15.0",
 ]
 [project.optional-dependencies]
 dev = [
@@ -99,4 +100,5 @@ addopts = "-vs --strict-markers"
 [dependency-groups]
 dev = [
     "types-shapely>=2.2.0.20261117",
+    "types-PyYAML>=6.0.12",
 ]

@@ -74,14 +74,14 @@ def load_image(path: str | Path) -> Image.Image:
                     f"Supported formats: {', '.join(sorted(SUPPORTED_FORMATS))}"
                 )
 
-            img = _apply_exif_orientation(img)  # type: ignore[assignment]
+            img = _apply_exif_orientation(img)
 
             if img.mode not in ("RGB", "RGBA", "L", "LA"):
-                img = img.convert("RGB")  # type: ignore[assignment]
+                img = img.convert("RGB")
             elif img.mode in ("RGBA", "LA"):
                 pass
             else:
-                img = img.convert("RGB")  # type: ignore[assignment]
+                img = img.convert("RGB")
 
             return img.copy()
 
