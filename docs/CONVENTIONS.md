@@ -159,31 +159,7 @@ tests/
 
 ## Git & PR Conventions
 
-### Branch Names
-- `feature/<short-desc>` — new capability
-- `fix/<short-desc>` — bug fix
-- `docs/<short-desc>` — documentation only
-- `refactor/<short-desc>` — no behavior change
-- `chore/<short-desc>` — tooling, deps, CI
-
-### Commit Messages
-```
-<type>(<scope>): <imperative summary>
-
-<body if needed>
-
-Fixes #<issue>
-```
-
-Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
-
-### PR Requirements
-- All CI checks pass
-- `mypy --strict` clean
-- `ruff check` clean
-- Tests added/updated for changes
-- `CHANGELOG.md` entry (Keep a Changelog format)
-- Review by at least one other engineer
+See "Git and pull requests" in AGENTS.md.
 
 ---
 
@@ -259,7 +235,6 @@ build-backend = "hatchling.build"
 - **Scheme**: SemVer (MAJOR.MINOR.PATCH)
 - **Pre-1.0**: Minor = breaking, Patch = fix/feature
 - **Release**: Git tag `vX.Y.Z` → GitHub Action builds wheel → PyPI trusted publishing
-- **Changelog**: `CHANGELOG.md` (Keep a Changelog), updated in PR
 
 ---
 
