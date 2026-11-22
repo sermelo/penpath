@@ -214,4 +214,3 @@ __all__ = [
     "compute_machine_cost",
     "simulate_plot",
 ]
-invalid syntax here
