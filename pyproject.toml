@@ -30,6 +30,7 @@ dependencies = [
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
     "tomli-w>=1,<2",
+    "scikit-image>=0.24,<1",
 ]
 [project.optional-dependencies]
 dev = [
