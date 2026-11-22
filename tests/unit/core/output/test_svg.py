@@ -9,7 +9,13 @@ import pytest
 from shapely import LineString
 
 from penpath.core.models import Paper, Pen
-from penpath.core.output.svg import export_svg
+from penpath.core.output.svg import (
+    PENPATH_NAMESPACE,
+    ImagePlacement,
+    add_placement_metadata,
+    export_svg,
+    fit_image_placement,
+)
 
 
 class TestExportSvg:
@@ -260,6 +266,112 @@ class TestExportSvg:
         layer_ids = [g.get("id") for g in groups if g.get("id")]
         assert "background" in layer_ids
         assert "pen-fine" in layer_ids
+
+
+class TestPlacementMetadata:
+    """Tests for image-placement metadata written by SVG export."""
+
+    def test_export_svg_writes_placement_metadata(self, tmp_path: Path) -> None:
+        """A placement is written as a namespaced metadata element."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pen = Pen(name="fine", width_mm=0.3)
+        placement = ImagePlacement(10.0, 20.0, 190.0, 100.0)
+        output_path = tmp_path / "placed.svg"
+
+        export_svg(
+            [LineString([(0, 0), (100, 100)])],
+            paper,
+            [pen],
+            output_path,
+            image_size_px=(100, 100),
+            image_placement=placement,
+        )
+
+        root = ET.parse(output_path).getroot()
+        metadata = root.find(f".//{{{PENPATH_NAMESPACE}}}image-placement")
+        assert metadata is not None
+        assert metadata.attrib == {
+            "x": "10.0000",
+            "y": "20.0000",
+            "width": "190.0000",
+            "height": "100.0000",
+        }
+        assert ET.parse(output_path).getroot().tag.endswith("svg")
+
+    def test_export_svg_without_placement_writes_no_metadata(self, tmp_path: Path) -> None:
+        """Existing exports stay unchanged when no placement is supplied."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pen = Pen(name="fine", width_mm=0.3)
+        output_path = tmp_path / "plain.svg"
+
+        export_svg([LineString([(0, 0), (100, 100)])], paper, [pen], output_path)
+
+        content = output_path.read_text()
+        assert "image-placement" not in content
+        assert "<metadata>" not in content
+
+    def test_export_svg_maps_geometries_into_placement(self, tmp_path: Path) -> None:
+        """Stroke coordinates follow the placement rectangle, in SVG units."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+        placement = ImagePlacement(10.0, 20.0, 50.0, 25.0)
+        output_path = tmp_path / "placed.svg"
+
+        export_svg(
+            [LineString([(0, 0), (100, 50)])],
+            paper,
+            [pen],
+            output_path,
+            image_size_px=(100, 50),
+            image_placement=placement,
+        )
+
+        root = ET.parse(output_path).getroot()
+        paths = [element for element in root.iter() if element.tag.endswith("}path")]
+        assert len(paths) == 1
+        path_data = paths[0].attrib["d"]
+        assert "M 37.795 75.591" in path_data
+        assert "L 226.772 170.079" in path_data
+
+    def test_export_svg_placement_requires_image_size(self, tmp_path: Path) -> None:
+        """Placement without the original image size cannot be applied."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+
+        with pytest.raises(ValueError, match="image_size_px is required"):
+            export_svg(
+                [LineString([(0, 0), (100, 50)])],
+                paper,
+                [pen],
+                tmp_path / "bad.svg",
+                image_placement=ImagePlacement(0, 0, 100, 50),
+            )
+
+    def test_add_placement_metadata_is_idempotent(self, tmp_path: Path) -> None:
+        """Repeatedly adding placement metadata does not duplicate it."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+        output_path = tmp_path / "plain.svg"
+        export_svg([LineString([(0, 0), (100, 50)])], paper, [pen], output_path)
+
+        add_placement_metadata(output_path, (5.0, 5.0, 90.0, 45.0))
+        add_placement_metadata(output_path, (7.0, 8.0, 80.0, 40.0))
+
+        content = output_path.read_text()
+        assert content.count("image-placement") == 1
+        root = ET.parse(output_path).getroot()
+        metadata = root.find(f".//{{{PENPATH_NAMESPACE}}}image-placement")
+        assert metadata is not None
+        assert metadata.attrib["x"] == "7.0000"
+
+    def test_fit_image_placement_preserves_aspect_ratio(self) -> None:
+        """Image fitting keeps the aspect ratio and centers the image."""
+        placement = fit_image_placement((100, 50), 80.0, 80.0, image_dpi=300)
+
+        assert placement.width == pytest.approx(80.0)
+        assert placement.height == pytest.approx(40.0)
+        assert placement.x == pytest.approx(0.0)
+        assert placement.y == pytest.approx(20.0)
 
 
 if __name__ == "__main__":
