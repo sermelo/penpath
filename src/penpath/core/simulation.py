@@ -214,3 +214,4 @@ __all__ = [
     "compute_machine_cost",
     "simulate_plot",
 ]
+unused_var = 42
