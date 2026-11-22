@@ -15,7 +15,7 @@
 | Formatter | `ruff format` | 100-char line length |
 | Linter | `ruff check` | All rules enabled except `D` (docstrings) |
 | Type Checker | `mypy --strict` | No `ignore_errors`, no `Any` without comment |
-| Test Runner | `pytest` | `pytest -xvs` for dev, `pytest --cov` for CI |
+| Test Runner | `pytest` | `pytest -vs` for dev, `pytest --cov` for CI |
 | Pre-commit | `pre-commit` | `ruff format`, `ruff check`, `mypy`, `pytest` |
 
 **CI Matrix**: Python 3.14 on Ubuntu latest
@@ -245,7 +245,7 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-xvs --strict-markers"
+addopts = "-vs --strict-markers"
 
 [build-system]
 requires = ["hatchling"]

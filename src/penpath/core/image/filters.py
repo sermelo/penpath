@@ -31,21 +31,21 @@ def _grayscale_luminance(rgb: Image.Image) -> Image.Image:
     """Convert RGB to grayscale using ITU-R BT.601 luminance formula."""
     arr = np.array(rgb, dtype=np.float32)
     gray = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
-    return Image.fromarray(gray.astype(np.uint8), mode="L")
+    return Image.fromarray(gray.astype(np.uint8))
 
 
 def _grayscale_lightness(rgb: Image.Image) -> Image.Image:
     """Convert RGB to grayscale using lightness (max+min)/2."""
     arr = np.array(rgb, dtype=np.float32)
     gray = (np.max(arr, axis=2) + np.min(arr, axis=2)) / 2
-    return Image.fromarray(gray.astype(np.uint8), mode="L")
+    return Image.fromarray(gray.astype(np.uint8))
 
 
 def _grayscale_average(rgb: Image.Image) -> Image.Image:
     """Convert RGB to grayscale using simple average."""
     arr = np.array(rgb, dtype=np.float32)
     gray = np.mean(arr, axis=2)
-    return Image.fromarray(gray.astype(np.uint8), mode="L")
+    return Image.fromarray(gray.astype(np.uint8))
 
 
 def grayscale(
@@ -153,7 +153,7 @@ def _floyd_steinberg_dither(image: Image.Image, level: int) -> Image.Image:
                 if x + 1 < w:
                     arr[y + 1, x + 1] += error * 1 / 16
 
-    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode="L")
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
 
 
 _BAYER_8x8 = np.array(
@@ -180,7 +180,7 @@ def _ordered_dither(image: Image.Image, level: int) -> Image.Image:
     threshold_vals = level + (threshold_map.astype(np.int16) - 128)
 
     result = np.where(arr >= threshold_vals, 255, 0).astype(np.uint8)
-    return Image.fromarray(result, mode="L")
+    return Image.fromarray(result)
 
 
 def posterize(
@@ -242,14 +242,14 @@ def posterize(
                     if x + 1 < w:
                         arr[y + 1, x + 1] += error * 1 / 16
 
-        return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode="L")
+        return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
 
     if dither == DitherMethod.ORDERED:
         threshold_map = np.tile(_BAYER_8x8, ((h + 7) // 8, (w + 7) // 8))[:h, :w]
         dither_vals = (threshold_map.astype(np.float32) - 128) * (step / 256)
         quantized = np.round((arr + dither_vals) / step) * step
         quantized = np.clip(quantized, 0, 255).astype(np.uint8)
-        return Image.fromarray(quantized, mode="L")
+        return Image.fromarray(quantized)
 
     return image.point(lambda x: min((x // step) * step + step // 2, 255))
 
