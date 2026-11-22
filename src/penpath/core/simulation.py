@@ -195,8 +195,8 @@ def simulate_plot(
         # Convert polyline from mm to pixels
         coords_px = [(x * dpi_px_per_mm, y * dpi_px_per_mm) for x, y in stroke.polyline]
 
-        # Convert stroke width from mm to pixels
-        stroke_width_px = max(1, stroke.width_mm * dpi_px_per_mm)
+        # Convert stroke width from mm to pixels (PIL requires integer width)
+        stroke_width_px = max(1, round(stroke.width_mm * dpi_px_per_mm))
 
         # Draw the polyline as connected line segments
         draw.line(
@@ -214,3 +214,4 @@ __all__ = [
     "compute_machine_cost",
     "simulate_plot",
 ]
+invalid syntax here

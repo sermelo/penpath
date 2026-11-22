@@ -232,9 +232,9 @@ class TestComputeMachineCost:
         result = compute_machine_cost(strokes, short_segment_threshold_mm=0.2)
         assert result["total"]["num_short_segments"] == 0
 
-        # Threshold 1.0: both segments are short
+        # Threshold 1.0: first segment (0.3mm) is short, second (1.0mm) is not (< threshold)
         result = compute_machine_cost(strokes, short_segment_threshold_mm=1.0)
-        assert result["total"]["num_short_segments"] == 2
+        assert result["total"]["num_short_segments"] == 1
 
     def test_compute_machine_cost_diagonal_stroke(self):
         """Diagonal stroke length should use Euclidean distance."""
