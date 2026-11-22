@@ -33,7 +33,6 @@ dependencies = [
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
     "tomli-w>=1,<2",
-    "vpype[test]>=1.15.0",
 ]
 [project.optional-dependencies]
 dev = [
@@ -45,6 +44,9 @@ dev = [
     "hatch",
 ]
 test = [
+    "vpype>=1.15",
+]
+vpype = [
     "vpype>=1.15",
 ]
 docs = [

@@ -1087,7 +1087,6 @@ dependencies = [
     { name = "svgwrite" },
     { name = "tomli-w" },
     { name = "typer" },
-    { name = "vpype" },
 ]
 
 [package.optional-dependencies]
@@ -1104,6 +1103,9 @@ docs = [
     { name = "mkdocs-material" },
 ]
 test = [
+    { name = "vpype" },
+]
+vpype = [
     { name = "vpype" },
 ]
 
@@ -1135,9 +1137,9 @@ requires-dist = [
     { name = "tomli-w", specifier = ">=1,<2" },
     { name = "typer", specifier = ">=0.12,<1" },
     { name = "vpype", marker = "extra == 'test'", specifier = ">=1.15" },
-    { name = "vpype", extras = ["test"], specifier = ">=1.15.0" },
+    { name = "vpype", marker = "extra == 'vpype'", specifier = ">=1.15" },
 ]
-provides-extras = ["dev", "test", "docs"]
+provides-extras = ["dev", "test", "vpype", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
