@@ -364,6 +364,14 @@ class TestPlacementMetadata:
         assert metadata is not None
         assert metadata.attrib["x"] == "7.0000"
 
+    def test_add_placement_metadata_without_closing_tag_raises(self, tmp_path: Path) -> None:
+        """A non-SVG file is rejected with a clear error."""
+        svg_path = tmp_path / "truncated.svg"
+        svg_path.write_text('<svg width="100mm">')
+
+        with pytest.raises(ValueError, match="No closing </svg> tag found"):
+            add_placement_metadata(svg_path, (5.0, 5.0, 90.0, 45.0))
+
     def test_fit_image_placement_preserves_aspect_ratio(self) -> None:
         """Image fitting keeps the aspect ratio and centers the image."""
         placement = fit_image_placement((100, 50), 80.0, 80.0, image_dpi=300)

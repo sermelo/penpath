@@ -138,3 +138,40 @@ class TestSvgPlacementIntegration:
 
         assert result.returncode == 0, result.stderr
         assert "Stats" in result.stdout
+
+    def test_convert_with_vpype_writes_placement_metadata(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The default vpype export also carries readable placement metadata."""
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        image_path = tmp_path / "input.png"
+        image_size = _make_test_image(image_path)
+        output_path = tmp_path / "vpype_plot.svg"
+
+        result = CliRunner().invoke(
+            main,
+            [
+                "convert",
+                str(image_path),
+                "-o",
+                str(output_path),
+                "--pfm-setting",
+                "line_density=2.0",
+                "--pfm-setting",
+                "seed=42",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "image-placement" in output_path.read_text()
+        placement = get_image_placement(output_path, image_size)
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        expected = fit_image_placement(
+            image_size,
+            paper.drawable_width_mm,
+            paper.drawable_height_mm,
+            offset_x_mm=paper.margin_mm,
+            offset_y_mm=paper.margin_mm,
+        )
+        assert placement == pytest.approx(expected, abs=0.1)
+        assert parse_svg_strokes(output_path)

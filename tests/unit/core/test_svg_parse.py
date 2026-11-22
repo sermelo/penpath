@@ -85,6 +85,21 @@ class TestGetImagePlacement:
 
         assert get_image_placement(svg_path, (100, 50)) == ImagePlacement(5, 10, 30, 20)
 
+    def test_get_image_placement_malformed_metadata_falls_back(self, tmp_path: Path) -> None:
+        """A broken placement element is ignored in favour of the page fit."""
+        svg_path = tmp_path / "badmeta.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:penpath="http://penpath.org/ns/penpath" '
+            'width="100mm" height="80mm" viewBox="0 0 100 80">'
+            '<metadata><penpath:image-placement x="oops"/></metadata>'
+            "</svg>"
+        )
+
+        assert get_image_placement(svg_path, (100, 100)) == pytest.approx(
+            ImagePlacement(10.0, 0.0, 80.0, 80.0)
+        )
+
     def test_get_image_placement_invalid_image_size_raises(self, tmp_path: Path) -> None:
         """A zero-sized image cannot be fitted to the page."""
         svg_path = tmp_path / "plain.svg"
@@ -186,6 +201,11 @@ class TestParseSvgStrokes:
         )
 
         assert parse_svg_strokes(svg_path) == []
+
+    def test_parse_svg_strokes_missing_file_raises(self, tmp_path: Path) -> None:
+        """A missing SVG file is reported as a file error."""
+        with pytest.raises(FileNotFoundError):
+            parse_svg_strokes(tmp_path / "missing.svg")
 
 
 class TestPlacementConsistency:
