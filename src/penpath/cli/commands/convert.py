@@ -25,7 +25,7 @@ from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM
-from penpath.core.output.svg import export_svg
+from penpath.core.output.svg import add_placement_metadata, export_svg, fit_image_placement
 from penpath.core.output.vpype import run_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
 from penpath.presets.papers import get_paper
@@ -275,6 +275,15 @@ def _run_convert_pipeline(
     # Step 1: Load image
     progress.update(task_id, description="Loading image...", advance=10)
     image = load_image(project.image.path)
+    image_size_px = image.size
+    image_placement = fit_image_placement(
+        image_size_px=image_size_px,
+        area_width_mm=project.paper.drawable_width_mm,
+        area_height_mm=project.paper.drawable_height_mm,
+        image_dpi=project.image.dpi,
+        offset_x_mm=project.paper.margin_mm,
+        offset_y_mm=project.paper.margin_mm,
+    )
 
     # Step 2: Apply filters
     progress.update(task_id, description="Applying filters...", advance=15)
@@ -306,6 +315,7 @@ def _run_convert_pipeline(
         try:
             svg_bytes = run_vpype(optimized_lines, project.paper, [project.pen], vpype_path)
             project.output_path.write_bytes(svg_bytes)
+            add_placement_metadata(project.output_path, image_placement)
         except FileNotFoundError:
             console.print("[yellow]vpype not found, falling back to direct SVG export[/yellow]")
             export_svg(
@@ -314,6 +324,8 @@ def _run_convert_pipeline(
                 [project.pen],
                 project.output_path,
                 project.image.dpi,
+                image_placement,
+                image_size_px,
             )
     else:
         export_svg(
@@ -322,6 +334,8 @@ def _run_convert_pipeline(
             [project.pen],
             project.output_path,
             project.image.dpi,
+            image_placement,
+            image_size_px,
         )
 
     progress.update(task_id, description="Done!", advance=10)

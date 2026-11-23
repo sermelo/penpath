@@ -65,6 +65,19 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--vpype-path PATH` | — | `vpype` | Path to vpype executable |
 | `--layer-per-pen` / `--single-layer` | — | `layer-per-pen` | SVG layer structure |
 
+The SVG records where the source image was placed on the page, in millimetres:
+
+```xml
+<metadata>
+  <penpath:image-placement x="10.0000" y="20.0000" width="190.0000" height="160.0000"/>
+</metadata>
+```
+
+`penpath.core.svg_parse.get_image_placement(svg_path, image_size_px)` reads this
+rectangle; for SVGs without it, the image is fitted to the page keeping its
+aspect ratio and centered. `penpath.core.svg_parse.parse_svg_strokes(svg_path)`
+returns the plotted strokes as `PenStroke` objects in millimetres.
+
 #### PFM Settings (Sketch Lines)
 
 | Key | Type | Default | Description |
@@ -113,6 +126,96 @@ penpath convert --project my_project.yaml --pen "0.5,#FF0000" -o red_plot.svg
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
+```
+
+---
+
+### `penpath preview` — Simulate a plot as an image
+
+Render an SVG's pen strokes with the core plot simulator, so you can check how
+the finished plot will look before plotting.
+
+```bash
+penpath preview DRAWING_SVG -o OUTPUT [OPTIONS]
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `DRAWING_SVG` | SVG to preview (penpath SVG or plain stroke SVG) |
+
+#### Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--output PATH` | `-o` | — | Output image path (required, PNG) |
+| `--dpi FLOAT` | — | `10.0` | Resolution in **pixels per millimetre** |
+| `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour (hex or named CSS colour) |
+| `--layer LABEL` | — | all | Only preview this pen layer (layer label or id) |
+
+The page size is read from the SVG (`width`/`height` or `viewBox`); SVGs without
+one fall back to A4. All progress messages go to stderr, so stdout stays clean.
+
+#### Examples
+
+```bash
+penpath preview plot.svg -o preview.png
+penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
+penpath preview plot.svg -o fine.png --layer "Pen: fine"
+```
+
+---
+
+### `penpath evaluate` — Score likeness and machine cost
+
+Simulate the SVG at the chosen resolution, crop it to the recorded image
+placement, and compare it with the original using SSIM. Also reports machine
+cost (drawing length, pen-up travel, pen lifts, short segments and stroke
+count) per pen layer and in total.
+
+```bash
+penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `IMAGE` | Original source image |
+| `DRAWING_SVG` | SVG to evaluate (penpath SVG or plain stroke SVG) |
+
+#### Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--json` | — | `false` | Print only JSON on stdout (for scripts/agents) |
+| `--dpi FLOAT` | — | `96/25.4` | Resolution in **pixels per millimetre**, shared by simulation and likeness |
+| `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour |
+| `--layer LABEL` | — | all | Only evaluate this pen layer |
+
+For SVGs without placement metadata, the image is fitted to the page keeping
+its aspect ratio and centered — the same fallback used by
+`penpath.core.svg_parse.get_image_placement`.
+
+With `--json`, stdout contains only a single object (safe to pipe to `jq`):
+
+```json
+{
+  "likeness": 0.82,
+  "machine_cost": {
+    "per_layer": {"#000000": {"drawing_length_mm": 123.4}},
+    "total": {"drawing_length_mm": 123.4}
+  }
+}
+```
+
+#### Examples
+
+```bash
+penpath evaluate photo.jpg plot.svg
+penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
+penpath evaluate photo.jpg plot.svg --dpi 5 --layer "Pen: fine"
 ```
 
 ---

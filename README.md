@@ -70,6 +70,8 @@ penpath works without vpype but output will be less optimized.
 | Command | Purpose |
 |---------|---------|
 | `penpath convert` | Photo → SVG (main command) |
+| `penpath preview` | Simulate an SVG and save a preview image |
+| `penpath evaluate` | Score an SVG's likeness to the original image and its machine cost |
 | `penpath info` | List presets, show image details, inspect config |
 | `penpath config` | Manage user configuration (~/.config/penpath/config.toml) |
 
@@ -97,6 +99,13 @@ penpath convert photo.jpg --pen fineliner_03 --paper a4
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
+
+# Preview the simulated plot as an image
+penpath preview plot.svg -o preview.png --dpi 10
+
+# Evaluate likeness and machine cost (JSON for scripts)
+penpath evaluate photo.jpg plot.svg
+penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 ```
 
 ---
@@ -212,6 +221,18 @@ penpath info image photo.jpg
 # See filter effects without vpype optimization
 penpath convert photo.jpg -f grayscale -f threshold --no-vpype -o debug.svg
 # Open debug.svg in browser/Inkscape to inspect lines
+```
+
+### Check the Plot Before Printing
+
+```bash
+penpath convert photo.jpg -o plot.svg
+# Render a preview at 10 px/mm on cream paper
+penpath preview plot.svg -o preview.png --dpi 10 --paper-color "#FFFDD0"
+# Check likeness against the original (SSIM + machine cost)
+penpath evaluate photo.jpg plot.svg
+# Machine-readable output for scripts and agents
+penpath evaluate photo.jpg plot.svg --json | jq '{likeness, total: .machine_cost.total}'
 ```
 
 ### Reproducible Results
