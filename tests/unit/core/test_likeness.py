@@ -9,6 +9,15 @@ from PIL import Image, ImageDraw
 from penpath.core.likeness import compute_likeness, prepare_for_comparison
 
 
+def test_public_api_exports():
+    """Test that likeness functions are available via the public penpath.core API."""
+    from penpath.core import compute_likeness as public_compute_likeness
+    from penpath.core import prepare_for_comparison as public_prepare_for_comparison
+
+    assert public_compute_likeness is compute_likeness
+    assert public_prepare_for_comparison is prepare_for_comparison
+
+
 class TestPrepareForComparison:
     """Tests for prepare_for_comparison function."""
 
@@ -114,14 +123,13 @@ class TestComputeLikeness:
 
         return img
 
-    def create_circle_image(self, size: int = 200) -> Image.Image:
-        """Create a circle image."""
+    def create_bar_image(self, size: int = 200) -> Image.Image:
+        """Create a horizontal bar, clearly distinct from a square."""
         img = Image.new("L", (size, size), color=0)
         from PIL import ImageDraw
 
         draw = ImageDraw.Draw(img)
-        margin = size // 4
-        draw.ellipse([margin, margin, size - margin, size - margin], fill=255)
+        draw.rectangle([0, 0, size, size // 5], fill=255)
         return img
 
     def test_identical_images_score_high(self):
@@ -136,7 +144,7 @@ class TestComputeLikeness:
         assert score > 0.95
 
     def test_matching_drawing_scores_high(self):
-        """Test that hatched square vs solid square scores reasonably high."""
+        """Test that hatched square vs solid square scores high."""
         solid = self.create_square_image()
         hatched = self.create_hatched_square_image()
 
@@ -144,8 +152,8 @@ class TestComputeLikeness:
 
         score = compute_likeness(hatched, solid, placement_rect, dpi=300)
 
-        # Hatched version of same shape should score moderately high
-        assert score > 0.5
+        # Matches docs/TESTING.md acceptance threshold for a matching drawing
+        assert score > 0.7
 
     def test_empty_drawing_scores_low(self):
         """Test that empty (black) drawing vs solid white image scores low."""
@@ -159,25 +167,26 @@ class TestComputeLikeness:
         assert score < 0.3
 
     def test_different_shape_scores_lower(self):
-        """Test that hatched square vs circle scores lower than hatched square vs square."""
+        """Test that a clearly different shape scores lower than a matching one."""
         square = self.create_square_image()
-        circle = self.create_circle_image()
+        bar = self.create_bar_image()
         hatched_square = self.create_hatched_square_image()
 
         placement_rect = (0.0, 0.0, 16.93, 16.93)
 
         score_hatched_vs_square = compute_likeness(hatched_square, square, placement_rect, dpi=300)
-        score_hatched_vs_circle = compute_likeness(hatched_square, circle, placement_rect, dpi=300)
+        score_hatched_vs_bar = compute_likeness(hatched_square, bar, placement_rect, dpi=300)
 
-        # Hatched square should match square better than circle
-        assert score_hatched_vs_square > score_hatched_vs_circle
+        # A different shape should score clearly lower, not just marginally lower
+        assert score_hatched_vs_square > score_hatched_vs_bar + 0.1
 
     def test_score_ordering_not_exact_values(self):
         """Test that relative ordering is correct, not exact values."""
         solid_square = self.create_square_image()
         hatched_square = self.create_hatched_square_image()
-        circle = self.create_circle_image()
+        bar = self.create_bar_image()
         empty = Image.new("L", (200, 200), color=0)
+        white = Image.new("L", (200, 200), color=255)
 
         placement_rect = (0.0, 0.0, 16.93, 16.93)
 
@@ -186,14 +195,14 @@ class TestComputeLikeness:
             "hatched_vs_square": compute_likeness(
                 hatched_square, solid_square, placement_rect, dpi=300
             ),
-            "hatched_vs_circle": compute_likeness(hatched_square, circle, placement_rect, dpi=300),
-            "empty_vs_square": compute_likeness(empty, solid_square, placement_rect, dpi=300),
+            "hatched_vs_bar": compute_likeness(hatched_square, bar, placement_rect, dpi=300),
+            "empty_vs_white": compute_likeness(empty, white, placement_rect, dpi=300),
         }
 
-        # Ordering: identical > hatched_vs_square > hatched_vs_circle > empty_vs_square
+        # Ordering: identical > hatched_vs_square > hatched_vs_bar > empty_vs_white
         assert scores["identical"] > scores["hatched_vs_square"]
-        assert scores["hatched_vs_square"] > scores["hatched_vs_circle"]
-        assert scores["hatched_vs_circle"] > scores["empty_vs_square"]
+        assert scores["hatched_vs_square"] > scores["hatched_vs_bar"]
+        assert scores["hatched_vs_bar"] > scores["empty_vs_white"]
 
     def test_placement_rect_cropping(self):
         """Test that placement_rect correctly crops the simulated image."""
