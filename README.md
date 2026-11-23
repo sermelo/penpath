@@ -30,8 +30,11 @@ That's it! You now have a plottable SVG optimized for pen plotting.
 ### From PyPI (recommended)
 
 ```bash
-pip install penpath
+pip install "penpath[vpype]"
 ```
+
+The `vpype` extra is optional: `pip install penpath` installs the core with no
+vpype dependency.
 
 ### From source (development)
 
@@ -41,15 +44,22 @@ cd penpath
 uv sync --extra dev  # or: pip install -e ".[dev]"
 ```
 
-### External dependency: `vpype`
+### Optional: `vpype`
 
-For best results (line merging, sorting, optimization), install [vpype](https://vpype.readthedocs.io/):
+For best results (line merging, sorting, optimization), install the `vpype`
+extra, which pulls in [vpype](https://vpype.readthedocs.io/):
 
 ```bash
-pip install vpype
+pip install "penpath[vpype]"
 ```
 
-penpath works without vpype but output will be less optimized.
+Installing vpype directly with `pip install vpype` works too; the `test` extra
+also pulls it in. Without vpype, penpath prints
+`vpype not found, falling back to direct SVG export (install it with: pip install "penpath[vpype]")`
+and writes the SVG directly. Penpath's own simplify → merge → sort still runs,
+but vpype's extra `linemerge → linesimplify → reloop → linesort` pass and its SVG
+writer do not, so the output is less optimized. Use `--no-vpype` to skip vpype
+on purpose.
 
 ---
 
@@ -85,7 +95,8 @@ See [docs/CLI.md](docs/CLI.md) for complete reference.
 # Simple conversion with defaults
 penpath convert input.jpg
 
-# Custom output path
+# Custom output path (positional argument or -o/--output; give only one)
+penpath convert input.jpg output.svg
 penpath convert input.jpg -o output.svg
 
 # Apply image filters before drawing
@@ -366,7 +377,7 @@ Output SVG (layers per pen, viewBox from paper)
 ## Requirements
 
 - Python ≥ 3.14
-- `vpype` (optional, for best output) — `pip install vpype`
+- `vpype` (optional, for best output) — `pip install "penpath[vpype]"`
 - System dependencies for `shapely` (GEOS) — usually via wheels
 
 ---

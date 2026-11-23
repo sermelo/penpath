@@ -39,7 +39,7 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | Argument | Description |
 |----------|-------------|
 | `INPUT_PATH` | Path to input image (PNG, JPG, TIFF, BMP) |
-| `OUTPUT_PATH` | Output SVG path (default: `<input>_plot.svg` beside input) |
+| `OUTPUT_PATH` | Output SVG path (optional; default: `<input>_plot.svg` beside input). Equivalent to `-o/--output`. |
 
 #### Image Options
 
@@ -61,9 +61,29 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
+| `--output PATH` | `-o` | — | Output SVG path, equivalent to the `OUTPUT_PATH` argument |
 | `--no-vpype` | — | `false` | Skip vpype optimization (use direct SVG export) |
 | `--vpype-path PATH` | — | `vpype` | Path to vpype executable |
 | `--layer-per-pen` / `--single-layer` | — | `layer-per-pen` | SVG layer structure |
+
+`OUTPUT_PATH` and `-o/--output` are two ways to name the same output file. Give
+either one; if both are given and the paths differ, `penpath convert` exits 2 with
+a usage error naming both paths. Giving the same path both ways is fine. An output
+given on the command line also overrides `output.path` in a `--project` file.
+
+#### Optional: vpype
+
+The `vpype` extra is installed with:
+
+```bash
+pip install "penpath[vpype]"
+```
+
+Installing plain `pip install vpype` works too. Without vpype, the run prints
+`vpype not found, falling back to direct SVG export (install it with: pip install "penpath[vpype]")`
+and exports the SVG directly: penpath's own simplify → merge → sort still runs,
+but vpype's extra `linemerge → linesimplify → reloop → linesort` pass and its SVG
+writer do not. Use `--no-vpype` to skip vpype on purpose.
 
 The SVG records where the source image was placed on the page, in millimetres:
 
@@ -114,6 +134,9 @@ returns the plotted strokes as `PenStroke` objects in millimetres.
 ```bash
 # Basic usage
 penpath convert photo.jpg
+
+# Name the output as a positional argument (or with -o: penpath convert photo.jpg -o plot.svg)
+penpath convert photo.jpg plot.svg
 
 # With custom settings
 penpath convert photo.jpg -o plot.svg -f grayscale -f "posterize:levels=4" -s line_density=0.5 -s seed=42
