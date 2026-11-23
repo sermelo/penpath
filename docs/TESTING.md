@@ -123,6 +123,139 @@
 - **Rationale**: SSIM correlates well with human perception of structural similarity. The downscale to 256×256 makes scoring fast and resolution-independent. Blur sigma of 1.5 (at 256px) smooths pen stroke texture while preserving overall form, so a well-hatched drawing scores high even if individual strokes don't perfectly match pixel positions.
 - **Acceptance**: Matching drawing (hatched square vs square image) scores >0.7; empty drawing scores <0.3; different shape scores clearly lower. Ordering of scores is tested, not exact values.
 
+## Sketch Lines likeness gate (LUC-47)
+
+This is a written yardstick for the Sketch Lines fix in part 2. It changes no
+algorithm and no default; it only records what "resembles the photo" will mean
+when measured. The gate is allowed to fail on `main` today.
+
+Reproduce the numbers with:
+
+```bash
+uv run pytest tests/integration/test_sketch_lines_gate.py -s
+```
+
+The harness (`tests/integration/sketch_lines_gate.py`) runs the default
+`penpath convert` pipeline for all five images in
+`tests/fixtures/images/reference/` with seed 42, reads the recorded placement
+rectangle from the SVG, parses the strokes and simulates the plot the same way
+`penpath evaluate` does. It uses A4 paper (10 mm margin), the default 0.3 mm
+black pen, and 96/25.4 px per mm. The values below were measured with vpype
+1.15 installed, i.e. on `convert`'s default export path.
+
+### What each measure means
+
+- **SSIM**: `penpath.core.likeness.compute_likeness` applied to the simulated
+  plot cropped to the recorded placement rectangle, at the same 256x256 size
+  and blur sigma 1.5 used by `evaluate`. No second SSIM implementation is
+  used. 1.0 means a perfect match.
+- **Coverage**: the rectangle spanned by the stroke points, clipped to the
+  placement rectangle. "W" and "H" are its width and height divided by the
+  placement width and height; "bbox" is the product, i.e. the fraction of the
+  placement area inside that bounding box. A drawing squeezed into one strip
+  has a small W, H or bbox value.
+- **Ink spread**: an ink pixel is a simulated pixel darker than 128 (halfway
+  between black pen and white paper). The placement rectangle is divided into
+  a 4x4 grid; each cell's share is its ink pixels divided by all ink pixels in
+  the rectangle. "ink min" and "ink max" are the smallest and largest of the
+  16 shares. A drawing sitting in one corner has one share near 1 and the
+  rest near 0.
+- **Tone**: the original image's greyscale quartiles split its pixels into the
+  darkest 25% and the lightest 25%. Ink density is the share of pixels in each
+  group covered by ink in the simulated crop; the tone ratio is dark density
+  divided by light density, with one ink pixel smoothed over the crop area so
+  the number stays finite when the light group has no ink. The ratio is 1.0
+  for a blank page and must be above 1 when dark areas get more ink.
+- **Blank page**: the same SVG page and placement metadata with no strokes at
+  all. **Random lines**: as many seeded two-point strokes as the real output
+  had, with endpoints uniform in the placement rectangle; this catches a
+  drawing that is no better than scribbling. **Ideal**: the original image
+  blurred (sigma 1) and Floyd-Steinberg dithered to the simulator's two ink
+  levels (black ink, white paper), placed in the same rectangle and scored by
+  the same `compute_likeness`. It is an upper bound, not a target: dithering is
+  how a pen can represent the photo's tones, and it scores about 0.99 because
+  the comparison blurs away the dither texture.
+
+### Measured SSIM
+
+| image | current `main` | blank page | random lines | ideal |
+|-------|---------------:|-----------:|-------------:|------:|
+| `circle.png` | 0.5930 | 0.4848 | 0.4736 | 0.9998 |
+| `gradient.png` | 0.6492 | 0.6508 | 0.5979 | 0.9898 |
+| `sphere.png` | 0.7806 | 0.7405 | 0.6749 | 0.9980 |
+| `face.jpg` | 0.3098 | 0.2618 | 0.2329 | 0.9943 |
+| `photo.jpg` | 0.4917 | 0.4993 | 0.3798 | 0.9931 |
+
+### Measured coverage, spread and tone
+
+| image | mode | bbox W | bbox H | bbox area | ink min | ink max | dark ink | light ink | tone ratio |
+|-------|------|-------:|-------:|----------:|--------:|--------:|---------:|----------:|-----------:|
+| `circle.png` | current | 0.750 | 0.755 | 0.566 | 0.0011 | 0.1182 | 0.631 | 0.0009 | 728.0 |
+| `circle.png` | ideal | 1.000 | 1.000 | 1.000 | 0.0010 | 0.1423 | 0.9996 | 0.0003 | 3386.8 |
+| `gradient.png` | current | 0.047 | 0.997 | 0.047 | 0.0000 | 0.2602 | 0.115 | 0.0000 | 39681.4 |
+| `gradient.png` | ideal | 1.000 | 1.000 | 1.000 | 0.0155 | 0.1094 | 0.878 | 0.126 | 6.97 |
+| `sphere.png` | current | 0.618 | 0.620 | 0.383 | 0.0000 | 0.2716 | 0.306 | 0.0000 | 157525.8 |
+| `sphere.png` | ideal | 1.000 | 1.000 | 1.000 | 0.0004 | 0.2058 | 0.690 | 0.0002 | 3591.4 |
+| `face.jpg` | current | 0.999 | 0.315 | 0.315 | 0.0000 | 0.3170 | 0.470 | 0.0000 | 303066.4 |
+| `face.jpg` | ideal | 1.000 | 1.000 | 1.000 | 0.0226 | 0.0916 | 0.994 | 0.162 | 6.15 |
+| `photo.jpg` | current | 0.407 | 0.980 | 0.399 | 0.0000 | 0.3699 | 0.245 | 0.0001 | 1613.9 |
+| `photo.jpg` | ideal | 1.000 | 1.000 | 1.000 | 0.0309 | 0.0973 | 0.887 | 0.307 | 2.89 |
+
+Random lines span at least 0.674 of the width, 0.652 of the height and 0.439
+of the area of every placement rectangle. The ideal places at least 0.00035
+of the ink in every grid cell (sphere) and has a tone ratio of at least 2.89
+(photo). Those numbers set the non-SSIM floors below.
+
+### SSIM thresholds
+
+For each image the threshold is (a) above both the blank and random scores,
+(b) above the broken algorithm's score (0.29 on the photo in the earlier
+measurement, 0.4917 for current `main` here), and (c) no more than about 70%
+of the way from the higher baseline to the ideal. "Gap used" is the threshold's
+share of that baseline-to-ideal gap.
+
+| image | higher baseline | ideal | current `main` | 70% cap | threshold | gap used |
+|-------|----------------:|------:|---------------:|--------:|----------:|---------:|
+| `circle.png` | 0.4848 blank | 0.9998 | 0.5930 | 0.845 | **0.75** | 51% |
+| `gradient.png` | 0.6508 blank | 0.9898 | 0.6492 | 0.888 | **0.80** | 44% |
+| `sphere.png` | 0.7405 blank | 0.9980 | 0.7806 | 0.921 | **0.88** | 54% |
+| `face.jpg` | 0.2618 blank | 0.9943 | 0.3098 | 0.775 | **0.70** | 60% |
+| `photo.jpg` | 0.4993 blank | 0.9931 | 0.4917 | 0.845 | **0.75** | 51% |
+
+- `circle.png`: 0.75 is well above the 0.4848 blank and the 0.4736 random
+  scores; current `main` (0.5930) fails it because it covers only 57% of the
+  rectangle.
+- `gradient.png`: even the blank page (0.6508) beats current `main` (0.6492),
+  so the threshold has to start above the blank; 0.80 uses only 44% of the gap
+  to the 0.9898 ideal and catches the 5%-wide strip current `main` draws.
+- `sphere.png`: the blank score is already 0.7405, so 0.88 leaves room for a
+  real shaded sphere while still rejecting the current 0.7806.
+- `face.jpg`: the blank score is low (0.2618) and the ideal high (0.9943), but
+  a face is the hardest subject here; 0.70 uses 60% of the gap and still leaves
+  current `main` (0.3098) and the historical 0.29 score far below.
+- `photo.jpg`: the blank page scores 0.4993, above current `main` (0.4917) and
+  the earlier 0.29 measurement. A threshold of 0.75 is halfway to the ideal
+  and demands a real likeness rather than an empty page.
+
+### Non-SSIM minimums
+
+These floors come from what the baselines and the ideal actually achieved, so
+they are reachable; a drawing below one of them is worse than a blank, random
+or ideally tone-mapped page in that respect. Part 2 will assert them together
+with the SSIM thresholds.
+
+| Measure | Minimum | Why this number |
+|---------|--------:|-----------------|
+| Covered width | 0.60 | Random strokes span at least 0.674 of the width and the ideal spans 1.0, so a plot covering under 60% of the rectangle width is worse than scribbling (`gradient.png` currently 0.047, `photo.jpg` 0.407). |
+| Covered height | 0.60 | Random strokes span at least 0.652 of the height and the ideal spans 1.0; `face.jpg` currently covers only 0.315. |
+| Bounding-box area | 0.40 | Random strokes reach at least 0.439 and the ideal 1.0, so a smaller area means the drawing is confined to a strip or corner. |
+| Ink per 4x4 cell | 0.0003 | The ideal puts at least 0.00035 of all ink in its sparsest cell (sphere); rounded down, every cell must receive some ink, which rejects drawings that ignore a whole quarter of the rectangle. |
+| Dark/light tone ratio | 2.0 | The ideal's weakest dark-vs-light ratio is 2.89 (photo); a floor of 2.0 still requires dark image areas to receive at least twice the ink density of light ones. |
+
+The gate is not asserted yet: `test_sketch_lines_gate.py` prints this table and
+checks only that the harness runs and every number is finite. Part 2 turns
+these thresholds into assertions.
+
 ### Machine Cost (LUC-27)
 
 Machine cost measures how much work the plotter does, independently of how the
