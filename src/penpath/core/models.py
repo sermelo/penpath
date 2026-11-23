@@ -155,9 +155,18 @@ class PFMSettings(BaseModel):
         return settings_model
 
     def to_typed_settings(self) -> BaseModel:
-        """Convert to the specific PFM settings model."""
+        """Convert to the specific PFM settings model.
+
+        PFMs such as ``SketchLinesPFM`` keep their algorithm settings in a
+        nested ``settings`` field. Use that payload when present so the
+        settings the user gave reach the algorithm; flat PFM layouts pass
+        their dumped fields straight through.
+        """
         model_class = self.get_settings_model()
         data = self.model_dump(exclude={"pfm_type"})
+        nested = data.get("settings")
+        if isinstance(nested, dict):
+            return model_class(**nested)
         return model_class(**data)
 
 
