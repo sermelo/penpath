@@ -189,21 +189,35 @@ version = "0.1.0"
 description = "Photo to plottable SVG CLI"
 readme = "README.md"
 requires-python = ">=3.14"
+license = {text = "MIT"}
+authors = [
+    {name = "Sergio Merino", email = "sergio.merino.a@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = [
     "typer>=0.12,<1",
+    "click>=8,<9",
     "rich>=13,<14",
-    "pillow>=10,<11",
+    "pillow>=11,<12",
     "numpy>=1.26,<2",
     "shapely>=2,<3",
     "svgwrite>=1.4,<2",
     "pyyaml>=6,<7",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
+    "tomli-w>=1,<2",
 ]
-optional-dependencies = {
-    "dev" = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit", "hatch"],
-    "docs" = ["mkdocs", "mkdocs-material"],
-}
+
+[project.optional-dependencies]
+dev = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit", "hatch"]
+test = ["vpype>=1.15"]
+vpype = ["vpype>=1.15"]
+docs = ["mkdocs", "mkdocs-material"]
 
 [tool.ruff]
 line-length = 100
