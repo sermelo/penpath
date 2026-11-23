@@ -150,6 +150,11 @@ def _scale_geometries_to_placement(
     return transformed
 
 
+def _pen_layer_label(pen: Pen) -> str:
+    """Return the Inkscape layer label penpath uses for a pen."""
+    return f"Pen: {pen.name}"
+
+
 def _placement_metadata_element(placement: ImagePlacement) -> ET.Element:
     """Build the <penpath:image-placement> element for an SVG metadata block."""
     return ET.Element(
@@ -403,7 +408,7 @@ def export_svg(
     # Create one layer per pen
     for i, pen in enumerate(pens):
         layer_id = f"pen-{pen.name}"
-        layer_label = f"Pen: {pen.name}"
+        layer_label = _pen_layer_label(pen)
 
         pen_layer = dwg.g(
             id=layer_id,
