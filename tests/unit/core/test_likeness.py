@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
 from penpath.core.likeness import compute_likeness, prepare_for_comparison
+from penpath.core.simulation import simulate_plot
+
+PX_PER_MM = 96 / 25.4
+
+
+def rect_from_px(
+    x_px: float, y_px: float, w_px: float, h_px: float
+) -> tuple[float, float, float, float]:
+    return (x_px / PX_PER_MM, y_px / PX_PER_MM, w_px / PX_PER_MM, h_px / PX_PER_MM)
 
 
 def test_public_api_exports():
@@ -135,11 +146,9 @@ class TestComputeLikeness:
     def test_identical_images_score_high(self):
         """Test that identical images score close to 1.0."""
         img = self.create_square_image()
-        # Placement rect covers the whole image at 300 DPI
-        # Image is 200px at 300 DPI = 200 * 25.4 / 300 ≈ 16.9 mm
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
-        score = compute_likeness(img, img, placement_rect, dpi=300)
+        score = compute_likeness(img, img, placement_rect)
 
         assert score > 0.95
 
@@ -148,9 +157,9 @@ class TestComputeLikeness:
         solid = self.create_square_image()
         hatched = self.create_hatched_square_image()
 
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
-        score = compute_likeness(hatched, solid, placement_rect, dpi=300)
+        score = compute_likeness(hatched, solid, placement_rect)
 
         # Matches docs/TESTING.md acceptance threshold for a matching drawing
         assert score > 0.7
@@ -160,9 +169,9 @@ class TestComputeLikeness:
         solid = Image.new("L", (200, 200), color=255)
         empty = Image.new("L", (200, 200), color=0)
 
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
-        score = compute_likeness(empty, solid, placement_rect, dpi=300)
+        score = compute_likeness(empty, solid, placement_rect)
 
         assert score < 0.3
 
@@ -172,10 +181,10 @@ class TestComputeLikeness:
         bar = self.create_bar_image()
         hatched_square = self.create_hatched_square_image()
 
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
-        score_hatched_vs_square = compute_likeness(hatched_square, square, placement_rect, dpi=300)
-        score_hatched_vs_bar = compute_likeness(hatched_square, bar, placement_rect, dpi=300)
+        score_hatched_vs_square = compute_likeness(hatched_square, square, placement_rect)
+        score_hatched_vs_bar = compute_likeness(hatched_square, bar, placement_rect)
 
         # A different shape should score clearly lower, not just marginally lower
         assert score_hatched_vs_square > score_hatched_vs_bar + 0.1
@@ -188,15 +197,13 @@ class TestComputeLikeness:
         empty = Image.new("L", (200, 200), color=0)
         white = Image.new("L", (200, 200), color=255)
 
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
         scores = {
-            "identical": compute_likeness(solid_square, solid_square, placement_rect, dpi=300),
-            "hatched_vs_square": compute_likeness(
-                hatched_square, solid_square, placement_rect, dpi=300
-            ),
-            "hatched_vs_bar": compute_likeness(hatched_square, bar, placement_rect, dpi=300),
-            "empty_vs_white": compute_likeness(empty, white, placement_rect, dpi=300),
+            "identical": compute_likeness(solid_square, solid_square, placement_rect),
+            "hatched_vs_square": compute_likeness(hatched_square, solid_square, placement_rect),
+            "hatched_vs_bar": compute_likeness(hatched_square, bar, placement_rect),
+            "empty_vs_white": compute_likeness(empty, white, placement_rect),
         }
 
         # Ordering: identical > hatched_vs_square > hatched_vs_bar > empty_vs_white
@@ -216,13 +223,28 @@ class TestComputeLikeness:
         # Original is just the square
         orig_img = Image.new("L", (100, 100), color=255)
 
-        # Placement rect at 300 DPI: 50px = 50 * 25.4 / 300 ≈ 4.23 mm
-        # Square is 100px = 8.47 mm
-        placement_rect = (4.23, 4.23, 8.47, 8.47)
+        placement_rect = rect_from_px(50, 50, 100, 100)
 
-        score = compute_likeness(sim_img, orig_img, placement_rect, dpi=300)
+        score = compute_likeness(sim_img, orig_img, placement_rect)
 
         assert score > 0.9
+
+    def test_explicit_px_per_mm_matches_default(self):
+        """Test that the explicit pixels-per-mm argument matches the default scale."""
+        img = self.create_square_image()
+        placement_rect = rect_from_px(0, 0, 200, 200)
+
+        default_score = compute_likeness(img, img, placement_rect)
+        explicit_score = compute_likeness(img, img, placement_rect, dpi_px_per_mm=PX_PER_MM)
+
+        assert default_score == explicit_score
+
+    def test_default_scale_matches_simulate_plot(self):
+        """Test that both functions share one pixels-per-mm scale unit and default."""
+        likeness_default = inspect.signature(compute_likeness).parameters["dpi_px_per_mm"].default
+        simulation_default = inspect.signature(simulate_plot).parameters["dpi_px_per_mm"].default
+
+        assert likeness_default == simulation_default == PX_PER_MM
 
     def test_placement_rect_out_of_bounds_clamped(self):
         """Test that out-of-bounds placement rect is clamped."""
@@ -232,7 +254,7 @@ class TestComputeLikeness:
         # Placement rect extends beyond image
         placement_rect = (-10.0, -10.0, 50.0, 50.0)
 
-        score = compute_likeness(sim_img, orig_img, placement_rect, dpi=300)
+        score = compute_likeness(sim_img, orig_img, placement_rect)
 
         # Should not crash, score should be valid
         assert 0.0 <= score <= 1.0
@@ -240,10 +262,10 @@ class TestComputeLikeness:
     def test_custom_target_size(self):
         """Test with custom target size."""
         img = self.create_square_image()
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
-        score_64 = compute_likeness(img, img, placement_rect, target_size=(64, 64), dpi=300)
-        score_256 = compute_likeness(img, img, placement_rect, target_size=(256, 256), dpi=300)
+        score_64 = compute_likeness(img, img, placement_rect, target_size=(64, 64))
+        score_256 = compute_likeness(img, img, placement_rect, target_size=(256, 256))
 
         # Both should be high for identical images
         assert score_64 > 0.9
@@ -252,10 +274,10 @@ class TestComputeLikeness:
     def test_custom_blur_sigma(self):
         """Test with custom blur sigma."""
         img = self.create_square_image()
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
-        score_no_blur = compute_likeness(img, img, placement_rect, blur_sigma=0.0, dpi=300)
-        score_blur = compute_likeness(img, img, placement_rect, blur_sigma=2.0, dpi=300)
+        score_no_blur = compute_likeness(img, img, placement_rect, blur_sigma=0.0)
+        score_blur = compute_likeness(img, img, placement_rect, blur_sigma=2.0)
 
         # Both should be high for identical images
         assert score_no_blur > 0.9
@@ -265,10 +287,10 @@ class TestComputeLikeness:
         """Test that score is always in [0, 1]."""
         solid = self.create_square_image()
         empty = Image.new("L", (200, 200), color=0)
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
         for sim, orig in [(solid, solid), (solid, empty), (empty, solid), (empty, empty)]:
-            score = compute_likeness(sim, orig, placement_rect, dpi=300)
+            score = compute_likeness(sim, orig, placement_rect)
             assert 0.0 <= score <= 1.0
 
     def test_rgb_images_work(self):
@@ -281,9 +303,9 @@ class TestComputeLikeness:
         draw = ImageDraw.Draw(rgb_orig)
         draw.rectangle([50, 50, 150, 150], fill="black")
 
-        placement_rect = (0.0, 0.0, 16.93, 16.93)
+        placement_rect = rect_from_px(0, 0, 200, 200)
 
-        score = compute_likeness(rgb_solid, rgb_orig, placement_rect, dpi=300)
+        score = compute_likeness(rgb_solid, rgb_orig, placement_rect)
         assert score > 0.9
 
 

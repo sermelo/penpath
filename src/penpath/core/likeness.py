@@ -60,7 +60,7 @@ def compute_likeness(
     placement_rect: tuple[float, float, float, float],
     target_size: tuple[int, int] = (256, 256),
     blur_sigma: float = 1.5,
-    dpi: int = 300,
+    dpi_px_per_mm: float = 96 / 25.4,
 ) -> float:
     """Compute likeness score between simulated plot and original image.
 
@@ -70,7 +70,7 @@ def compute_likeness(
     Parameters
     ----------
     simulated : PIL.Image.Image
-        Simulated plot image (rendered at the given DPI).
+        Simulated plot image (rendered at dpi_px_per_mm pixels per millimetre).
     original : PIL.Image.Image
         Original reference image.
     placement_rect : tuple[float, float, float, float]
@@ -79,8 +79,9 @@ def compute_likeness(
         Target size for comparison as (width, height) in pixels. Default (256, 256).
     blur_sigma : float, optional
         Gaussian blur sigma for comparison. Default 1.5.
-    dpi : int, optional
-        DPI of the simulated image for mm-to-pixel conversion. Default 300.
+    dpi_px_per_mm : float, optional
+        Pixels per millimetre of the simulated image, matching the scale used by
+        penpath.core.simulation.simulate_plot. Default is 96/25.4 ≈ 3.7795 px/mm.
 
     Returns
     -------
@@ -89,7 +90,7 @@ def compute_likeness(
     """
     x_mm, y_mm, w_mm, h_mm = placement_rect
 
-    mm_to_px = dpi / 25.4
+    mm_to_px = dpi_px_per_mm
 
     x_px = round(x_mm * mm_to_px)
     y_px = round(y_mm * mm_to_px)
