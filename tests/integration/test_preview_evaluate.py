@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+import shutil
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 from PIL import Image
+from shapely import LineString
 
 from penpath.cli.main import main
+from penpath.core.models import Paper, Pen
+from penpath.core.output.vpype import run_vpype
 
 
 def _svg(with_metadata: bool = True) -> str:
@@ -223,6 +228,69 @@ class TestEvaluate:
         assert cost["num_strokes"] == 1
         assert cost["drawing_length_mm"] == pytest.approx(80 + 80 + 80 * 2**0.5, abs=0.01)
 
+    def test_evaluate_rejects_malformed_svg(
+        self, runner: CliRunner, reference: Path, tmp_path: Path
+    ) -> None:
+        """A broken polygon SVG is a clean runtime error, not a traceback."""
+        svg = tmp_path / "broken.svg"
+        svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><polygon', encoding="utf-8")
+        result = runner.invoke(main, ["evaluate", str(reference), str(svg), "--json"])
+
+        assert result.exit_code == 1
+        assert "Could not parse SVG" in result.output
+        assert "Traceback" not in result.output
+        assert result.stdout.strip() == ""
+
+    def test_evaluate_rejects_polygon_without_points(
+        self, runner: CliRunner, reference: Path, tmp_path: Path
+    ) -> None:
+        """An unfilled polygon with no points yields a clear no-strokes error."""
+        svg = tmp_path / "empty_polygon.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<polygon points="" fill="none" stroke="#000000"/>'
+            "</svg>",
+            encoding="utf-8",
+        )
+        result = runner.invoke(main, ["evaluate", str(reference), str(svg), "--json"])
+
+        assert result.exit_code == 1
+        assert "No pen strokes found in SVG" in result.output
+        assert result.stdout.strip() == ""
+
+    def test_evaluate_counts_all_ink_in_vpype_output(
+        self, runner: CliRunner, reference: Path, tmp_path: Path
+    ) -> None:
+        """Every polygon in real vpype SVG output is counted as drawn ink."""
+        vpype_path = shutil.which("vpype")
+        if vpype_path is None:
+            pytest.skip("vpype executable not found")
+
+        rectangle = LineString([(100, 100), (200, 100), (200, 200), (100, 200), (100, 100)])
+        svg_bytes = run_vpype(
+            [rectangle],
+            Paper(name="A4", width_mm=210, height_mm=297, dpi=300),
+            [Pen(name="fine", width_mm=0.3, color="#000000")],
+            vpype_path=vpype_path,
+        )
+        svg_path = tmp_path / "vpype_plot.svg"
+        svg_path.write_bytes(svg_bytes)
+        root = ET.fromstring(svg_bytes)
+        geometry = [
+            element
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1].lower() in ("polygon", "polyline", "line", "path")
+        ]
+        assert any(element.tag.rsplit("}", 1)[-1].lower() == "polygon" for element in geometry)
+
+        result = runner.invoke(main, ["evaluate", str(reference), str(svg_path), "--json"])
+
+        assert result.exit_code == 0, result.output
+        cost = json.loads(result.stdout)["machine_cost"]["total"]
+        assert cost["num_strokes"] == len(geometry)
+        assert cost["drawing_length_mm"] == pytest.approx(400 * 25.4 / 96, abs=0.1)
+
     def test_evaluate_json_writes_only_json_to_stdout(
         self, runner: CliRunner, drawing: Path, reference: Path
     ) -> None:
@@ -298,3 +366,13 @@ class TestEvaluate:
         assert "--paper-color" in result.output
         assert "Traceback" not in result.output
         assert result.stdout.strip() == ""
+
+
+class TestCommandHelp:
+    @pytest.mark.parametrize("command", ["preview", "evaluate"])
+    def test_command_help(self, runner: CliRunner, command: str) -> None:
+        result = runner.invoke(main, [command, "--help"])
+
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
+        assert "--dpi" in result.output

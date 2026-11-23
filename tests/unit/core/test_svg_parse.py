@@ -242,6 +242,19 @@ class TestParseSvgStrokes:
         assert len(strokes) == 1
         assert strokes[0].polyline == [(0.0, 0.0), (30.0, 0.0), (30.0, 40.0), (0.0, 0.0)]
 
+    def test_parse_svg_strokes_unfilled_rect_stays_unparsed(self, tmp_path: Path) -> None:
+        """Outline shapes other than polygons stay out of scope, even unfilled."""
+        svg_path = tmp_path / "rect.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<rect x="10" y="10" width="80" height="80" fill="none" stroke="#000000"/>'
+            "</svg>",
+            encoding="utf-8",
+        )
+
+        assert parse_svg_strokes(svg_path) == []
+
     def test_parse_svg_strokes_skips_hidden_and_filled_shapes(self, tmp_path: Path) -> None:
         """Only visible, non-filled geometry becomes a stroke."""
         svg_path = tmp_path / "mixed.svg"
