@@ -123,6 +123,56 @@
 - **Rationale**: SSIM correlates well with human perception of structural similarity. The downscale to 256×256 makes scoring fast and resolution-independent. Blur sigma of 1.5 (at 256px) smooths pen stroke texture while preserving overall form, so a well-hatched drawing scores high even if individual strokes don't perfectly match pixel positions.
 - **Acceptance**: Matching drawing (hatched square vs square image) scores >0.7; empty drawing scores <0.3; different shape scores clearly lower. Ordering of scores is tested, not exact values.
 
+### Machine Cost (LUC-27)
+
+Machine cost measures how much work the plotter does, independently of how the
+plot looks. `penpath evaluate` reports these metrics per pen layer (grouped by
+stroke colour) and in total:
+
+| Metric | Meaning |
+|--------|---------|
+| `drawing_length_mm` | Length of pen-down strokes — ink laid on the paper. |
+| `pen_up_travel_mm` | Length of pen-up moves — the pen travelling without drawing. |
+| `num_lifts` | Number of pen-up transitions between drawing strokes. |
+| `num_short_segments` | Segments shorter than 0.5 mm — tiny moves that waste pen time. |
+| `num_strokes` | Number of pen-down strokes. A pen-up move is not a stroke. |
+
+The likeness score and its blur are described in "Likeness Scoring" above:
+SSIM compares the simulated plot with the original after both are downscaled
+to 256x256 and blurred with sigma 1.5.
+
+**How pen-up travel is derived.** The SVG parser reads strokes in document
+order. With `include_pen_up=True`, if the straight gap between the end of one
+stroke and the start of the next is larger than 0.01 mm, the parser inserts a
+two-point pen-up stroke between them. Its length is exactly the distance the
+machine travels with the pen raised, and it takes the colour of the following
+stroke (the pen about to draw). Strokes that meet end-to-start are contiguous:
+they produce no travel move and no lift. Library callers keep the old,
+draw-only behaviour unless they pass `include_pen_up=True`; `penpath evaluate`
+passes it, `penpath preview` does not because travel moves are never drawn.
+
+**Acceptance**: a hand-made SVG with three 80 mm horizontal lines 30 mm apart
+(drawn in alternating directions) reports exactly 240 mm drawn, 60 mm travel
+and 2 lifts; a single stroke reports 0 travel and 0 lifts; per-layer numbers
+add up to the total.
+
+### Running `preview` and `evaluate`
+
+Render a simulated plot of an SVG to an image, and score an SVG against its
+original image:
+
+```bash
+penpath preview plot.svg -o preview.png
+penpath evaluate photo.jpg plot.svg
+penpath evaluate photo.jpg plot.svg --json | jq '.machine_cost.total'
+```
+
+`preview` reads the same strokes but skips travel moves, so it shows the ink
+only. `evaluate --json` writes one JSON object (`likeness` and `machine_cost`)
+to stdout and prints its human tables to stderr, so it is safe to pipe. Use
+`--dpi` (pixels per millimetre) to change the simulation resolution and
+`--layer` to evaluate just one pen layer. See `docs/CLI.md` for every option.
+
 ### Performance Budgets (CI)
 | Operation | Max Time (400×300 image) |
 |-----------|--------------------------|

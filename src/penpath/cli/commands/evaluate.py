@@ -116,7 +116,7 @@ def evaluate_cmd(
         raise click.ClickException(f"Could not read image: {exc}") from exc
 
     try:
-        strokes = parse_svg_strokes(drawing_svg, layer=layer_label)
+        strokes = parse_svg_strokes(drawing_svg, layer=layer_label, include_pen_up=True)
     except (ET.ParseError, OSError, ValueError) as exc:
         raise click.ClickException(f"Could not parse SVG: {exc}") from exc
     if not strokes:

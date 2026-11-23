@@ -63,6 +63,23 @@ def reference(tmp_path: Path) -> Path:
     return path
 
 
+def _hand_svg() -> str:
+    """Three 80 mm lines 30 mm apart, drawn in alternating directions."""
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+  <path d="M 10 10 L 90 10" fill="none" stroke="#000000" stroke-width="1"/>
+  <path d="M 90 40 L 10 40" fill="none" stroke="#000000" stroke-width="1"/>
+  <path d="M 10 70 L 90 70" fill="none" stroke="#000000" stroke-width="1"/>
+</svg>"""
+
+
+@pytest.fixture
+def hand_drawing(tmp_path: Path) -> Path:
+    path = tmp_path / "hand.svg"
+    path.write_text(_hand_svg(), encoding="utf-8")
+    return path
+
+
 def _polygon_svg() -> str:
     return """<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
@@ -227,6 +244,31 @@ class TestEvaluate:
         cost = json.loads(result.stdout)["machine_cost"]["total"]
         assert cost["num_strokes"] == 1
         assert cost["drawing_length_mm"] == pytest.approx(80 + 80 + 80 * 2**0.5, abs=0.01)
+
+    def test_evaluate_reports_exact_cost_for_hand_svg(
+        self, runner: CliRunner, hand_drawing: Path, reference: Path
+    ) -> None:
+        """The hand-made SVG reports 240 mm drawn, 60 mm travel and 2 lifts."""
+        result = runner.invoke(main, ["evaluate", str(reference), str(hand_drawing), "--json"])
+
+        assert result.exit_code == 0, result.output
+        cost = json.loads(result.stdout)["machine_cost"]["total"]
+        assert cost["drawing_length_mm"] == pytest.approx(240.0, abs=0.01)
+        assert cost["pen_up_travel_mm"] == pytest.approx(60.0, abs=0.01)
+        assert cost["num_lifts"] == 2
+        assert cost["num_strokes"] == 3
+
+    def test_evaluate_counts_travel_and_lifts_between_strokes(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        """A drawing with separated strokes reports a lift and real travel."""
+        result = runner.invoke(main, ["evaluate", str(reference), str(drawing), "--json"])
+
+        assert result.exit_code == 0, result.output
+        cost = json.loads(result.stdout)["machine_cost"]["total"]
+        assert cost["num_lifts"] == 1
+        assert cost["pen_up_travel_mm"] == pytest.approx(80 * 100 / 377.95, abs=0.01)
+        assert cost["num_strokes"] == 2
 
     def test_evaluate_rejects_malformed_svg(
         self, runner: CliRunner, reference: Path, tmp_path: Path
