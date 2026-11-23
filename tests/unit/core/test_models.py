@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -180,6 +181,30 @@ class TestPFMSettings:
         model_class = settings.get_settings_model()
         assert model_class.__name__ == "SketchLinesSettings"
 
+    def test_to_typed_settings_uses_nested_payload(self):
+        """Nested PFM settings (including the seed) reach the settings model."""
+        from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+
+        pfm = SketchLinesPFM(settings=SketchLinesSettings(seed=42, line_density=2.0))
+        typed = pfm.to_typed_settings()
+        assert isinstance(typed, SketchLinesSettings)
+        assert typed.seed == 42
+        assert typed.line_density == 2.0
+
+    def test_to_typed_settings_keeps_flat_layout(self):
+        """A flat PFM layout still passes its fields to the settings model."""
+        from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+
+        class FlatSketchPFM(PFMSettings):
+            pfm_type: Literal["sketch_lines"] = "sketch_lines"
+            seed: int | None = None
+            line_density: float = 1.0
+
+        typed = FlatSketchPFM(seed=42, line_density=2.0).to_typed_settings()
+        assert isinstance(typed, SketchLinesSettings)
+        assert typed.seed == 42
+        assert typed.line_density == 2.0
+
 
 class TestSketchLinesPFM:
     """Tests for SketchLinesPFM model."""
@@ -199,6 +224,14 @@ class TestSketchLinesPFM:
         pfm = SketchLinesPFM(settings=custom)
         assert pfm.settings.line_density == 2.0
         assert pfm.settings.min_length == 5.0
+
+    def test_to_typed_settings_default_seed_is_none(self):
+        """No seed on the command line means no determinism promise."""
+        from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+
+        typed = SketchLinesPFM().to_typed_settings()
+        assert isinstance(typed, SketchLinesSettings)
+        assert typed.seed is None
 
 
 class TestProject:

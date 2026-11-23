@@ -61,7 +61,7 @@
 | `test_vpype_optimization` | Raw lines → vpype → fewer segments, sorted, reloop'd |
 | `test_multiple_pens_single_pfm` | Single PFM, two pens (different densities) → two SVG layers |
 | `test_paper_sizes` | A4, A3, custom → correct viewBox, centering |
-| `test_seed_determinism` | Same seed → identical SVG (byte-for-byte after normalization) |
+| `test_seed_determinism` (`tests/integration/test_convert.py`) | Same seed → identical SVG (byte-for-byte after normalization). The test uses `--no-vpype`; vpype embeds a temporary input path in its SVG, so vpype output is compared by geometry instead (out of scope here). |
 | `test_cli_help_and_errors` | All commands show help, invalid args exit 2 with message |
 
 ### 3. Golden File Tests
