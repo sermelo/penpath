@@ -117,6 +117,26 @@ class TestPreview:
         result = runner.invoke(main, ["preview", str(drawing), "-o", "p.png", "--dpi", "0"])
         assert result.exit_code != 0
 
+    def test_preview_invalid_paper_colour_is_clean_error(
+        self, runner: CliRunner, drawing: Path, tmp_path: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            [
+                "preview",
+                str(drawing),
+                "-o",
+                str(tmp_path / "p.png"),
+                "--paper-color",
+                "notacolour",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--paper-color" in result.output
+        assert "Traceback" not in result.output
+        assert not (tmp_path / "p.png").exists()
+
     def test_preview_requires_output(self, runner: CliRunner, drawing: Path) -> None:
         result = runner.invoke(main, ["preview", str(drawing)])
         assert result.exit_code != 0
@@ -200,3 +220,23 @@ class TestEvaluate:
             main, ["evaluate", str(reference), str(drawing), "--dpi", "-1", "--json"]
         )
         assert result.exit_code != 0
+
+    def test_evaluate_invalid_paper_colour_is_clean_error(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            [
+                "evaluate",
+                str(reference),
+                str(drawing),
+                "--paper-color",
+                "notacolour",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--paper-color" in result.output
+        assert "Traceback" not in result.output
+        assert result.stdout.strip() == ""

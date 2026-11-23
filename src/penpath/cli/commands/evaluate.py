@@ -128,13 +128,16 @@ def evaluate_cmd(
         raise click.ClickException(f"Could not read image placement: {exc}") from exc
 
     width_mm, height_mm = get_svg_paper_size(drawing_svg) or FALLBACK_PAPER_MM
-    simulated = simulate_plot(
-        strokes,
-        paper_width_mm=width_mm,
-        paper_height_mm=height_mm,
-        paper_color=paper_color,
-        dpi_px_per_mm=px_per_mm,
-    )
+    try:
+        simulated = simulate_plot(
+            strokes,
+            paper_width_mm=width_mm,
+            paper_height_mm=height_mm,
+            paper_color=paper_color,
+            dpi_px_per_mm=px_per_mm,
+        )
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="--paper-color") from exc
     likeness = compute_likeness(
         simulated,
         original,

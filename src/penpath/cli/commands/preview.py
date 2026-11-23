@@ -75,13 +75,16 @@ def preview_cmd(
         raise click.ClickException("No pen strokes found in SVG (check --layer if used)")
 
     width_mm, height_mm = _paper_size_mm(drawing_svg)
-    image = simulate_plot(
-        strokes,
-        paper_width_mm=width_mm,
-        paper_height_mm=height_mm,
-        paper_color=paper_color,
-        dpi_px_per_mm=px_per_mm,
-    )
+    try:
+        image = simulate_plot(
+            strokes,
+            paper_width_mm=width_mm,
+            paper_height_mm=height_mm,
+            paper_color=paper_color,
+            dpi_px_per_mm=px_per_mm,
+        )
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="--paper-color") from exc
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path)
