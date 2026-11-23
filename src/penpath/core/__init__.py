@@ -53,6 +53,11 @@ from penpath.core.simulation import (
     compute_machine_cost,
     simulate_plot,
 )
+from penpath.core.svg_parse import (
+    ImagePlacement,
+    get_image_placement,
+    parse_svg_strokes,
+)
 
 # Rebuild Pydantic models that have forward references
 # FilterPipeline is imported above, so ImageRef can now be fully resolved
@@ -67,6 +72,7 @@ __all__ = [
     "FilterStep",
     "GrayscaleMethod",
     "ImageLoadError",
+    "ImagePlacement",
     "ImageRef",
     "PFMSettings",
     "PFMSettingsUnion",
@@ -86,6 +92,7 @@ __all__ = [
     "gamma",
     "gaussian_blur",
     "get_filter",
+    "get_image_placement",
     "grayscale",
     "invert",
     "list_filters",
@@ -93,6 +100,7 @@ __all__ = [
     "load_yaml",
     "merge_lines",
     "mm_to_pixels",
+    "parse_svg_strokes",
     "pixels_to_mm",
     "posterize",
     "prepare_for_comparison",

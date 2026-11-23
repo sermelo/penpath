@@ -65,6 +65,19 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--vpype-path PATH` | — | `vpype` | Path to vpype executable |
 | `--layer-per-pen` / `--single-layer` | — | `layer-per-pen` | SVG layer structure |
 
+The SVG records where the source image was placed on the page, in millimetres:
+
+```xml
+<metadata>
+  <penpath:image-placement x="10.0000" y="20.0000" width="190.0000" height="160.0000"/>
+</metadata>
+```
+
+`penpath.core.svg_parse.get_image_placement(svg_path, image_size_px)` reads this
+rectangle; for SVGs without it, the image is fitted to the page keeping its
+aspect ratio and centered. `penpath.core.svg_parse.parse_svg_strokes(svg_path)`
+returns the plotted strokes as `PenStroke` objects in millimetres.
+
 #### PFM Settings (Sketch Lines)
 
 | Key | Type | Default | Description |
