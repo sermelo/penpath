@@ -388,7 +388,9 @@ def _metadata_placement(root: ET.Element) -> ImagePlacement | None:
                     width=float(child.get("width", "")),
                     height=float(child.get("height", "")),
                 )
-            except TypeError, ValueError:
+            except TypeError:
+                continue
+            except ValueError:
                 continue
 
     x_attr = root.get("data-penpath-x")
