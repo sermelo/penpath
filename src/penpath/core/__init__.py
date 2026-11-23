@@ -28,6 +28,10 @@ from penpath.core.image import (
     posterize,
     threshold,
 )
+from penpath.core.likeness import (
+    compute_likeness,
+    prepare_for_comparison,
+)
 from penpath.core.models import (
     ImageRef,
     Paper,
@@ -76,6 +80,7 @@ __all__ = [
     "UnsupportedFormatError",
     "box_blur",
     "brightness",
+    "compute_likeness",
     "compute_machine_cost",
     "contrast",
     "gamma",
@@ -90,6 +95,7 @@ __all__ = [
     "mm_to_pixels",
     "pixels_to_mm",
     "posterize",
+    "prepare_for_comparison",
     "save_yaml",
     "simplify",
     "simplify_line",

@@ -149,7 +149,7 @@ def simulate_plot(
     paper_width_mm: float,
     paper_height_mm: float,
     paper_color: str = "#FFFFFF",
-    dpi_px_per_mm: float = 3.779527559055118,  # 96 DPI / 25.4 mm_per_inch
+    dpi_px_per_mm: float = 96 / 25.4,
 ) -> Image.Image:
     """Simulate a pen plot by rendering strokes to a PIL Image.
 

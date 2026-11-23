@@ -116,6 +116,13 @@
 - **SSIM**: ≥0.95 vs golden PNG render (if preview implemented)
 - **Pixel diff**: ≤1% pixels differ by >5/255
 
+### Likeness Scoring (LUC-30)
+- **Measure**: Structural Similarity Index (SSIM) from scikit-image
+- **Target size**: 256×256 pixels — balances detail retention with noise suppression
+- **Blur sigma**: 1.5 — Gaussian blur before SSIM to tolerate minor misalignments and stroke width variation
+- **Rationale**: SSIM correlates well with human perception of structural similarity. The downscale to 256×256 makes scoring fast and resolution-independent. Blur sigma of 1.5 (at 256px) smooths pen stroke texture while preserving overall form, so a well-hatched drawing scores high even if individual strokes don't perfectly match pixel positions.
+- **Acceptance**: Matching drawing (hatched square vs square image) scores >0.7; empty drawing scores <0.3; different shape scores clearly lower. Ordering of scores is tested, not exact values.
+
 ### Performance Budgets (CI)
 | Operation | Max Time (400×300 image) |
 |-----------|--------------------------|

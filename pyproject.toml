@@ -23,13 +23,14 @@ dependencies = [
     "click>=8,<9",
     "rich>=13,<14",
     "pillow>=11,<12",
-    "numpy>=1.26,<2",
+    "numpy>=2.4,<3",
     "shapely>=2,<3",
     "svgwrite>=1.4,<2",
     "pyyaml>=6,<7",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
     "tomli-w>=1,<2",
+    "scikit-image>=0.24,<1",
 ]
 [project.optional-dependencies]
 dev = [
