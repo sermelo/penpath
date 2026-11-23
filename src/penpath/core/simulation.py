@@ -97,7 +97,7 @@ def compute_machine_cost(
         - pen_up_travel_mm: total length of pen-up moves
         - num_lifts: number of pen-up transitions
         - num_short_segments: number of segments shorter than threshold
-        - num_strokes: total number of strokes
+        - num_strokes: number of pen-down strokes (pen-up moves are not strokes)
 
     Notes
     -----
@@ -135,11 +135,11 @@ def compute_machine_cost(
         else:
             per_layer[layer_key]["drawing_length_mm"] += length
             total["drawing_length_mm"] += length
+            per_layer[layer_key]["num_strokes"] += 1
+            total["num_strokes"] += 1
 
         per_layer[layer_key]["num_short_segments"] += short_segs
         total["num_short_segments"] += short_segs
-        per_layer[layer_key]["num_strokes"] += 1
-        total["num_strokes"] += 1
 
     return {"per_layer": per_layer, "total": total}
 

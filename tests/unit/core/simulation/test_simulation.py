@@ -115,7 +115,7 @@ class TestComputeMachineCost:
         assert result["per_layer"]["#000000"]["drawing_length_mm"] == 10.0
 
     def test_compute_machine_cost_single_pen_up_stroke(self):
-        """Single pen-up stroke should count as lift."""
+        """A pen-up move counts as a lift but not as a drawn stroke."""
         strokes = [
             PenStroke(
                 polyline=[(0.0, 0.0), (10.0, 0.0)],
@@ -128,7 +128,7 @@ class TestComputeMachineCost:
         assert result["total"]["drawing_length_mm"] == 0.0
         assert result["total"]["pen_up_travel_mm"] == 10.0
         assert result["total"]["num_lifts"] == 1
-        assert result["total"]["num_strokes"] == 1
+        assert result["total"]["num_strokes"] == 0
 
     def test_compute_machine_cost_multiple_strokes_same_color(self):
         """Multiple strokes of same color should aggregate."""
@@ -201,7 +201,7 @@ class TestComputeMachineCost:
         assert result["total"]["drawing_length_mm"] == 20.0
         assert result["total"]["pen_up_travel_mm"] == 5.0
         assert result["total"]["num_lifts"] == 1
-        assert result["total"]["num_strokes"] == 3
+        assert result["total"]["num_strokes"] == 2
 
     def test_compute_machine_cost_short_segments(self):
         """Short segments should be counted correctly."""
@@ -521,14 +521,14 @@ class TestIntegration:
         assert cost["total"]["pen_up_travel_mm"] == 10.0
         # Total lifts: 1
         assert cost["total"]["num_lifts"] == 1
-        # Total strokes: 4
-        assert cost["total"]["num_strokes"] == 4
+        # Total drawn strokes: 3 (the pen-up move is not a stroke)
+        assert cost["total"]["num_strokes"] == 3
 
         # Per-layer checks
         assert cost["per_layer"]["#000000"]["drawing_length_mm"] == 20.0
         assert cost["per_layer"]["#000000"]["pen_up_travel_mm"] == 10.0
         assert cost["per_layer"]["#000000"]["num_lifts"] == 1
-        assert cost["per_layer"]["#000000"]["num_strokes"] == 3
+        assert cost["per_layer"]["#000000"]["num_strokes"] == 2
 
         assert cost["per_layer"]["#FF0000"]["drawing_length_mm"] == 15.0
         assert cost["per_layer"]["#FF0000"]["pen_up_travel_mm"] == 0.0

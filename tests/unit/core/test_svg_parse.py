@@ -288,6 +288,161 @@ class TestParseSvgStrokes:
             parse_svg_strokes(tmp_path / "missing.svg")
 
 
+class TestParseSvgStrokesPenUp:
+    @staticmethod
+    def _hand_svg() -> str:
+        """Three 80 mm lines 30 mm apart, drawn in alternating directions."""
+        return """<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm"
+    viewBox="0 0 100 100">
+  <path d="M 10 10 L 90 10" fill="none" stroke="#000000" stroke-width="1"/>
+  <path d="M 90 40 L 10 40" fill="none" stroke="#000000" stroke-width="1"/>
+  <path d="M 10 70 L 90 70" fill="none" stroke="#000000" stroke-width="1"/>
+</svg>"""
+
+    def _write(self, tmp_path: Path, svg: str) -> Path:
+        path = tmp_path / "hand.svg"
+        path.write_text(svg, encoding="utf-8")
+        return path
+
+    def test_default_omits_pen_up_moves(self, tmp_path: Path) -> None:
+        """The default keeps the existing behaviour: only drawn strokes."""
+        svg = self._write(tmp_path, self._hand_svg())
+
+        strokes = parse_svg_strokes(svg)
+
+        assert len(strokes) == 3
+        assert all(not stroke.pen_up for stroke in strokes)
+        cost = compute_machine_cost(strokes)
+        assert cost["total"]["drawing_length_mm"] == pytest.approx(240.0)
+        assert cost["total"]["pen_up_travel_mm"] == 0.0
+        assert cost["total"]["num_lifts"] == 0
+        assert cost["total"]["num_strokes"] == 3
+
+    def test_include_pen_up_inserts_travel_between_noncontiguous_strokes(
+        self, tmp_path: Path
+    ) -> None:
+        """The hand-made SVG draws 240 mm, travels 60 mm and lifts twice."""
+        svg = self._write(tmp_path, self._hand_svg())
+
+        strokes = parse_svg_strokes(svg, include_pen_up=True)
+
+        assert [stroke.pen_up for stroke in strokes] == [False, True, False, True, False]
+        assert strokes[1].polyline == [(90.0, 10.0), (90.0, 40.0)]
+        assert strokes[3].polyline == [(10.0, 40.0), (10.0, 70.0)]
+        cost = compute_machine_cost(strokes)
+        assert cost["total"]["drawing_length_mm"] == pytest.approx(240.0)
+        assert cost["total"]["pen_up_travel_mm"] == pytest.approx(60.0)
+        assert cost["total"]["num_lifts"] == 2
+        assert cost["total"]["num_strokes"] == 3
+
+    def test_single_stroke_has_no_travel_or_lift(self, tmp_path: Path) -> None:
+        """One stroke has no other stroke to travel from."""
+        svg = self._write(
+            tmp_path,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<path d="M 10 10 L 90 10" fill="none" stroke="#000000" stroke-width="1"/>'
+            "</svg>",
+        )
+
+        strokes = parse_svg_strokes(svg, include_pen_up=True)
+
+        assert len(strokes) == 1
+        cost = compute_machine_cost(strokes)
+        assert cost["total"]["drawing_length_mm"] == pytest.approx(80.0)
+        assert cost["total"]["pen_up_travel_mm"] == 0.0
+        assert cost["total"]["num_lifts"] == 0
+        assert cost["total"]["num_strokes"] == 1
+
+    def test_contiguous_strokes_get_no_travel(self, tmp_path: Path) -> None:
+        """Strokes that end where the next starts need no lift."""
+        svg = self._write(
+            tmp_path,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<path d="M 10 10 L 20 10" fill="none" stroke="#000000" stroke-width="1"/>'
+            '<path d="M 20 10 L 30 10" fill="none" stroke="#000000" stroke-width="1"/>'
+            "</svg>",
+        )
+
+        strokes = parse_svg_strokes(svg, include_pen_up=True)
+
+        assert len(strokes) == 2
+        assert all(not stroke.pen_up for stroke in strokes)
+        cost = compute_machine_cost(strokes)
+        assert cost["total"]["pen_up_travel_mm"] == 0.0
+        assert cost["total"]["num_lifts"] == 0
+        assert cost["total"]["drawing_length_mm"] == pytest.approx(20.0)
+
+    @pytest.mark.parametrize(("gap", "expect_travel"), [(0.005, False), (0.02, True)])
+    def test_travel_epsilon_boundary(self, tmp_path: Path, gap: float, expect_travel: bool) -> None:
+        """Gaps below 0.01 mm are contiguous; larger gaps produce a lift."""
+        svg = self._write(
+            tmp_path,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<path d="M 10 10 L 20 10" fill="none" stroke="#000000" stroke-width="1"/>'
+            f'<path d="M {20 + gap} 10 L 30 10" fill="none" stroke="#000000" stroke-width="1"/>'
+            "</svg>",
+        )
+
+        strokes = parse_svg_strokes(svg, include_pen_up=True)
+
+        assert len(strokes) == (3 if expect_travel else 2)
+        cost = compute_machine_cost(strokes)
+        assert cost["total"]["num_lifts"] == (1 if expect_travel else 0)
+        assert cost["total"]["pen_up_travel_mm"] == pytest.approx(gap if expect_travel else 0.0)
+
+    def test_travel_uses_following_stroke_style(self, tmp_path: Path) -> None:
+        """A travel move takes the colour and width of the pen about to draw."""
+        svg = self._write(
+            tmp_path,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<path d="M 0 0 L 10 0" fill="none" stroke="#000000" stroke-width="1"/>'
+            '<path d="M 20 0 L 30 0" fill="none" stroke="#FF0000" stroke-width="2"/>'
+            "</svg>",
+        )
+
+        strokes = parse_svg_strokes(svg, include_pen_up=True)
+
+        assert strokes[1].pen_up is True
+        assert strokes[1].color == "#FF0000"
+        assert strokes[1].width_mm == pytest.approx(2.0)
+
+    def test_per_layer_numbers_add_up_to_total(self, tmp_path: Path) -> None:
+        """Per-layer travel, lifts and strokes sum to the total."""
+        svg = self._write(
+            tmp_path,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<path d="M 0 0 L 10 0" fill="none" stroke="#000000" stroke-width="1"/>'
+            '<path d="M 20 0 L 30 0" fill="none" stroke="#FF0000" stroke-width="1"/>'
+            '<path d="M 40 0 L 50 0" fill="none" stroke="#000000" stroke-width="1"/>'
+            "</svg>",
+        )
+
+        strokes = parse_svg_strokes(svg, include_pen_up=True)
+        cost = compute_machine_cost(strokes)
+        total = cost["total"]
+        per_layer = cost["per_layer"]
+
+        assert total["drawing_length_mm"] == pytest.approx(30.0)
+        assert total["pen_up_travel_mm"] == pytest.approx(20.0)
+        assert total["num_lifts"] == 2
+        assert total["num_strokes"] == 3
+        assert per_layer["#000000"]["drawing_length_mm"] == pytest.approx(20.0)
+        assert per_layer["#000000"]["pen_up_travel_mm"] == pytest.approx(10.0)
+        assert per_layer["#000000"]["num_lifts"] == 1
+        assert per_layer["#000000"]["num_strokes"] == 2
+        assert per_layer["#FF0000"]["drawing_length_mm"] == pytest.approx(10.0)
+        assert per_layer["#FF0000"]["pen_up_travel_mm"] == pytest.approx(10.0)
+        assert per_layer["#FF0000"]["num_lifts"] == 1
+        assert per_layer["#FF0000"]["num_strokes"] == 1
+        for key in ("drawing_length_mm", "pen_up_travel_mm", "num_lifts", "num_strokes"):
+            assert sum(layer[key] for layer in per_layer.values()) == pytest.approx(total[key])
+
+
 class TestPlacementConsistency:
     def test_same_drawing_at_two_placements_maps_to_identical_image_strokes(
         self, tmp_path: Path
