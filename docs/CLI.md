@@ -111,16 +111,24 @@ returns the plotted strokes as `PenStroke` objects in millimetres.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `line_density` | float | `0.3` | Lines per mm (0.1–2.0) |
-| `min_length` | float | `0.5` | Minimum line length (mm) |
-| `max_length` | float | `10.0` | Maximum line length (mm) |
-| `angle_range` | int | `180` | Search angle range (degrees, 1–180) |
-| `shading` | bool | `true` | Enable tonal shading |
-| `squiggles` | bool | `false` | Add squiggle variation |
-| `erasing` | bool | `false` | Enable erasing (lighter areas) |
+| `line_density` | float | `0.75` | Ink density; stops the run sooner when lower (0.01–10) |
+| `min_length` | float | `10.0` | Minimum segment length in image pixels |
+| `max_length` | float | `100.0` | Maximum segment length in image pixels |
+| `angle_range` | tuple | `0,360` | Start angle range in degrees |
+| `shading_enabled` | bool | `false` | Search two opposite directions late in the run |
+| `squiggle_enabled` | bool | `true` | Add perpendicular noise to segments |
+| `erase_enabled` | bool | `true` | Lighten drawn pixels so strokes move on |
+| `erase_min` | float | `50.0` | Brightness added to a dark pixel |
+| `erase_max` | float | `125.0` | Brightness added to a bright pixel |
+| `tone` | float | `0.5` | Cubic/linear blend of the erase amount |
+| `squiggle_max_deviation` | float | `0.25` | How far a squiggle may stray from the starting darkness |
+| `squiggle_min_length` | int | `25` | Segments before the darkness rule may end a squiggle |
+| `squiggle_max_length` | int | `500` | Hard limit on segments in one squiggle |
+| `shading_threshold` | float | `0.5` | Progress at which shading starts |
+| `max_strokes` | int | `auto` | Hard stroke cap (needed when erasing is off) |
 | `seed` | int | `random` | Random seed for reproducibility |
 
-**Example**: `-s line_density=0.5 -s shading=true -s seed=42`
+**Example**: `-s line_density=0.5 -s shading_enabled=true -s seed=42`
 
 #### Filters (Applied in Order)
 
