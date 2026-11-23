@@ -9,6 +9,7 @@ from shapely import LineString
 
 from penpath.core.models import Paper, Pen
 from penpath.core.output.svg import ImagePlacement, export_svg, fit_image_placement
+from penpath.core.simulation import compute_machine_cost
 from penpath.core.svg_parse import get_image_placement, get_svg_paper_size, parse_svg_strokes
 
 
@@ -174,6 +175,85 @@ class TestParseSvgStrokes:
         assert strokes[0].polyline == [(15.0, 17.0), (25.0, 17.0), (25.0, 27.0)]
         assert strokes[0].color == "#FF0000"
         assert strokes[0].width_mm == pytest.approx(0.5)
+
+    def test_parse_svg_strokes_polygon_fill_none_closes_path(self, tmp_path: Path) -> None:
+        """An unfilled polygon becomes a stroke including the closing edge."""
+        svg_path = tmp_path / "polygon.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<polygon points="0,0 30,0 30,40" fill="none" stroke="#000000" '
+            'stroke-width="1mm"/>'
+            "</svg>"
+        )
+
+        strokes = parse_svg_strokes(svg_path)
+
+        assert len(strokes) == 1
+        assert strokes[0].polyline == [(0.0, 0.0), (30.0, 0.0), (30.0, 40.0), (0.0, 0.0)]
+        assert strokes[0].width_mm == pytest.approx(1.0)
+        cost = compute_machine_cost(strokes)
+        assert cost["total"]["drawing_length_mm"] == pytest.approx(120.0)
+
+    def test_parse_svg_strokes_polygon_with_fill_is_ignored(self, tmp_path: Path) -> None:
+        """A filled polygon is a shape, not a stroke, even with a stroke colour."""
+        svg_path = tmp_path / "filled.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<polygon points="0,0 30,0 30,40" fill="#FF0000" stroke="#000000"/>'
+            '<polygon points="40,40 50,40 50,50" fill="black" stroke="#000000"/>'
+            "</svg>"
+        )
+
+        assert parse_svg_strokes(svg_path) == []
+
+    def test_parse_svg_strokes_polygon_inherits_fill_none(self, tmp_path: Path) -> None:
+        """A polygon with no local fill uses the inherited group style."""
+        svg_path = tmp_path / "grouped.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<g fill="none" stroke="#0000FF" stroke-width="2mm">'
+            '<polygon points="10,10 20,10 20,20"/>'
+            "</g></svg>"
+        )
+
+        strokes = parse_svg_strokes(svg_path)
+
+        assert len(strokes) == 1
+        assert strokes[0].color == "#0000FF"
+        assert strokes[0].polyline[-1] == strokes[0].polyline[0]
+
+    def test_parse_svg_strokes_polygon_already_closed_has_no_duplicate_point(
+        self, tmp_path: Path
+    ) -> None:
+        """A polygon whose points repeat the first adds no zero-length edge."""
+        svg_path = tmp_path / "closed.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<polygon points="0,0 30,0 30,40 0,0" fill="none" stroke="#000000"/>'
+            "</svg>"
+        )
+
+        strokes = parse_svg_strokes(svg_path)
+
+        assert len(strokes) == 1
+        assert strokes[0].polyline == [(0.0, 0.0), (30.0, 0.0), (30.0, 40.0), (0.0, 0.0)]
+
+    def test_parse_svg_strokes_unfilled_rect_stays_unparsed(self, tmp_path: Path) -> None:
+        """Outline shapes other than polygons stay out of scope, even unfilled."""
+        svg_path = tmp_path / "rect.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<rect x="10" y="10" width="80" height="80" fill="none" stroke="#000000"/>'
+            "</svg>",
+            encoding="utf-8",
+        )
+
+        assert parse_svg_strokes(svg_path) == []
 
     def test_parse_svg_strokes_skips_hidden_and_filled_shapes(self, tmp_path: Path) -> None:
         """Only visible, non-filled geometry becomes a stroke."""

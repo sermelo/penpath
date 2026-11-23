@@ -262,6 +262,14 @@ def _parse_points(points: str) -> list[tuple[float, float]]:
     return [(numbers[i], numbers[i + 1]) for i in range(0, len(numbers) - 1, 2)]
 
 
+def _close_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Append the first point so the pen draws the closing edge of a polygon."""
+    closed = list(points)
+    if closed and closed[-1] != closed[0]:
+        closed.append(closed[0])
+    return closed
+
+
 def _inherited_style(
     element: ET.Element,
     parent_map: dict[ET.Element, ET.Element],
@@ -342,9 +350,10 @@ def parse_svg_strokes(
 ) -> list[PenStroke]:
     """Parse an SVG file into pen strokes with coordinates in millimetres.
 
-    Paths, polylines and lines are extracted from the whole document, so both
-    penpath SVGs and SVGs from other tools can be read. Filled shapes, hidden
-    elements and content inside ``<defs>`` are ignored.
+    Paths, polylines, unfilled polygons and lines are extracted from the whole
+    document, so both penpath SVGs and SVGs from other tools can be read.
+    Polygons are closed, so their length includes the closing edge. Filled
+    shapes, hidden elements and content inside ``<defs>`` are ignored.
 
     Parameters
     ----------
@@ -367,7 +376,7 @@ def parse_svg_strokes(
 
     for element in root.iter():
         tag = _local_name(element.tag).lower()
-        if tag not in ("path", "polyline", "line"):
+        if tag not in ("path", "polyline", "polygon", "line"):
             continue
         if element.get("display") == "none" or element.get("visibility") == "hidden":
             continue
@@ -383,8 +392,10 @@ def parse_svg_strokes(
 
         if tag == "path":
             subpaths = _parse_path_subpaths(element.get("d", ""))
-        elif tag == "polyline":
+        elif tag in ("polyline", "polygon"):
             points = _parse_points(element.get("points", ""))
+            if tag == "polygon":
+                points = _close_points(points)
             subpaths = [points] if len(points) >= 2 else []
         else:
             try:
