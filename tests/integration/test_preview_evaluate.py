@@ -58,6 +58,20 @@ def reference(tmp_path: Path) -> Path:
     return path
 
 
+def _polygon_svg() -> str:
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+  <polygon points="10,10 90,10 90,90" fill="none" stroke="#000000" stroke-width="1"/>
+</svg>"""
+
+
+@pytest.fixture
+def polygon_drawing(tmp_path: Path) -> Path:
+    path = tmp_path / "polygon.svg"
+    path.write_text(_polygon_svg(), encoding="utf-8")
+    return path
+
+
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
@@ -141,6 +155,39 @@ class TestPreview:
         result = runner.invoke(main, ["preview", str(drawing)])
         assert result.exit_code != 0
 
+    def test_preview_renders_polygon_closing_edge(
+        self, runner: CliRunner, polygon_drawing: Path, tmp_path: Path
+    ) -> None:
+        """The closing edge of an unfilled polygon is drawn in the preview."""
+        output = tmp_path / "polygon.png"
+        result = runner.invoke(
+            main, ["preview", str(polygon_drawing), "-o", str(output), "--dpi", "5"]
+        )
+
+        assert result.exit_code == 0, result.output
+        with Image.open(output) as image:
+            assert image.getpixel((250, 250)) == (0, 0, 0)
+
+    def test_preview_ignores_filled_polygon(self, runner: CliRunner, tmp_path: Path) -> None:
+        """A filled polygon is not drawn, while an unfilled one still is."""
+        svg = tmp_path / "mixed.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<polygon points="70,70 90,70 90,90" fill="#000000" stroke="#000000"/>'
+            '<polygon points="10,10 90,10 90,90" fill="none" stroke="#000000" '
+            'stroke-width="1"/>'
+            "</svg>",
+            encoding="utf-8",
+        )
+        output = tmp_path / "mixed.png"
+        result = runner.invoke(main, ["preview", str(svg), "-o", str(output), "--dpi", "5"])
+
+        assert result.exit_code == 0, result.output
+        with Image.open(output) as image:
+            assert image.getpixel((250, 250)) == (0, 0, 0)
+            assert image.getpixel((400, 350)) == (255, 255, 255)
+
 
 class TestEvaluate:
     def test_evaluate_json_has_all_fields(
@@ -164,6 +211,17 @@ class TestEvaluate:
         assert cost["total"]["num_strokes"] == 2
         assert cost["per_layer"]["#000000"]["num_strokes"] == 1
         assert cost["per_layer"]["#FF0000"]["num_strokes"] == 1
+
+    def test_evaluate_polygon_length_includes_closing_edge(
+        self, runner: CliRunner, polygon_drawing: Path, reference: Path
+    ) -> None:
+        """Evaluate counts the closing edge of a polygon as drawn ink."""
+        result = runner.invoke(main, ["evaluate", str(reference), str(polygon_drawing), "--json"])
+
+        assert result.exit_code == 0, result.output
+        cost = json.loads(result.stdout)["machine_cost"]["total"]
+        assert cost["num_strokes"] == 1
+        assert cost["drawing_length_mm"] == pytest.approx(80 + 80 + 80 * 2**0.5, abs=0.01)
 
     def test_evaluate_json_writes_only_json_to_stdout(
         self, runner: CliRunner, drawing: Path, reference: Path
