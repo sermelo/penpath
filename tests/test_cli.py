@@ -146,6 +146,76 @@ class TestConvertCommand:
         assert "viewBox" in svg_content
         assert "pen-" in svg_content  # Layer for pen
 
+    def test_convert_positional_output(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """The optional positional OUTPUT_PATH writes the SVG at the given path."""
+        output_path = tmp_path / "positional.svg"
+        result = runner.invoke(main, ["convert", str(test_image), str(output_path), "--no-vpype"])
+        assert result.exit_code == 0
+        assert output_path.exists()
+        svg_content = output_path.read_text()
+        assert "<svg" in svg_content
+        assert "</svg>" in svg_content
+
+    def test_convert_positional_and_option_land_on_same_file(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """The positional form and -o/--output both write the requested file."""
+        shared_path = tmp_path / "shared.svg"
+        positional = runner.invoke(
+            main, ["convert", str(test_image), str(shared_path), "--no-vpype"]
+        )
+        assert positional.exit_code == 0
+        assert shared_path.exists()
+        option = runner.invoke(
+            main, ["convert", str(test_image), "-o", str(shared_path), "--no-vpype"]
+        )
+        assert option.exit_code == 0
+        assert "<svg" in shared_path.read_text()
+
+    def test_convert_conflicting_output_paths(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """Different positional and -o paths are a usage error naming both."""
+        positional_path = tmp_path / "a.svg"
+        option_path = tmp_path / "b.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(test_image),
+                str(positional_path),
+                "-o",
+                str(option_path),
+                "--no-vpype",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "Conflicting output paths" in result.output
+        assert str(positional_path) in result.output
+        assert str(option_path) in result.output
+        assert not positional_path.exists()
+        assert not option_path.exists()
+
+    def test_convert_same_output_path_from_both_forms(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """Giving the same path both ways is accepted."""
+        output_path = tmp_path / "same.svg"
+        result = runner.invoke(
+            main,
+            ["convert", str(test_image), str(output_path), "-o", str(output_path), "--no-vpype"],
+        )
+        assert result.exit_code == 0
+        assert output_path.exists()
+
+    def test_convert_help_shows_optional_positional_output(self, runner: CliRunner) -> None:
+        """--help documents INPUT_PATH [OUTPUT_PATH]."""
+        result = runner.invoke(main, ["convert", "--help"])
+        assert result.exit_code == 0
+        assert "INPUT_PATH [OUTPUT_PATH]" in result.output
+
     def test_convert_with_filters(
         self, runner: CliRunner, test_image: Path, tmp_path: Path
     ) -> None:

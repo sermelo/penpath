@@ -264,6 +264,27 @@ def _determine_output_path(input_path: Path, output_path: str | None) -> Path:
     return input_path.parent / f"{input_path.stem}_plot.svg"
 
 
+def _resolve_output_path(
+    input_path: Path, positional: Path | None, option: Path | None
+) -> Path | None:
+    """Resolve the output path from the positional argument and -o/--output."""
+    if positional is None and option is None:
+        return None
+
+    positional_path = (
+        _determine_output_path(input_path, str(positional)) if positional is not None else None
+    )
+    option_path = _determine_output_path(input_path, str(option)) if option is not None else None
+
+    if positional_path is not None and option_path is not None and positional_path != option_path:
+        raise click.UsageError(
+            f"Conflicting output paths: '{positional_path}' (OUTPUT_PATH) and "
+            f"'{option_path}' (-o/--output). Give only one."
+        )
+
+    return positional_path if positional_path is not None else option_path
+
+
 def _run_convert_pipeline(
     project: Project,
     use_vpype: bool,
@@ -324,7 +345,12 @@ def _run_convert_pipeline(
             project.output_path.write_bytes(svg_bytes)
             add_placement_metadata(project.output_path, image_placement)
         except FileNotFoundError:
-            console.print("[yellow]vpype not found, falling back to direct SVG export[/yellow]")
+            console.print(
+                "vpype not found, falling back to direct SVG export "
+                '(install it with: pip install "penpath[vpype]")',
+                style="yellow",
+                markup=False,
+            )
             export_svg(
                 optimized_lines,
                 project.paper,
@@ -351,8 +377,9 @@ def _run_convert_pipeline(
 
 @click.command(name="convert")
 @click.argument("input_path", type=click.Path(exists=True, path_type=Path))
+@click.argument("output_path", required=False, type=click.Path(path_type=Path))
 @click.option(
-    "-o", "--output", "output_path", type=click.Path(path_type=Path), help="Output SVG path"
+    "-o", "--output", "output_option", type=click.Path(path_type=Path), help="Output SVG path"
 )
 @click.option(
     "--project",
@@ -395,6 +422,7 @@ def convert_cmd(
     ctx: click.Context,
     input_path: Path,
     output_path: Path | None,
+    output_option: Path | None,
     project_path: Path | None,
     filter_specs: tuple[str, ...],
     no_auto_orient: bool,
@@ -413,6 +441,8 @@ def convert_cmd(
     INPUT_PATH: Path to input image (PNG, JPG, TIFF, BMP)
     OUTPUT_PATH: Output SVG path (default: <input>_plot.svg beside input)
     """
+    resolved_output = _resolve_output_path(input_path, output_path, output_option)
+
     # Load config
     config = load_config(config_path)
 
@@ -432,8 +462,8 @@ def convert_cmd(
             project.pen = _resolve_pen(pen_spec, config)
         if paper_spec:
             project.paper = _resolve_paper(paper_spec, config)
-        if output_path:
-            project.output_path = _determine_output_path(input_path, str(output_path))
+        if resolved_output:
+            project.output_path = resolved_output
         if dpi != 300:
             project.image.dpi = dpi
         project.image.path = input_path  # Always use CLI input path
@@ -449,7 +479,9 @@ def convert_cmd(
         pen = _resolve_pen(pen_spec, config)
         paper = _resolve_paper(paper_spec, config)
         pfm = _resolve_pfm(pfm_name, _parse_pfm_settings(pfm_settings))
-        output = _determine_output_path(input_path, str(output_path) if output_path else None)
+        output = _determine_output_path(
+            input_path, str(resolved_output) if resolved_output else None
+        )
 
         project = Project(
             image=ImageRef(path=input_path, filters=filter_pipeline, dpi=dpi),
