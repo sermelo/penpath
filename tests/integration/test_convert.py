@@ -15,6 +15,9 @@ from penpath.cli.commands import convert as convert_module
 from penpath.cli.main import main
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm
+from penpath.core.image.pipeline import FilterPipeline
+from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM
+from penpath.core.project import save_yaml
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -98,3 +101,28 @@ class TestConvertSeed:
         assert eval_a.exit_code == 0, eval_a.output
         assert eval_b.exit_code == 0, eval_b.output
         assert json.loads(eval_a.stdout) == json.loads(eval_b.stdout)
+
+    def test_seed_from_project_file_is_deterministic(
+        self, runner: CliRunner, reference_image: Path, tmp_path: Path
+    ) -> None:
+        """The seed stored in a project YAML reaches the algorithm too."""
+        outputs = (tmp_path / "proj_a.svg", tmp_path / "proj_b.svg")
+        for output in outputs:
+            project_path = tmp_path / f"{output.stem}.yaml"
+            save_yaml(
+                Project(
+                    image=ImageRef(path=reference_image, filters=FilterPipeline(), dpi=300),
+                    paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
+                    pen=Pen(name="fine", width_mm=0.3),
+                    pfm=SketchLinesPFM(settings=SketchLinesSettings(seed=42)),
+                    output_path=output,
+                ),
+                project_path,
+            )
+            result = runner.invoke(
+                main,
+                ["convert", str(reference_image), "-p", str(project_path), "--no-vpype"],
+            )
+            assert result.exit_code == 0, result.output
+
+        assert outputs[0].read_bytes() == outputs[1].read_bytes()
