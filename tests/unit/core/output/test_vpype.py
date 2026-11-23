@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
+
 import pytest
 from shapely import LineString
 
 from penpath.core.models import Paper, Pen
+from penpath.core.output.svg import ImagePlacement
 from penpath.core.output.vpype import run_vpype
 
 # Skip all tests in this module if vpype is not installed
@@ -121,15 +124,70 @@ class TestRunVpype:
         assert any(check in svg_lower for check in layer_checks) or b"layer" in svg_lower
 
     def test_run_vpype_centered_output(self):
-        """Output should be centered (--center flag)."""
+        """Output should be centered (--center flag) when no placement is given."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [LineString([(100, 100), (200, 200)])]
 
         svg_bytes = run_vpype(lines, paper, [pen])
 
-        # Just verify it runs and produces SVG - centering is vpype's job
         assert b"<svg" in svg_bytes
+        assert b"--center" in svg_bytes
+
+    def test_run_vpype_placement_without_image_size_raises(self):
+        """A placement requires the image size in pixels."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pen = Pen(name="fine", width_mm=0.3)
+        lines = [LineString([(100, 100), (200, 200)])]
+
+        with pytest.raises(ValueError, match="image_size_px is required"):
+            run_vpype(lines, paper, [pen], image_placement=(10.0, 20.0, 50.0, 50.0))
+
+    def test_run_vpype_placement_scales_geometry_and_drops_center(self):
+        """With a placement, geometry lands in the rectangle without recentering."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+        lines = [LineString([(0, 0), (100, 50)])]
+        placement = ImagePlacement(x=10.0, y=10.0, width=50.0, height=25.0)
+
+        svg_bytes = run_vpype(
+            lines,
+            paper,
+            [pen],
+            image_placement=placement,
+            image_size_px=(100, 50),
+        )
+
+        assert b"<svg" in svg_bytes
+        assert b"--center" not in svg_bytes
+        root = ET.fromstring(svg_bytes)
+        drawn_lines = [element for element in root.iter() if element.tag.endswith("line")]
+        assert len(drawn_lines) == 1
+        line = drawn_lines[0]
+        mm_to_px = 96 / 25.4
+        assert float(line.get("x1")) == pytest.approx(placement.x * mm_to_px, abs=0.01)
+        assert float(line.get("y1")) == pytest.approx(placement.y * mm_to_px, abs=0.01)
+        assert float(line.get("x2")) == pytest.approx(
+            (placement.x + placement.width) * mm_to_px, abs=0.01
+        )
+        assert float(line.get("y2")) == pytest.approx(
+            (placement.y + placement.height) * mm_to_px, abs=0.01
+        )
+
+    def test_run_vpype_writes_pen_width(self):
+        """The vpype output carries the real pen width for faithful previews."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+        lines = [LineString([(0, 0), (100, 50)])]
+
+        svg_bytes = run_vpype(lines, paper, [pen])
+
+        root = ET.fromstring(svg_bytes)
+        groups = [element for element in root.iter() if element.tag.endswith("g")]
+        assert any(
+            float(group.get("stroke-width", "0")) == pytest.approx(0.3 * 96 / 25.4, abs=0.001)
+            for group in groups
+        )
 
 
 class TestRunVpypeMultiPen:

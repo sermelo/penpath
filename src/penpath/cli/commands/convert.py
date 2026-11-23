@@ -313,7 +313,14 @@ def _run_convert_pipeline(
     progress.update(task_id, description="Exporting SVG...", advance=20)
     if use_vpype:
         try:
-            svg_bytes = run_vpype(optimized_lines, project.paper, [project.pen], vpype_path)
+            svg_bytes = run_vpype(
+                optimized_lines,
+                project.paper,
+                [project.pen],
+                vpype_path,
+                image_placement,
+                image_size_px,
+            )
             project.output_path.write_bytes(svg_bytes)
             add_placement_metadata(project.output_path, image_placement)
         except FileNotFoundError:
