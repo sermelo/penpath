@@ -10,6 +10,7 @@ from penpath.core.output.svg import ImagePlacement, fit_image_placement
 from penpath.core.simulation import PenStroke
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+INKSCAPE_NAMESPACE = "http://www.inkscape.org/namespaces/inkscape"
 
 MM_PER_SVG_UNIT = 25.4 / 96
 
@@ -98,6 +99,24 @@ def _page_size_mm(root: ET.Element) -> tuple[float, float]:
                 return page_width, page_height
 
     raise ValueError("SVG has no readable page size (set width/height or viewBox)")
+
+
+def get_svg_paper_size(svg_path: str | Path) -> tuple[float, float] | None:
+    """Return the SVG page size as ``(width_mm, height_mm)``.
+
+    Returns ``None`` when the file has no readable width/height or viewBox, so
+    callers can fall back to another paper size.
+
+    Parameters
+    ----------
+    svg_path : str | Path
+        Path to the SVG file.
+    """
+    root = ET.parse(Path(svg_path)).getroot()
+    try:
+        return _page_size_mm(root)
+    except ValueError:
+        return None
 
 
 def _compose_transforms(parent: _Transform, child: _Transform) -> _Transform:
@@ -292,7 +311,35 @@ def _has_hidden_ancestor(
     return False
 
 
-def parse_svg_strokes(svg_path: str | Path) -> list[PenStroke]:
+def _element_layer_labels(
+    element: ET.Element,
+    parent_map: dict[ET.Element, ET.Element],
+) -> set[str]:
+    """Return the layer labels and ids of the Inkscape layers containing an element."""
+    labels: set[str] = set()
+    current = element
+    while current in parent_map:
+        current = parent_map[current]
+        if _local_name(current.tag).lower() != "g":
+            continue
+        groupmode = current.get("inkscape:groupmode") or current.get(
+            f"{{{INKSCAPE_NAMESPACE}}}groupmode"
+        )
+        if groupmode != "layer":
+            continue
+        label = current.get("inkscape:label") or current.get(f"{{{INKSCAPE_NAMESPACE}}}label")
+        if label:
+            labels.add(label)
+        element_id = current.get("id")
+        if element_id:
+            labels.add(element_id)
+    return labels
+
+
+def parse_svg_strokes(
+    svg_path: str | Path,
+    layer: str | None = None,
+) -> list[PenStroke]:
     """Parse an SVG file into pen strokes with coordinates in millimetres.
 
     Paths, polylines and lines are extracted from the whole document, so both
@@ -303,6 +350,10 @@ def parse_svg_strokes(svg_path: str | Path) -> list[PenStroke]:
     ----------
     svg_path : str | Path
         Path to the SVG file.
+    layer : str | None, optional
+        When given, only strokes inside an Inkscape layer whose label or id
+        matches this value are returned. ``None`` (the default) returns all
+        strokes.
 
     Returns
     -------
@@ -321,6 +372,8 @@ def parse_svg_strokes(svg_path: str | Path) -> list[PenStroke]:
         if element.get("display") == "none" or element.get("visibility") == "hidden":
             continue
         if _has_hidden_ancestor(element, parent_map):
+            continue
+        if layer is not None and layer not in _element_layer_labels(element, parent_map):
             continue
 
         inherited_stroke, inherited_width, inherited_fill = _inherited_style(element, parent_map)
@@ -449,5 +502,6 @@ def get_image_placement(
 __all__ = [
     "ImagePlacement",
     "get_image_placement",
+    "get_svg_paper_size",
     "parse_svg_strokes",
 ]

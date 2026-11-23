@@ -56,6 +56,7 @@ from penpath.core.simulation import (
 from penpath.core.svg_parse import (
     ImagePlacement,
     get_image_placement,
+    get_svg_paper_size,
     parse_svg_strokes,
 )
 
@@ -93,6 +94,7 @@ __all__ = [
     "gaussian_blur",
     "get_filter",
     "get_image_placement",
+    "get_svg_paper_size",
     "grayscale",
     "invert",
     "list_filters",

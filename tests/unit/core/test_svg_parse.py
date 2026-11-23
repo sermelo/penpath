@@ -9,7 +9,7 @@ from shapely import LineString
 
 from penpath.core.models import Paper, Pen
 from penpath.core.output.svg import ImagePlacement, export_svg, fit_image_placement
-from penpath.core.svg_parse import get_image_placement, parse_svg_strokes
+from penpath.core.svg_parse import get_image_placement, get_svg_paper_size, parse_svg_strokes
 
 
 def _paper() -> Paper:
@@ -260,3 +260,55 @@ class TestPlacementConsistency:
         assert placement.height == pytest.approx(90.0)
         assert placement.x == pytest.approx(10.0)
         assert placement.y == pytest.approx(10.0 + (277.0 - 90.0) / 2)
+
+
+class TestGetSvgPaperSize:
+    def test_get_svg_paper_size_from_width_and_height(self, tmp_path: Path) -> None:
+        svg = tmp_path / "size.svg"
+        svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="200mm" height="100mm"/>')
+        assert get_svg_paper_size(svg) == pytest.approx((200.0, 100.0))
+
+    def test_get_svg_paper_size_from_viewbox(self, tmp_path: Path) -> None:
+        svg = tmp_path / "viewbox.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 200 200"/>'
+        )
+        assert get_svg_paper_size(svg) == pytest.approx((100.0, 100.0))
+
+    def test_get_svg_paper_size_missing_returns_none(self, tmp_path: Path) -> None:
+        svg = tmp_path / "nosize.svg"
+        svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 L 1 1"/></svg>')
+        assert get_svg_paper_size(svg) is None
+
+
+class TestLayerFiltering:
+    @staticmethod
+    def _layered_svg() -> str:
+        return """<svg xmlns="http://www.w3.org/2000/svg"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    width="100mm" height="100mm" viewBox="0 0 100 100">
+  <g inkscape:groupmode="layer" inkscape:label="Pen: fine" stroke="#000000" stroke-width="1">
+    <path d="M 0 0 L 10 10" fill="none"/>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="Pen: bold" stroke="#FF0000" stroke-width="1">
+    <path d="M 20 20 L 30 30" fill="none"/>
+  </g>
+</svg>"""
+
+    def test_parse_all_strokes_without_filter(self, tmp_path: Path) -> None:
+        svg = tmp_path / "layers.svg"
+        svg.write_text(self._layered_svg())
+        assert len(parse_svg_strokes(svg)) == 2
+
+    def test_parse_single_layer_by_label(self, tmp_path: Path) -> None:
+        svg = tmp_path / "layers.svg"
+        svg.write_text(self._layered_svg())
+        strokes = parse_svg_strokes(svg, layer="Pen: bold")
+        assert len(strokes) == 1
+        assert strokes[0].color == "#FF0000"
+
+    def test_parse_unknown_layer_returns_empty(self, tmp_path: Path) -> None:
+        svg = tmp_path / "layers.svg"
+        svg.write_text(self._layered_svg())
+        assert parse_svg_strokes(svg, layer="does not exist") == []
