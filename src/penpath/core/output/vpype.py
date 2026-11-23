@@ -13,6 +13,7 @@ from shapely import LineString
 from penpath.core.output.svg import (
     ImagePlacement,
     _as_placement,
+    _pen_layer_label,
     _scale_geometries_to_placement,
 )
 
@@ -76,6 +77,9 @@ def run_vpype(
     """Run vpype pipeline for line optimization and SVG export.
 
     Pipeline: linemerge -> linesimplify -> reloop -> linesort -> penwidth -> write.
+    Each pen's colour and layer label are written to its vpype layer with the
+    ``color`` and ``name`` commands, so the output describes the same pen as the
+    direct SVG export.
     Without a placement, vpype centers the output on the page. When a placement
     is given, the geometries are scaled onto that rectangle first (in pixels,
     1/96 inch per unit) and ``--center`` is dropped, so vpype writes them where
@@ -141,8 +145,10 @@ def run_vpype(
         # Build vpype command
         cmd = [vpype_path]
 
-        # Add script commands for each pen layer
-        for i, _pen in enumerate(pens):
+        # Add script commands for each pen layer, carrying the pen's identity
+        # into vpype so the exported SVG uses the same colour and label as the
+        # direct export.
+        for i, pen in enumerate(pens):
             layer_id = i + 1  # vpype layers are 1-indexed
             script_content = _create_vpype_script(
                 placed_geometries if i == 0 else [],  # Only first pen gets geometries (MVP)
@@ -156,6 +162,8 @@ def run_vpype(
                 temp_files.append(Path(f.name))
 
             cmd.extend(["script", "--layer", str(layer_id), str(temp_files[-1])])
+            cmd.extend(["color", "--layer", str(layer_id), pen.color])
+            cmd.extend(["name", "--layer", str(layer_id), _pen_layer_label(pen)])
 
         # Add optimization pipeline. The pen width is written as a vpype layer
         # property so the simulator sees the real stroke width, not a fallback.

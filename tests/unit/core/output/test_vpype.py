@@ -5,14 +5,39 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 import pytest
+from PIL import ImageColor
 from shapely import LineString
 
 from penpath.core.models import Paper, Pen
-from penpath.core.output.svg import ImagePlacement
+from penpath.core.output.svg import ImagePlacement, export_svg
 from penpath.core.output.vpype import run_vpype
 
 # Skip all tests in this module if vpype is not installed
 pytest.importorskip("vpype", reason="vpype not installed, skipping vpype tests")
+
+INKSCAPE_ATTR = "{http://www.inkscape.org/namespaces/inkscape}"
+
+
+def _layers_by_label(svg_bytes: bytes) -> dict[str, dict[str, str]]:
+    """Map each Inkscape layer label to its attributes."""
+    root = ET.fromstring(svg_bytes)
+    layers: dict[str, dict[str, str]] = {}
+    for element in root.iter():
+        if not element.tag.endswith("g"):
+            continue
+        groupmode = element.get("inkscape:groupmode") or element.get(INKSCAPE_ATTR + "groupmode")
+        if groupmode != "layer":
+            continue
+        label = element.get("inkscape:label") or element.get(INKSCAPE_ATTR + "label")
+        if label:
+            attrs = dict(element.attrib)
+            if "stroke" not in attrs:
+                for descendant in element.iter():
+                    if descendant.get("stroke"):
+                        attrs["stroke"] = descendant.get("stroke") or ""
+                        break
+            layers[label] = attrs
+    return layers
 
 
 class TestRunVpype:
@@ -189,6 +214,36 @@ class TestRunVpype:
             for group in groups
         )
 
+    def test_run_vpype_writes_pen_colour_and_layer_label(self):
+        """The vpype layer carries the pen's colour and label, not vpype defaults."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
+        pen = Pen(name="fine", width_mm=0.3, color="#123456")
+        lines = [LineString([(100, 100), (200, 200)])]
+
+        svg_bytes = run_vpype(lines, paper, [pen])
+
+        layers = _layers_by_label(svg_bytes)
+        assert set(layers) == {"Pen: fine"}
+        assert layers["Pen: fine"].get("stroke", "").lower() == pen.color
+        assert b"#0000ff" not in svg_bytes
+
+    def test_run_vpype_pen_identity_agrees_with_direct_export(self, tmp_path):
+        """Both export paths describe the same pen, even when CSS names are normalised."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
+        pen = Pen(name="red_fine", width_mm=0.3, color="red")
+        lines = [LineString([(100, 100), (200, 200)])]
+        output = tmp_path / "direct.svg"
+
+        export_svg(lines, paper, [pen], output)
+        vpype_layers = _layers_by_label(run_vpype(lines, paper, [pen]))
+        direct_layers = _layers_by_label(output.read_bytes())
+
+        assert "Pen: red_fine" in vpype_layers
+        assert "Pen: red_fine" in direct_layers
+        assert ImageColor.getrgb(vpype_layers["Pen: red_fine"]["stroke"]) == ImageColor.getrgb(
+            direct_layers["Pen: red_fine"]["stroke"]
+        )
+
 
 class TestRunVpypeMultiPen:
     """Tests for multi-pen support (future extensibility)."""
@@ -208,6 +263,9 @@ class TestRunVpypeMultiPen:
         assert b"<svg" in svg_bytes
         # Both layers should exist (layer1 populated, layer2 empty)
         # vpype creates layers for all script calls
+        layers = _layers_by_label(svg_bytes)
+        assert layers["Pen: fine"]["stroke"].lower() == "#000000"
+        assert layers["Pen: bold"]["stroke"].lower() == "#ff0000"
 
 
 if __name__ == "__main__":
