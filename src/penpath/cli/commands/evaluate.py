@@ -1,0 +1,161 @@
+"""``penpath evaluate`` - score likeness and machine cost of a pen plot."""
+
+from __future__ import annotations
+
+import json
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import cast
+
+import click
+from PIL import Image, UnidentifiedImageError
+from rich.console import Console
+from rich.table import Table
+
+from penpath.core import (
+    compute_likeness,
+    compute_machine_cost,
+    get_image_placement,
+    get_svg_paper_size,
+    parse_svg_strokes,
+    simulate_plot,
+)
+from penpath.core.simulation import LayerMetrics, MachineCostResult
+
+DEFAULT_PX_PER_MM = 96 / 25.4
+FALLBACK_PAPER_MM = (210.0, 297.0)
+
+console = Console(stderr=True)
+
+
+def _cost_table(cost: MachineCostResult) -> Table:
+    """Build the human-readable machine cost table."""
+    table = Table(title="Machine Cost", show_header=True, header_style="bold")
+    table.add_column("Layer", style="cyan")
+    table.add_column("Drawing (mm)", justify="right")
+    table.add_column("Pen-up (mm)", justify="right")
+    table.add_column("Lifts", justify="right")
+    table.add_column("Short segments", justify="right")
+    table.add_column("Strokes", justify="right")
+
+    per_layer = cast(dict[str, LayerMetrics], cost["per_layer"])
+    for layer, metrics in per_layer.items():
+        table.add_row(
+            layer,
+            f"{metrics['drawing_length_mm']:.2f}",
+            f"{metrics['pen_up_travel_mm']:.2f}",
+            str(metrics["num_lifts"]),
+            str(metrics["num_short_segments"]),
+            str(metrics["num_strokes"]),
+        )
+
+    total = cast(LayerMetrics, cost["total"])
+    table.add_row(
+        "TOTAL",
+        f"{total['drawing_length_mm']:.2f}",
+        f"{total['pen_up_travel_mm']:.2f}",
+        str(total["num_lifts"]),
+        str(total["num_short_segments"]),
+        str(total["num_strokes"]),
+        style="bold",
+    )
+    return table
+
+
+@click.command(name="evaluate")
+@click.argument("image", type=click.Path(exists=True, path_type=Path))
+@click.argument("drawing_svg", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print only JSON on stdout (for scripts and agents).",
+)
+@click.option(
+    "--dpi",
+    "px_per_mm",
+    type=float,
+    default=DEFAULT_PX_PER_MM,
+    show_default=True,
+    help="Resolution in pixels per millimetre (shared by simulation and likeness).",
+)
+@click.option(
+    "--paper-color",
+    default="#FFFFFF",
+    show_default=True,
+    help="Paper background colour (hex or named CSS colour).",
+)
+@click.option(
+    "--layer",
+    "layer_label",
+    default=None,
+    help="Only evaluate this pen layer (layer label or id). Default: all layers.",
+)
+def evaluate_cmd(
+    image: Path,
+    drawing_svg: Path,
+    as_json: bool,
+    px_per_mm: float,
+    paper_color: str,
+    layer_label: str | None,
+) -> None:
+    """Evaluate DRAWING_SVG against the original IMAGE.
+
+    The SVG is simulated at the chosen resolution, cropped to the recorded
+    image placement, and scored with SSIM. Machine cost is reported per pen
+    layer and in total. With --json, only a JSON object is written to stdout.
+    """
+    if px_per_mm <= 0:
+        raise click.BadParameter("must be greater than zero", param_hint="--dpi")
+
+    try:
+        with Image.open(image) as opened:
+            original_size = opened.size
+            original = opened.convert("RGB")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise click.ClickException(f"Could not read image: {exc}") from exc
+
+    try:
+        strokes = parse_svg_strokes(drawing_svg, layer=layer_label)
+    except (ET.ParseError, OSError, ValueError) as exc:
+        raise click.ClickException(f"Could not parse SVG: {exc}") from exc
+    if not strokes:
+        raise click.ClickException("No pen strokes found in SVG")
+
+    try:
+        placement = get_image_placement(drawing_svg, original_size)
+    except (ET.ParseError, OSError, ValueError) as exc:
+        raise click.ClickException(f"Could not read image placement: {exc}") from exc
+
+    width_mm, height_mm = get_svg_paper_size(drawing_svg) or FALLBACK_PAPER_MM
+    simulated = simulate_plot(
+        strokes,
+        paper_width_mm=width_mm,
+        paper_height_mm=height_mm,
+        paper_color=paper_color,
+        dpi_px_per_mm=px_per_mm,
+    )
+    likeness = compute_likeness(
+        simulated,
+        original,
+        (placement.x, placement.y, placement.width, placement.height),
+        dpi_px_per_mm=px_per_mm,
+    )
+    cost = compute_machine_cost(strokes)
+
+    if as_json:
+        click.echo(json.dumps({"likeness": likeness, "machine_cost": cost}, indent=2))
+        return
+
+    console.print(f"Evaluation: {drawing_svg.name} vs {image.name}")
+    console.print()
+    table = Table(title="Likeness", show_header=True, header_style="bold")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right")
+    table.add_row("SSIM", f"{likeness:.4f}")
+    console.print(table)
+    console.print()
+    console.print(_cost_table(cost))
+
+
+__all__ = ["evaluate_cmd"]

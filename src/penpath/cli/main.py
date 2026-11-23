@@ -5,7 +5,9 @@ import click
 from penpath import __version__
 from penpath.cli.commands.config_cmd import config_group
 from penpath.cli.commands.convert import convert_cmd
+from penpath.cli.commands.evaluate import evaluate_cmd
 from penpath.cli.commands.info import info_group
+from penpath.cli.commands.preview import preview_cmd
 
 
 @click.group(
@@ -22,7 +24,9 @@ def main(ctx: click.Context) -> None:
 
 main.add_command(config_group)
 main.add_command(convert_cmd)
+main.add_command(evaluate_cmd)
 main.add_command(info_group)
+main.add_command(preview_cmd)
 
 
 if __name__ == "__main__":
