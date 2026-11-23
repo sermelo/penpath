@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,6 +28,19 @@ def _make_test_image(path: Path) -> tuple[int, int]:
             pixels[x, y] = (value, value, value)
     image.save(path)
     return image.size
+
+
+def _stroke_bbox(path: Path) -> tuple[float, float, float, float]:
+    """Bounding box (min_x, min_y, max_x, max_y) of drawn ink, in mm."""
+    strokes = parse_svg_strokes(path)
+    assert strokes
+    points = [point for stroke in strokes for point in stroke.polyline]
+    return (
+        min(point[0] for point in points),
+        min(point[1] for point in points),
+        max(point[0] for point in points),
+        max(point[1] for point in points),
+    )
 
 
 class TestSvgPlacementIntegration:
@@ -175,3 +189,98 @@ class TestSvgPlacementIntegration:
         )
         assert placement == pytest.approx(expected, abs=0.1)
         assert parse_svg_strokes(output_path)
+
+    def test_vpype_export_geometry_inside_metadata_rectangle(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The default vpype export draws inside the rectangle it reports."""
+        pytest.importorskip("vpype")
+        if shutil.which("vpype") is None:
+            pytest.skip("vpype executable not found")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        image_path = tmp_path / "input.png"
+        image_size = _make_test_image(image_path)
+        output_path = tmp_path / "vpype_plot.svg"
+
+        result = CliRunner().invoke(
+            main,
+            [
+                "convert",
+                str(image_path),
+                "-o",
+                str(output_path),
+                "--pfm-setting",
+                "line_density=2.0",
+                "--pfm-setting",
+                "seed=42",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        placement = get_image_placement(output_path, image_size)
+        min_x, min_y, max_x, max_y = _stroke_bbox(output_path)
+        assert placement.x - 0.1 <= min_x
+        assert placement.y - 0.1 <= min_y
+        assert max_x <= placement.x + placement.width + 0.1
+        assert max_y <= placement.y + placement.height + 0.1
+
+    def test_direct_and_vpype_exports_agree_on_placement(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both export paths put the same drawing in the same paper rectangle."""
+        pytest.importorskip("vpype")
+        if shutil.which("vpype") is None:
+            pytest.skip("vpype executable not found")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        image_path = tmp_path / "input.png"
+        _make_test_image(image_path)
+        vpype_path = tmp_path / "vpype_plot.svg"
+        direct_path = tmp_path / "direct_plot.svg"
+        settings = [
+            "--pfm-setting",
+            "line_density=2.0",
+            "--pfm-setting",
+            "seed=42",
+        ]
+
+        vpype_result = CliRunner().invoke(
+            main,
+            ["convert", str(image_path), "-o", str(vpype_path), *settings],
+        )
+        direct_result = CliRunner().invoke(
+            main,
+            ["convert", str(image_path), "-o", str(direct_path), "--no-vpype", *settings],
+        )
+
+        assert vpype_result.exit_code == 0, vpype_result.output
+        assert direct_result.exit_code == 0, direct_result.output
+        assert _stroke_bbox(vpype_path) == pytest.approx(_stroke_bbox(direct_path), abs=0.2)
+
+    def test_evaluate_likeness_agrees_between_direct_and_vpype_exports(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The crop used by evaluate no longer favours one export path."""
+        pytest.importorskip("vpype")
+        if shutil.which("vpype") is None:
+            pytest.skip("vpype executable not found")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        image_path = tmp_path / "input.png"
+        _make_test_image(image_path)
+        vpype_path = tmp_path / "vpype_plot.svg"
+        direct_path = tmp_path / "direct_plot.svg"
+        settings = ["--pfm-setting", "line_density=2.0", "--pfm-setting", "seed=42"]
+        runner = CliRunner()
+
+        for output, extra in ((vpype_path, []), (direct_path, ["--no-vpype"])):
+            result = runner.invoke(
+                main, ["convert", str(image_path), "-o", str(output), *settings, *extra]
+            )
+            assert result.exit_code == 0, result.output
+
+        likeness: dict[str, float] = {}
+        for name, output in (("vpype", vpype_path), ("direct", direct_path)):
+            result = runner.invoke(main, ["evaluate", str(image_path), str(output), "--json"])
+            assert result.exit_code == 0, result.output
+            likeness[name] = json.loads(result.stdout)["likeness"]
+
+        assert likeness["vpype"] == pytest.approx(likeness["direct"], abs=0.05)
