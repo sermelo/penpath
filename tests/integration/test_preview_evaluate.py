@@ -9,10 +9,16 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-from PIL import Image
+from PIL import Image, ImageDraw
 from shapely import LineString
 
 from penpath.cli.main import main
+from penpath.core import (
+    get_image_placement,
+    get_svg_paper_size,
+    parse_svg_strokes,
+    simulate_plot,
+)
 from penpath.core.models import Paper, Pen
 from penpath.core.output.vpype import run_vpype
 
@@ -97,6 +103,69 @@ def polygon_drawing(tmp_path: Path) -> Path:
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
+
+
+PLACED_DPI = 10
+PLACEMENT_WIDTH_MM = PLACEMENT_HEIGHT_MM = 70
+PLACEMENTS = ((20.0, 30.0), (60.0, 90.0), (100.0, 150.0))
+
+
+def _placed_svg(
+    x_mm: float, y_mm: float, meta_x_mm: float | None = None, meta_y_mm: float | None = None
+) -> str:
+    """An A4 SVG with two X strokes at (x, y) and matching placement metadata."""
+    meta_x = x_mm if meta_x_mm is None else meta_x_mm
+    meta_y = y_mm if meta_y_mm is None else meta_y_mm
+    path = (
+        f"M {x_mm} {y_mm} L {x_mm + PLACEMENT_WIDTH_MM} {y_mm + PLACEMENT_HEIGHT_MM} "
+        f"M {x_mm + PLACEMENT_WIDTH_MM} {y_mm} L {x_mm} {y_mm + PLACEMENT_HEIGHT_MM}"
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:penpath="http://penpath.org/ns/penpath"
+     width="210mm" height="297mm" viewBox="0 0 210 297">
+  <metadata><penpath:image-placement x="{meta_x}" y="{meta_y}"
+     width="{PLACEMENT_WIDTH_MM}" height="{PLACEMENT_HEIGHT_MM}"/></metadata>
+  <g stroke="#000000" stroke-width="1">
+    <path d="{path}" fill="none"/>
+  </g>
+</svg>"""
+
+
+@pytest.fixture
+def placed_reference(tmp_path: Path) -> Path:
+    """A 70x70 mm region at 10 px/mm showing the same X as the placed strokes."""
+    side_px = PLACEMENT_WIDTH_MM * PLACED_DPI
+    image = Image.new("RGB", (side_px, side_px), "white")
+    draw = ImageDraw.Draw(image)
+    draw.line([(0, 0), (side_px - 1, side_px - 1)], fill="black", width=PLACED_DPI)
+    draw.line([(side_px - 1, 0), (0, side_px - 1)], fill="black", width=PLACED_DPI)
+    path = tmp_path / "reference.png"
+    image.save(path)
+    return path
+
+
+def _placed_likeness(runner: CliRunner, reference: Path, svg_path: Path) -> float:
+    result = runner.invoke(
+        main, ["evaluate", str(reference), str(svg_path), "--json", "--dpi", str(PLACED_DPI)]
+    )
+    assert result.exit_code == 0, result.output
+    return float(json.loads(result.stdout)["likeness"])
+
+
+def _placed_crop_bytes(reference: Path, svg_path: Path) -> bytes:
+    """The simulated ink cropped to the rectangle the metadata reports."""
+    strokes = parse_svg_strokes(svg_path)
+    width_mm, height_mm = get_svg_paper_size(svg_path) or (210.0, 297.0)
+    simulated = simulate_plot(strokes, width_mm, height_mm, dpi_px_per_mm=PLACED_DPI)
+    with Image.open(reference) as opened:
+        placement = get_image_placement(svg_path, opened.size)
+    x_px = round(placement.x * PLACED_DPI)
+    y_px = round(placement.y * PLACED_DPI)
+    width_px = round(placement.width * PLACED_DPI)
+    height_px = round(placement.height * PLACED_DPI)
+    crop = simulated.crop((x_px, y_px, x_px + width_px, y_px + height_px))
+    return crop.tobytes()
 
 
 class TestPreview:
@@ -408,6 +477,40 @@ class TestEvaluate:
         assert "--paper-color" in result.output
         assert "Traceback" not in result.output
         assert result.stdout.strip() == ""
+
+
+class TestEvaluatePlacementLikeness:
+    """Likeness follows the placement metadata, not where the drawing sits on the page."""
+
+    def test_evaluate_likeness_is_identical_at_every_placement(
+        self, runner: CliRunner, placed_reference: Path, tmp_path: Path
+    ) -> None:
+        """The same strokes score the same wherever they are drawn, with matching metadata."""
+        scores: list[float] = []
+        crops: list[bytes] = []
+        for index, (x_mm, y_mm) in enumerate(PLACEMENTS):
+            svg_path = tmp_path / f"placed_{index}.svg"
+            svg_path.write_text(_placed_svg(x_mm, y_mm), encoding="utf-8")
+            scores.append(_placed_likeness(runner, placed_reference, svg_path))
+            crops.append(_placed_crop_bytes(placed_reference, svg_path))
+
+        assert scores[0] == pytest.approx(scores[1], abs=1e-6)
+        assert scores[0] == pytest.approx(scores[2], abs=1e-6)
+        assert all(crop == crops[0] for crop in crops[1:])
+
+    def test_evaluate_likeness_changes_with_wrong_metadata(
+        self, runner: CliRunner, placed_reference: Path, tmp_path: Path
+    ) -> None:
+        """Wrong metadata crops the wrong pixels, so the score must not match."""
+        correct = tmp_path / "correct.svg"
+        correct.write_text(_placed_svg(20, 30), encoding="utf-8")
+        wrong = tmp_path / "wrong.svg"
+        wrong.write_text(_placed_svg(20, 30, meta_x_mm=100, meta_y_mm=150), encoding="utf-8")
+
+        correct_score = _placed_likeness(runner, placed_reference, correct)
+        wrong_score = _placed_likeness(runner, placed_reference, wrong)
+
+        assert abs(wrong_score - correct_score) > 1e-6
 
 
 class TestCommandHelp:
