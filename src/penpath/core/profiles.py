@@ -2,12 +2,14 @@
 
 Every machine value penpath uses lives in a profile YAML file, never in code.
 Built-ins are read from ``penpath.presets.profiles`` with ``importlib.resources``;
-the caller supplies a YAML file that maps names to profiles and overrides a
+the user file at ``$XDG_CONFIG_HOME/penpath/profiles.yaml`` (or
+``~/.config/penpath/profiles.yaml``) maps names to profiles and overrides a
 built-in of the same name.
 """
 
 from __future__ import annotations
 
+import os
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -18,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 PROFILE_FILE_VERSION: Final[Literal[1]] = 1
 BUILTIN_PROFILES_PACKAGE = "penpath.presets.profiles"
+USER_PROFILES_FILENAME = "profiles.yaml"
 
 _MmPositive = Annotated[float, Field(gt=0.0)]
 _MmNonNegative = Annotated[float, Field(ge=0.0)]
@@ -189,6 +192,14 @@ class MachineProfile(_ProfileModel):
     pen_change: PenChangeProfile = Field(default_factory=PenChangeProfile)
 
 
+def get_user_profiles_path() -> Path:
+    """Return the user profiles file, honouring ``XDG_CONFIG_HOME``."""
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        return Path(config_home) / "penpath" / USER_PROFILES_FILENAME
+    return Path.home() / ".config" / "penpath" / USER_PROFILES_FILENAME
+
+
 def _builtin_profiles() -> dict[str, Traversable]:
     """Map built-in profile names to their packaged YAML files."""
     package = resources.files(BUILTIN_PROFILES_PACKAGE)
@@ -228,7 +239,7 @@ def _validation_error(source: Path | Traversable, exc: ValidationError) -> str:
 
 
 def _load_user_profiles(path: Path) -> dict[str, object]:
-    """Read the caller's mapping of profile names to raw profiles."""
+    """Read the user mapping of profile names to raw profiles."""
     if not path.exists():
         return {}
     data = _read_yaml(path)
@@ -270,21 +281,26 @@ def _validate_profile(
         raise InvalidProfileError(_validation_error(source, exc)) from exc
 
 
-def _available_profiles(path: Path) -> list[str]:
-    """Return the sorted names of built-ins and profiles in the caller's file."""
+def list_profiles(profiles_path: Path | None = None) -> list[str]:
+    """Return the sorted names of all available built-in and user profiles.
+
+    A user profile with a built-in's name appears once, because it overrides the
+    built-in.
+    """
+    path = profiles_path if profiles_path is not None else get_user_profiles_path()
     user_names = {key for key in _load_user_profiles(path) if isinstance(key, str)}
     return sorted(set(_builtin_profiles()) | user_names)
 
 
-def load_profile(name: str, profiles_path: Path) -> MachineProfile:
+def load_profile(name: str, profiles_path: Path | None = None) -> MachineProfile:
     """Load and validate a built-in or user machine profile.
 
     Parameters
     ----------
     name : str
-        Profile name. A profile in ``profiles_path`` wins over a built-in.
-    profiles_path : Path
-        YAML file mapping names to profiles; a missing file means built-ins only.
+        Profile name. A user profile of this name wins over a built-in.
+    profiles_path : Path | None
+        Explicit user profiles file. Defaults to the XDG config location.
 
     Returns
     -------
@@ -294,23 +310,24 @@ def load_profile(name: str, profiles_path: Path) -> MachineProfile:
     Raises
     ------
     ProfileFileError
-        The file is unreadable or has the wrong shape.
+        The file is missing, unreadable, empty or has the wrong shape.
     ProfileParseError
         The file is not valid YAML; the error names the file, line and reason.
     InvalidProfileError
         A value is invalid; the error names each offending key.
     UnknownProfileError
-        The name is not a built-in or a profile in the file; names are listed.
+        The name is not a built-in or a user profile; available names are listed.
     """
-    user_profiles = _load_user_profiles(profiles_path)
+    path = profiles_path if profiles_path is not None else get_user_profiles_path()
+    user_profiles = _load_user_profiles(path)
     if name in user_profiles:
-        return _validate_profile(user_profiles[name], name, profiles_path)
+        return _validate_profile(user_profiles[name], name, path)
 
     builtin = _builtin_profiles().get(name)
     if builtin is not None:
         return _validate_profile(_read_yaml(builtin), name, builtin)
 
-    available = ", ".join(_available_profiles(profiles_path))
+    available = ", ".join(list_profiles(path))
     raise UnknownProfileError(f"Unknown profile {name!r}. Available: {available}")
 
 
@@ -329,5 +346,7 @@ __all__ = [
     "ProfileFileError",
     "ProfileParseError",
     "UnknownProfileError",
+    "get_user_profiles_path",
+    "list_profiles",
     "load_profile",
 ]

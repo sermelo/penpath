@@ -1,4 +1,4 @@
-"""Unit tests for the machine profile loader and its actionable errors."""
+"""Unit tests for the machine profile loader, user file and actionable errors."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from penpath.core.profiles import (
     ProfileFileError,
     ProfileParseError,
     UnknownProfileError,
+    get_user_profiles_path,
+    list_profiles,
     load_profile,
 )
 
@@ -65,12 +67,6 @@ def test_load_profile_builtin_generic_returns_validated_profile(tmp_path: Path) 
     assert profile.pen_change.mode == "between"
 
 
-def test_load_profile_requires_profiles_path() -> None:
-    """This part of the loader has no default location; the caller supplies one."""
-    with pytest.raises(TypeError):
-        load_profile("generic")  # type: ignore[call-arg]
-
-
 def test_load_profile_user_file_overrides_builtin(tmp_path: Path) -> None:
     """A user profile named like a built-in wins over the packaged YAML."""
     path = _write_profiles(
@@ -94,6 +90,7 @@ def test_load_profile_user_file_overrides_builtin(tmp_path: Path) -> None:
     assert profile.bed.size_mm == (300.0, 200.0)
     assert profile.feed.travel_mm_s == 120.0
     assert profile.pen.z_up == 7.0
+    assert list_profiles(path) == ["generic"]
 
 
 def test_load_profile_user_file_can_hold_several_machines(tmp_path: Path) -> None:
@@ -104,7 +101,7 @@ def test_load_profile_user_file_can_hold_several_machines(tmp_path: Path) -> Non
     )
 
     assert load_profile("shop_plotter", profiles_path=path).name == "shop_plotter"
-    assert load_profile("generic", profiles_path=path).name == "generic"
+    assert list_profiles(path) == ["generic", "shop_plotter"]
 
 
 def test_load_profile_unknown_name_lists_available(tmp_path: Path) -> None:
@@ -179,3 +176,51 @@ def test_load_profile_single_profile_not_in_mapping_says_how_to_fix(tmp_path: Pa
 
     with pytest.raises(ProfileFileError, match="names to profiles"):
         load_profile("generic", profiles_path=path)
+
+
+def test_get_user_profiles_path_honours_xdg_config_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """XDG_CONFIG_HOME overrides the default config directory."""
+    config_home = tmp_path / "xdg-config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+
+    assert get_user_profiles_path() == config_home / "penpath" / "profiles.yaml"
+
+
+def test_get_user_profiles_path_uses_default_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without XDG_CONFIG_HOME the path is ~/.config/penpath/profiles.yaml."""
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert get_user_profiles_path() == tmp_path / ".config" / "penpath" / "profiles.yaml"
+
+
+def test_list_profiles_defaults_to_user_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """list_profiles() finds user machines in the default file without a path."""
+    config_home = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    profiles_file = get_user_profiles_path()
+    _write_profiles(profiles_file, "shop_plotter:\n" + _MINIMAL_PROFILE)
+
+    assert list_profiles() == ["generic", "shop_plotter"]
+
+
+def test_load_profile_defaults_to_user_file_and_overrides_builtin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """load_profile(name) reads the default file; a user machine wins over a built-in."""
+    config_home = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    profiles_file = get_user_profiles_path()
+    _write_profiles(
+        profiles_file,
+        "generic:\n  description: My own generic machine\n" + _MINIMAL_PROFILE,
+    )
+
+    profile = load_profile("generic")
+    assert profile.description == "My own generic machine"
