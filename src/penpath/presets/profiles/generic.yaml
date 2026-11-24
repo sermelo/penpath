@@ -1,0 +1,37 @@
+# A plain machine: one pen, no offset, no ramp, Z-based pen up/down.
+version: 1
+name: generic
+description: Generic plotter with a Z-lifted pen and no offset or landing ramp
+
+bed:
+  size_mm: [210.0, 297.0]
+  margin_mm: 0.0
+  page:
+    placement: fixed
+    origin_mm: [0.0, 0.0]
+  invert_y: true
+
+feed:
+  travel_mm_s: 100.0
+  draw_mm_s: 50.0
+
+pen:
+  z_up: 5.0
+  z_down: 0.0
+
+gcode:
+  comment_prefix: ";"
+  start: |
+    G21
+    G90
+    G28
+  end: |
+    M2
+  layer_start: ""
+  layer_end: ""
+
+pen_change:
+  mode: between
+  steps:
+    - {message: "{pen}"}
+    - {pause: ""}
