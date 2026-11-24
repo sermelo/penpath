@@ -277,6 +277,21 @@ penpath convert photo.jpg -s seed=42 -o plot2.svg
 
 **Inline format:** `WIDTH,COLOR,TYPE` — e.g., `0.4,#FF6600,fountain`
 
+### Palettes
+
+The built-in `stabilo_88` palette has twelve 0.4 mm Stabilo Point 88 pens in
+light → dark drawing order:
+
+```bash
+penpath convert photo.jpg --palette stabilo_88
+penpath info palettes
+```
+
+A project file can use `palette: stabilo_88` or an explicit ordered `pens:` list
+instead of `pen:`. Palette order is drawing order. Until colour separation
+lands, the whole image is drawn with the first palette pen, so the SVG keeps a
+single pen layer.
+
 ### Papers
 
 | Name | Size (mm) | Margins (mm) |
