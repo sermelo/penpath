@@ -3,6 +3,7 @@
 import tempfile
 from pathlib import Path
 
+import click
 import pytest
 from click.testing import CliRunner
 from PIL import Image
@@ -256,6 +257,77 @@ class TestConvertCommand:
         assert result.exit_code == 0
         assert output_path.exists()
 
+    def test_convert_with_builtin_palette_uses_first_pen_once(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        """A palette still draws the whole image with one pen: the first one."""
+        output_path = tmp_path / "palette.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(test_image),
+                "-o",
+                str(output_path),
+                "--no-vpype",
+                "-s",
+                "seed=42",
+                "--palette",
+                "stabilo_88",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        svg = output_path.read_text()
+        assert 'inkscape:label="Pen: stabilo_88_yellow"' in svg
+        assert 'stroke="#F7E300"' in svg
+        assert "Pen: stabilo_88_cyan" not in svg
+        assert svg.count('inkscape:groupmode="layer"') == 2  # background + one pen
+
+    def test_convert_with_inline_palette_keeps_user_order(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        output_path = tmp_path / "inline.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(test_image),
+                "-o",
+                str(output_path),
+                "--no-vpype",
+                "-s",
+                "seed=42",
+                "--palette",
+                "red=0.5,#FF0000;blue=0.4,#0000FF",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        svg = output_path.read_text()
+        assert 'inkscape:label="Pen: red"' in svg
+        assert 'stroke="#FF0000"' in svg
+        assert "Pen: blue" not in svg
+
+    def test_convert_pen_and_palette_is_a_clear_error(
+        self, runner: CliRunner, test_image: Path, tmp_path: Path
+    ) -> None:
+        output_path = tmp_path / "conflict.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(test_image),
+                "-o",
+                str(output_path),
+                "--pen",
+                "fine",
+                "--palette",
+                "stabilo_88",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "mutually exclusive" in result.output
+        assert not output_path.exists()
+
     def test_convert_invalid_input(self, runner: CliRunner, tmp_path: Path) -> None:
         """Test convert with non-existent input file."""
         output_path = tmp_path / "output.svg"
@@ -278,6 +350,23 @@ class TestConvertCommand:
         result = runner.invoke(main, args)
         assert result.exit_code != 0
         assert "unknown pen" in result.output.lower()
+
+
+class TestPaletteResolution:
+    def test_inline_palette_resolves_to_ordered_pens(self) -> None:
+        from penpath.cli.commands.convert import _resolve_palette
+
+        palette = _resolve_palette("first=0.5,#FF0000;second=0.4,#0000FF")
+        assert palette.name == "inline"
+        assert [pen.name for pen in palette.pens] == ["first", "second"]
+        assert [pen.width_mm for pen in palette.pens] == [0.5, 0.4]
+        assert [pen.color for pen in palette.pens] == ["#FF0000", "#0000FF"]
+
+    def test_bad_inline_palette_is_a_clear_error(self) -> None:
+        from penpath.cli.commands.convert import _resolve_palette
+
+        with pytest.raises(click.BadParameter, match="NAME=WIDTH,#HEX"):
+            _resolve_palette("first")
 
 
 class TestInfoCommand:
@@ -305,6 +394,31 @@ class TestInfoCommand:
         assert result.exit_code == 0
         assert "a4" in result.output
         assert "a3" in result.output
+
+    def test_info_palettes_lists_pens_in_drawing_order(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "palettes", "--format", "json"])
+        assert result.exit_code == 0, result.output
+        import json
+
+        data = json.loads(result.output)
+        assert [p["name"] for p in data["builtin_palettes"]] == ["stabilo_88"]
+        rows = data["palette_pens"]
+        assert len(rows) == 12
+        assert [row["order"] for row in rows] == list(range(1, 13))
+        assert [row["name"] for row in rows][:3] == [
+            "stabilo_88_yellow",
+            "stabilo_88_cyan",
+            "stabilo_88_light_blue",
+        ]
+        assert [row["name"] for row in rows][-1] == "stabilo_88_green"
+        assert all(row["width_mm"] == 0.4 for row in rows)
+
+    def test_info_palettes_table(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["info", "palettes", "--format", "table"])
+        assert result.exit_code == 0, result.output
+        assert "stabilo_88" in result.output
+        assert "stabilo_88_yellow" in result.output
+        assert "stabilo_88_green" in result.output
 
     def test_info_pfms(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["info", "pfms"])

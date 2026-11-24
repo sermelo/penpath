@@ -126,3 +126,40 @@ class TestConvertSeed:
             assert result.exit_code == 0, result.output
 
         assert outputs[0].read_bytes() == outputs[1].read_bytes()
+
+
+class TestConvertPalette:
+    """A project file with a palette runs through the CLI as a user expects."""
+
+    def test_project_palette_key_produces_one_layer(
+        self, runner: CliRunner, reference_image: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "from_palette.svg"
+        project_path = tmp_path / "project.yaml"
+        project_path.write_text(
+            f"""version: 1
+image:
+  path: "{reference_image}"
+  filters:
+    steps: []
+  dpi: 300
+paper:
+  name: a4
+  width_mm: 210.0
+  height_mm: 297.0
+palette: stabilo_88
+pfm:
+  pfm_type: sketch_lines
+  settings:
+    seed: 42
+output_path: "{output}"
+"""
+        )
+        result = runner.invoke(
+            main,
+            ["convert", str(reference_image), "-p", str(project_path), "--no-vpype"],
+        )
+        assert result.exit_code == 0, result.output
+        svg = output.read_text()
+        assert 'inkscape:label="Pen: stabilo_88_yellow"' in svg
+        assert svg.count('inkscape:groupmode="layer"') == 2  # background + one pen
