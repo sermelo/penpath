@@ -194,7 +194,8 @@ def run_vpype(
 
     except FileNotFoundError as e:
         raise FileNotFoundError(
-            f"vpype executable not found at '{vpype_path}'. Install it with: pip install vpype"
+            f"vpype executable not found at '{vpype_path}'. "
+            'Install it with: pip install "penpath[vpype]"'
         ) from e
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else "Unknown error"
