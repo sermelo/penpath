@@ -420,6 +420,19 @@ class TestInfoCommand:
         assert "stabilo_88_yellow" in result.output
         assert "stabilo_88_green" in result.output
 
+    def test_info_palettes_yaml(self, runner: CliRunner) -> None:
+        import yaml
+
+        result = runner.invoke(main, ["info", "palettes", "--format", "yaml"])
+        assert result.exit_code == 0, result.output
+        data = yaml.safe_load(result.output)
+        assert [p["name"] for p in data["builtin_palettes"]] == ["stabilo_88"]
+        assert [row["name"] for row in data["palette_pens"]][:3] == [
+            "stabilo_88_yellow",
+            "stabilo_88_cyan",
+            "stabilo_88_light_blue",
+        ]
+
     def test_info_pfms(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["info", "pfms"])
         assert result.exit_code == 0
