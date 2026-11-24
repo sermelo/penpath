@@ -20,20 +20,22 @@ class TestSketchLinesSettings:
     def test_default_settings(self):
         settings = SketchLinesSettings()
         assert settings.line_density == 0.75
-        assert settings.min_length == 10.0
-        assert settings.max_length == 100.0
-        assert settings.angle_range == (0.0, 360.0)
+        assert settings.min_length == 2.0
+        assert settings.max_length == 40.0
+        assert settings.angle_range == (-72.0, -52.0)
         assert settings.shading_enabled is False
-        assert settings.squiggle_enabled is True
+        assert settings.squiggle_enabled is False
         assert settings.erase_enabled is True
         assert settings.seed is None
-        assert settings.search_angle_step == 5.0
+        assert settings.search_angle_step == 18.0
         assert settings.sample_step == 10.0
-        assert settings.erase_min == 50.0
-        assert settings.erase_max == 125.0
+        assert settings.erase_min == 35.0
+        assert settings.erase_max == 80.0
         assert settings.tone == 0.5
+        assert settings.erase_radius_min == 1.0
+        assert settings.erase_radius_max == 1.0
         assert settings.squiggle_max_deviation == 0.25
-        assert settings.squiggle_min_length == 25
+        assert settings.squiggle_min_length == 50
         assert settings.squiggle_max_length == 500
         assert settings.max_strokes is None
 
@@ -44,6 +46,8 @@ class TestSketchLinesSettings:
             SketchLinesSettings(squiggle_min_length=600, squiggle_max_length=500)
         with pytest.raises(ValueError):
             SketchLinesSettings(tone=1.5)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(erase_radius_min=5.0, erase_radius_max=2.0)
 
     def test_custom_settings(self):
         settings = SketchLinesSettings(
@@ -75,9 +79,10 @@ class TestSketchLinesSettings:
 
     def test_angle_range_validation_bounds(self):
         with pytest.raises(ValueError):
-            SketchLinesSettings(angle_range=(-10.0, 90.0))
+            SketchLinesSettings(angle_range=(-400.0, -52.0))
         with pytest.raises(ValueError):
-            SketchLinesSettings(angle_range=(90.0, 370.0))
+            SketchLinesSettings(angle_range=(-72.0, 370.0))
+        assert SketchLinesSettings(angle_range=(-72.0, -52.0)).angle_range == (-72.0, -52.0)
 
     def test_line_density_bounds(self):
         with pytest.raises(ValueError):
@@ -646,17 +651,28 @@ class TestErase:
         from penpath.core.drawing.pfm_sketch_lines import _apply_erase
 
         working = np.zeros((20, 20), dtype=np.float64)
-        _apply_erase(working, 2, 10, 8, 10, 50.0, 125.0, 0.5)
-        assert working[10, 2] == 50.0
-        assert working[10, 8] == 50.0
-        assert working[10, 5] == 50.0
-        assert working[9, 5] == 0.0
+        _apply_erase(working, 2, 10, 8, 10, 35.0, 80.0, 0.5, 1.0, 1.0)
+        assert working[10, 2] == 35.0
+        assert working[10, 8] == 35.0
+        assert working[10, 5] == 35.0
+        assert working[9, 5] == 35.0
+        assert working[10, 0] == 0.0
 
-        _apply_erase(working, 2, 10, 8, 10, 50.0, 125.0, 0.5)
-        assert working[10, 5] == 107.0
-        for _ in range(20):
-            _apply_erase(working, 2, 10, 8, 10, 50.0, 125.0, 0.5)
+        _apply_erase(working, 2, 10, 8, 10, 35.0, 80.0, 0.5, 1.0, 1.0)
+        assert working[10, 5] > 35.0
+        for _ in range(30):
+            _apply_erase(working, 2, 10, 8, 10, 35.0, 80.0, 0.5, 1.0, 1.0)
         assert working[10, 5] == 255.0
+
+    def test_erase_brush_radius_covers_a_disk(self):
+        from penpath.core.drawing.pfm_sketch_lines import _apply_erase
+
+        working = np.zeros((20, 20), dtype=np.float64)
+        _apply_erase(working, 10, 10, 10, 10, 50.0, 125.0, 0.5, 2.0, 2.0)
+        assert working[10, 10] == 50.0
+        assert working[10, 12] == 50.0
+        assert working[8, 10] == 50.0
+        assert working[7, 10] == 0.0
 
     def test_tone_blends_cubic_and_linear_progress(self):
         from penpath.core.drawing.pfm_sketch_lines import _erase_amount

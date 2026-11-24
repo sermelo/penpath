@@ -1,9 +1,9 @@
 """Sketch Lines PFM (Pen Follower Module) implementation.
 
-Port of ``PFMSketchLinesBasic`` from DrawingBotV3 (v1.6.25-stable). The
-algorithm repeatedly picks the darkest part of a working copy of the image,
-walks a dark ray from there, draws it, and lightens the pixels it covered so
-the next stroke moves on to a different region.
+Port of ``PFMSketchLinesBasic`` and ``AbstractSketchPFM`` from DrawingBotV3
+(v1.6.25-stable-free). The algorithm repeatedly picks the darkest part of a
+working copy of the image, walks dark rays from there, draws them, and lightens
+the pixels it covered so the next stroke moves on to a different region.
 """
 
 from __future__ import annotations
@@ -28,21 +28,28 @@ _WHITE = 255.0
 class SketchLinesSettings(BaseModel):
     """Settings for the Sketch Lines PFM algorithm.
 
+    Defaults mirror DrawingBotV3 v1.6.25-stable-free's registered settings
+    (``Register.registerPFMSettings``), except where a value is expressed in
+    penpath's image-pixel scale.
+
     Parameters
     ----------
     line_density : float
-        Overall line density multiplier (0.01 - 10.0). Higher = more ink.
+        Overall ink density multiplier (0.01 - 10.0). Higher = more ink.
     min_length : float
-        Minimum line length in pixels (1 - 1000).
+        Minimum line length in image pixels (1 - 1000). Reference default 2.
     max_length : float
-        Maximum line length in pixels (1 - 5000).
+        Maximum line length in image pixels (1 - 5000). Reference default 40.
     angle_range : tuple[float, float]
-        Min/max start angle in degrees (0 - 360).
+        Min/max random start angle in degrees (-360 - 360). The reference
+        band is -72 to -52 degrees.
     shading_enabled : bool
         Whether to search only two opposite directions once the image is
         halfway to its target luminance.
     squiggle_enabled : bool
-        Whether to add perpendicular noise to each segment.
+        Whether to add perpendicular noise to each segment. This is a
+        penpath addition; the reference has no such noise, so it is off by
+        default.
     erase_enabled : bool
         Whether drawing lightens the working image. When false the image
         never lightens, so only ``max_strokes`` stops the run and the result
@@ -50,20 +57,28 @@ class SketchLinesSettings(BaseModel):
     seed : int | None
         Random seed for deterministic output. None = non-deterministic.
     search_angle_step : float
-        Angular step in degrees between candidate rays (0.1 - 90).
+        Angular step in degrees between candidate rays (0.1 - 90). The
+        reference's 20 angle tests over 360 degrees give 18 degrees.
     sample_step : float
         Pixel size of the tiles used to find the next darkest pixel.
     erase_min : float
-        Brightness added to a very dark pixel when a stroke is drawn.
+        Brightness added to a very dark pixel when a stroke is drawn. The
+        reference uses 50; 35 is calibrated for penpath's pixel scale.
     erase_max : float
-        Brightness added to a very bright pixel when a stroke is drawn.
+        Brightness added to a very bright pixel when a stroke is drawn. The
+        reference uses 125; 80 is calibrated for penpath's pixel scale.
     tone : float
         Weight of the cubic easing in the erase amount (0 - 1).
+    erase_radius_min : float
+        Brush radius in pixels used to erase a very dark pixel.
+    erase_radius_max : float
+        Brush radius in pixels used to erase a very bright pixel.
     squiggle_max_deviation : float
         How far above the starting darkness a squiggle may wander, as a
         fraction of 253.5 (default 0.25, i.e. about +63 luminance).
     squiggle_min_length : int
         Number of segments before a squiggle may end on the darkness rule.
+        The reference uses 25; 50 is calibrated for penpath's pixel scale.
     squiggle_max_length : int
         Hard upper bound on the number of segments in one squiggle.
     shading_threshold : float
@@ -74,20 +89,22 @@ class SketchLinesSettings(BaseModel):
     """
 
     line_density: float = Field(default=0.75, ge=0.01, le=10.0)
-    min_length: float = Field(default=10.0, ge=1.0, le=1000.0)
-    max_length: float = Field(default=100.0, ge=1.0, le=5000.0)
-    angle_range: tuple[float, float] = Field(default=(0.0, 360.0))
+    min_length: float = Field(default=2.0, ge=1.0, le=1000.0)
+    max_length: float = Field(default=40.0, ge=1.0, le=5000.0)
+    angle_range: tuple[float, float] = Field(default=(-72.0, -52.0))
     shading_enabled: bool = False
-    squiggle_enabled: bool = True
+    squiggle_enabled: bool = False
     erase_enabled: bool = True
     seed: int | None = None
-    search_angle_step: float = Field(default=5.0, ge=0.1, le=90.0)
+    search_angle_step: float = Field(default=18.0, ge=0.1, le=90.0)
     sample_step: float = Field(default=10.0, ge=1.0, le=100.0)
-    erase_min: float = Field(default=50.0, ge=0.0, le=255.0)
-    erase_max: float = Field(default=125.0, ge=0.0, le=255.0)
+    erase_min: float = Field(default=35.0, ge=0.0, le=255.0)
+    erase_max: float = Field(default=80.0, ge=0.0, le=255.0)
     tone: float = Field(default=0.5, ge=0.0, le=1.0)
+    erase_radius_min: float = Field(default=1.0, ge=0.0, le=50.0)
+    erase_radius_max: float = Field(default=1.0, ge=0.0, le=50.0)
     squiggle_max_deviation: float = Field(default=0.25, ge=0.0, le=10.0)
-    squiggle_min_length: int = Field(default=25, ge=1, le=100000)
+    squiggle_min_length: int = Field(default=50, ge=1, le=100000)
     squiggle_max_length: int = Field(default=500, ge=1, le=100000)
     shading_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_strokes: int | None = Field(default=None, ge=1)
@@ -98,8 +115,8 @@ class SketchLinesSettings(BaseModel):
         if len(v) != 2:
             raise ValueError("angle_range must be a tuple of 2 floats")
         min_angle, max_angle = v
-        if not (0.0 <= min_angle <= 360.0 and 0.0 <= max_angle <= 360.0):
-            raise ValueError("angle_range values must be in [0, 360]")
+        if not (-360.0 <= min_angle <= 360.0 and -360.0 <= max_angle <= 360.0):
+            raise ValueError("angle_range values must be in [-360, 360]")
         if min_angle > max_angle:
             raise ValueError("angle_range min must be <= max")
         return v
@@ -111,6 +128,8 @@ class SketchLinesSettings(BaseModel):
             raise ValueError("squiggle_min_length must be <= squiggle_max_length")
         if self.erase_min > self.erase_max:
             raise ValueError("erase_min must be <= erase_max")
+        if self.erase_radius_min > self.erase_radius_max:
+            raise ValueError("erase_radius_min must be <= erase_radius_max")
 
 
 def _bresenham_line(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
@@ -150,7 +169,8 @@ def _sample_rays(
     Following ``LuminanceTestLine.addSample``, each endpoint is the pixel where
     the mean of all sampled pixels so far is lowest, considering only prefixes
     longer than ``min_length``. Reaching the image edge ends a ray and uses its
-    last in-bounds pixel rather than reporting a failure.
+    last in-bounds pixel rather than reporting a failure. A ray with no prefix
+    long enough reports white so it cannot win as the darkest candidate.
     """
     h, w = luminance.shape
     lengths = np.maximum(np.abs(dxs), np.abs(dys)) + 1
@@ -173,12 +193,13 @@ def _sample_rays(
     means = np.cumsum(values, axis=1) / np.maximum(counts, 1)
     eligible = counts > min_length
     eligible &= counts > 0
-    fallback = np.maximum(last, 0)
     candidates = np.where(eligible, means, np.inf)
-    fallback_mask = ~eligible.any(axis=1)
-    best = np.where(fallback_mask, fallback, np.argmin(candidates, axis=1))
+    has_eligible = eligible.any(axis=1)
+    best = np.where(has_eligible, np.argmin(candidates, axis=1), last)
+    zero_length = last <= 0
     row = np.arange(len(dxs))
-    return means[row, best], xs[row, best], ys[row, best]
+    chosen_mean = np.where(zero_length, _WHITE, means[row, best])
+    return chosen_mean, xs[row, best], ys[row, best]
 
 
 def _sample_line_luminance(
@@ -312,11 +333,27 @@ def _add_squiggle(
     return points
 
 
+def _erase_progress(luminance: float, tone: float) -> float:
+    """Cubic/linear blend used by ``AbstractSketchPFM.eraseGeometry``."""
+    x_progress = min(1.0, max(0.0, luminance / _WHITE))
+    return x_progress**3 * tone + x_progress * (1.0 - tone)
+
+
 def _erase_amount(luminance: float, erase_min: float, erase_max: float, tone: float) -> int:
     """Brightness added by ``AbstractSketchPFM.eraseGeometry`` for a pixel."""
-    x_progress = min(1.0, max(0.0, luminance / _WHITE))
-    y_progress = x_progress**3 * tone + x_progress * (1.0 - tone)
-    return int(erase_min + y_progress * (erase_max - erase_min))
+    return int(erase_min + _erase_progress(luminance, tone) * (erase_max - erase_min))
+
+
+def _brush_offsets(radius: float) -> list[tuple[int, int]]:
+    """Pixel offsets inside a round brush of the given radius."""
+    extent = max(0, math.floor(radius))
+    squared = radius * radius
+    return [
+        (dx, dy)
+        for dy in range(-extent, extent + 1)
+        for dx in range(-extent, extent + 1)
+        if dx * dx + dy * dy <= squared
+    ]
 
 
 def _apply_erase(
@@ -328,15 +365,24 @@ def _apply_erase(
     erase_min: float,
     erase_max: float,
     tone: float,
+    radius_min: float = 1.0,
+    radius_max: float = 1.0,
 ) -> None:
-    """Lighten the pixels under a segment toward white by the erase amount."""
+    """Lighten pixels under a segment with the reference's round erase brush."""
     h, w = working.shape
-    amount = _erase_amount(float(working[y0, x0]), erase_min, erase_max, tone)
+    progress = _erase_progress(float(working[y0, x0]), tone)
+    amount = int(erase_min + progress * (erase_max - erase_min))
     if amount <= 0:
         return
+    radius = radius_min + progress * (radius_max - radius_min)
+    offsets = _brush_offsets(radius)
+    covered: set[tuple[int, int]] = set()
     for px, py in _bresenham_line(x0, y0, x1, y1):
-        if 0 <= px < w and 0 <= py < h:
-            working[py, px] = min(_WHITE, working[py, px] + amount)
+        for dx, dy in offsets:
+            x, y = px + dx, py + dy
+            if 0 <= x < w and 0 <= y < h and (x, y) not in covered:
+                covered.add((x, y))
+                working[y, x] = min(_WHITE, working[y, x] + amount)
 
 
 def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[LineString]:
@@ -373,7 +419,6 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     angle_min, angle_max = settings.angle_range
     sample_step = int(settings.sample_step)
     num_tests = max(1, round(360.0 / settings.search_angle_step))
-    squiggle_dev_px = 2.0
 
     initial_avg = float(np.mean(working))
     if settings.max_strokes is not None:
@@ -407,14 +452,13 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
         else:
             allowable = _DESIRED_LUMINANCE
 
-        start_angle = rng.uniform(angle_min, angle_max)
         current_x, current_y = start_x, start_y
         points: list[tuple[float, float]] = [(float(start_x), float(start_y))]
-        failed = False
         shading = bool(settings.shading_enabled and lum_progress > settings.shading_threshold)
 
         for s in range(settings.squiggle_max_length):
             line_len = rng.randint(min_len, max_len)
+            start_angle = rng.uniform(angle_min, angle_max)
             avg_lum, next_x, next_y = _find_darkest_line(
                 working,
                 current_x,
@@ -428,7 +472,6 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
             )
 
             if (next_x, next_y) == (current_x, current_y):
-                failed = True
                 break
 
             if settings.erase_enabled:
@@ -437,7 +480,6 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
                 ):
                     break
             elif avg_lum > allowable:
-                failed = True
                 break
 
             if settings.squiggle_enabled and s > 0:
@@ -447,7 +489,7 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
                     next_x,
                     next_y,
                     min_len,
-                    squiggle_dev_px,
+                    2.0,
                     rng,
                     (w, h),
                 )
@@ -465,16 +507,18 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
                     settings.erase_min,
                     settings.erase_max,
                     settings.tone,
+                    settings.erase_radius_min,
+                    settings.erase_radius_max,
                 )
             current_x, current_y = next_x, next_y
 
-        if len(points) >= 2 and not failed:
+        if len(points) >= 2:
             line = LineString(points)
             if line.is_valid and line.length > 0:
                 lines.append(line)
                 fails = 0
                 continue
-        working[start_y, start_x] = _WHITE
+        working[current_y, current_x] = _WHITE
         fails += 1
 
     return lines
