@@ -123,6 +123,18 @@ penpath/
 - [ ] GitHub Actions: lint, typecheck, test, build wheel
 - [ ] PyPI publish config (trusted publishing)
 
+### Phase 7: G-code and machine profiles (8 tickets)
+
+Eight parts in order, from the approved LUC-51 plan; one pull request each:
+- [ ] Part 1: machine profile schema (D5), YAML loader and one built-in `generic` profile
+- [ ] Part 2: `penpath info profiles` and the profile format in the docs
+- [ ] Part 3: G-code emitter — one layer, no pen change
+- [ ] Part 4: CLI `penpath gcode`
+- [ ] Part 5: multi-pen — one pen-change block per layer, in layer order
+- [ ] Part 6: G-code preview — `penpath preview file.gcode -o file.png`
+- [ ] Part 7: pen geometry — pen offset, drawable area, ramped landing
+- [ ] Part 8: the `aquila` built-in profile
+
 ---
 
 ## Milestones
