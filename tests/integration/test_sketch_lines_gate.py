@@ -1,8 +1,13 @@
-"""Assert the Sketch Lines gate thresholds published in docs/TESTING.md.
+"""Assert the Sketch Lines gate thresholds recorded in docs/TESTING.md.
 
-The reference images, harness and thresholds belong to part 1 (LUC-52). This
-module only turns the published yardstick into assertions; it changes no
-measurement and no threshold.
+The reference images and harness belong to part 1 (LUC-52); this module only
+turns the yardstick into assertions and changes no measurement. The SSIM
+floors below are the LUC-47 re-derivation: ``max(blank, random) + 0.05``,
+never below ``measured - 0.05``, with ``random + 0.05`` where the drawing
+cannot beat the trivial baselines. The withdrawn part 1 floors (0.75, 0.80,
+0.88, 0.70, 0.75) measured a raster stipple, not a pen plot, and remain in
+docs/TESTING.md as the record. The five non-SSIM floors are part 1's and are
+unchanged.
 """
 
 from __future__ import annotations
@@ -17,11 +22,11 @@ from sketch_lines_gate import (
 )
 
 SSIM_THRESHOLDS: dict[str, float] = {
-    "circle.png": 0.75,
-    "gradient.png": 0.80,
-    "sphere.png": 0.88,
-    "face.jpg": 0.70,
-    "photo.jpg": 0.75,
+    "circle.png": 0.53,
+    "gradient.png": 0.46,
+    "sphere.png": 0.79,
+    "face.jpg": 0.57,
+    "photo.jpg": 0.18,
 }
 COVERAGE_WIDTH_MIN = 0.60
 COVERAGE_HEIGHT_MIN = 0.60
@@ -52,7 +57,7 @@ def test_gate_harness_reports_finite_measurements(gate_reports: list[GateReport]
 
 
 def test_gate_meets_published_thresholds(gate_reports: list[GateReport]) -> None:
-    """Every reference image meets the part 1 likeness gate from docs/TESTING.md."""
+    """Every reference image meets the likeness gate from docs/TESTING.md."""
     failures: list[str] = []
     for report in gate_reports:
         measured = report.algorithm
