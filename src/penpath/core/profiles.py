@@ -1,19 +1,46 @@
-"""Machine profile schema: the validated model that describes a machine.
+"""Machine profiles: the validated model, the YAML loader and actionable errors.
 
-Every machine value penpath uses lives in a profile file, never in code. This
-module holds only the schema: no file reading and no built-in machine values.
+Every machine value penpath uses lives in a profile YAML file, never in code.
+Built-ins are read from ``penpath.presets.profiles`` with ``importlib.resources``;
+the caller supplies a YAML file that maps names to profiles and overrides a
+built-in of the same name.
 """
 
 from __future__ import annotations
 
+from importlib import resources
+from importlib.resources.abc import Traversable
+from pathlib import Path
 from typing import Annotated, Final, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 PROFILE_FILE_VERSION: Final[Literal[1]] = 1
+BUILTIN_PROFILES_PACKAGE = "penpath.presets.profiles"
 
 _MmPositive = Annotated[float, Field(gt=0.0)]
 _MmNonNegative = Annotated[float, Field(ge=0.0)]
+
+
+class ProfileError(Exception):
+    """Base class for machine profile errors."""
+
+
+class ProfileFileError(ProfileError):
+    """Raised when a profile file is missing, unreadable or has the wrong shape."""
+
+
+class ProfileParseError(ProfileError):
+    """Raised when a profile file is not valid YAML."""
+
+
+class InvalidProfileError(ProfileError):
+    """Raised when a profile value does not match the profile schema."""
+
+
+class UnknownProfileError(ProfileError):
+    """Raised when a requested profile name is not available."""
 
 
 class _ProfileModel(BaseModel):
@@ -162,14 +189,145 @@ class MachineProfile(_ProfileModel):
     pen_change: PenChangeProfile = Field(default_factory=PenChangeProfile)
 
 
+def _builtin_profiles() -> dict[str, Traversable]:
+    """Map built-in profile names to their packaged YAML files."""
+    package = resources.files(BUILTIN_PROFILES_PACKAGE)
+    return {
+        entry.name.removesuffix(".yaml"): entry
+        for entry in package.iterdir()
+        if entry.name.endswith(".yaml")
+    }
+
+
+def _read_yaml(source: Path | Traversable) -> object:
+    """Read and parse a YAML file, with an error that names file, line and reason."""
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        raise ProfileFileError(f"Cannot read profile file {source}: {reason}") from exc
+
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        if mark is None:
+            mark = getattr(exc, "context_mark", None)
+        line = f" at line {mark.line + 1}" if mark is not None else ""
+        reason = getattr(exc, "problem", None) or str(exc).splitlines()[0]
+        raise ProfileParseError(f"Invalid YAML in {source}{line}: {reason}") from exc
+
+
+def _validation_error(source: Path | Traversable, exc: ValidationError) -> str:
+    """Format pydantic errors so each message names the offending key."""
+    details = []
+    for error in exc.errors():
+        key = ".".join(str(part) for part in error["loc"]) or "profile"
+        details.append(f"{key}: {error['msg']}")
+    return f"Invalid profile in {source}: " + "; ".join(details)
+
+
+def _load_user_profiles(path: Path) -> dict[str, object]:
+    """Read the caller's mapping of profile names to raw profiles."""
+    if not path.exists():
+        return {}
+    data = _read_yaml(path)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ProfileFileError(
+            f"Profile file {path} must be a mapping of names to profiles, "
+            "for example 'my_machine:' followed by an indented profile"
+        )
+    if any(key in data for key in ("bed", "feed", "pen", "gcode", "pen_change", "version")):
+        raise ProfileFileError(
+            f"Profile file {path} must be a mapping of names to profiles; "
+            "put your profile under a name, for example 'my_machine:'"
+        )
+    return data
+
+
+def _validate_profile(
+    raw: object,
+    name: str,
+    source: Path | Traversable,
+) -> MachineProfile:
+    """Validate a raw profile, filling in its name and version when omitted."""
+    if not isinstance(raw, dict):
+        raise ProfileFileError(f"Profile {name!r} in {source} must be a YAML mapping")
+
+    data = dict(raw)
+    if "name" in data and data["name"] != name:
+        raise InvalidProfileError(
+            f"Invalid profile in {source}: name: expected {name!r}, got {data['name']!r}"
+        )
+    data.setdefault("name", name)
+    data.setdefault("version", PROFILE_FILE_VERSION)
+
+    try:
+        return MachineProfile.model_validate(data)
+    except ValidationError as exc:
+        raise InvalidProfileError(_validation_error(source, exc)) from exc
+
+
+def _available_profiles(path: Path) -> list[str]:
+    """Return the sorted names of built-ins and profiles in the caller's file."""
+    user_names = {key for key in _load_user_profiles(path) if isinstance(key, str)}
+    return sorted(set(_builtin_profiles()) | user_names)
+
+
+def load_profile(name: str, profiles_path: Path) -> MachineProfile:
+    """Load and validate a built-in or user machine profile.
+
+    Parameters
+    ----------
+    name : str
+        Profile name. A profile in ``profiles_path`` wins over a built-in.
+    profiles_path : Path
+        YAML file mapping names to profiles; a missing file means built-ins only.
+
+    Returns
+    -------
+    MachineProfile
+        The validated profile.
+
+    Raises
+    ------
+    ProfileFileError
+        The file is unreadable or has the wrong shape.
+    ProfileParseError
+        The file is not valid YAML; the error names the file, line and reason.
+    InvalidProfileError
+        A value is invalid; the error names each offending key.
+    UnknownProfileError
+        The name is not a built-in or a profile in the file; names are listed.
+    """
+    user_profiles = _load_user_profiles(profiles_path)
+    if name in user_profiles:
+        return _validate_profile(user_profiles[name], name, profiles_path)
+
+    builtin = _builtin_profiles().get(name)
+    if builtin is not None:
+        return _validate_profile(_read_yaml(builtin), name, builtin)
+
+    available = ", ".join(_available_profiles(profiles_path))
+    raise UnknownProfileError(f"Unknown profile {name!r}. Available: {available}")
+
+
 __all__ = [
     "PROFILE_FILE_VERSION",
     "BedProfile",
     "FeedProfile",
     "GcodeProfile",
+    "InvalidProfileError",
     "MachineProfile",
     "PageProfile",
     "PenChangeProfile",
     "PenChangeStep",
     "PenProfile",
+    "ProfileError",
+    "ProfileFileError",
+    "ProfileParseError",
+    "UnknownProfileError",
+    "load_profile",
 ]
