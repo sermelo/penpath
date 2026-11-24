@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 
@@ -57,6 +57,21 @@ class Pen(BaseModel):
     def to_vpype_layer_name(self) -> str:
         """Generate a vpype-compatible layer name."""
         return f"pen-{self.name}"
+
+
+class Palette(BaseModel):
+    """An ordered list of pens; the order is the drawing order.
+
+    Attributes
+    ----------
+    name : str
+        Name of the palette, for example ``stabilo_88``.
+    pens : list[Pen]
+        Pens in drawing order. ``Pen.name`` is the label written for that pen.
+    """
+
+    name: str = Field(..., min_length=1)
+    pens: list[Pen] = Field(..., min_length=1)
 
 
 class Paper(BaseModel):
@@ -190,8 +205,13 @@ class Project(BaseModel):
         Input image reference with filters and DPI.
     paper : Paper
         Paper configuration.
-    pen : Pen
-        Pen configuration.
+    pen : Pen | None
+        Single pen for old-style projects; mutually exclusive with ``pens``.
+    pens : list[Pen]
+        Pens in drawing order; mutually exclusive with ``pen``.
+    palette_name : str | None
+        Name of the built-in palette ``pens`` came from, when there is one.
+        Excluded from dumps; the project file writes it as ``palette:``.
     pfm : PFMSettingsUnion
         Pen Follower Module settings (discriminated union).
     output_path : Path
@@ -200,7 +220,9 @@ class Project(BaseModel):
 
     image: ImageRef
     paper: Paper
-    pen: Pen
+    pen: Pen | None = None
+    pens: list[Pen] = Field(default_factory=list)
+    palette_name: str | None = Field(default=None, exclude=True)
     pfm: PFMSettingsUnion
     output_path: Path
 
@@ -212,14 +234,33 @@ class Project(BaseModel):
             raise ValueError("Output path must have .svg extension")
         return v
 
+    @model_validator(mode="after")
+    def validate_pen_selection(self) -> Project:
+        """Require exactly one of a single pen or an ordered pen list."""
+        if self.pen is not None and self.pens:
+            raise ValueError("Project cannot set both 'pen' and 'pens': use one")
+        if self.pen is None and not self.pens:
+            raise ValueError("Project requires either 'pen' or 'pens'")
+        return self
+
+    @property
+    def palette(self) -> list[Pen]:
+        """Effective pens in drawing order, falling back to the single pen."""
+        if self.pens:
+            return list(self.pens)
+        if self.pen is None:
+            raise ValueError("Project has no pens")
+        return [self.pen]
+
     def model_dump_for_vpype(self) -> dict[str, Any]:
         """Dump project as a dict suitable for vpype pipeline construction."""
+        pen = self.palette[0]
         return {
             "page_size": self.paper.to_vpype_page_size(),
-            "layer_name": self.pen.to_vpype_layer_name(),
-            "pen_width_mm": self.pen.width_mm,
-            "pen_color": self.pen.color,
-            "pen_opacity": self.pen.opacity,
+            "layer_name": pen.to_vpype_layer_name(),
+            "pen_width_mm": pen.width_mm,
+            "pen_color": pen.color,
+            "pen_opacity": pen.opacity,
         }
 
 
@@ -227,6 +268,7 @@ __all__ = [
     "ImageRef",
     "PFMSettings",
     "PFMSettingsUnion",
+    "Palette",
     "Paper",
     "Pen",
     "Project",

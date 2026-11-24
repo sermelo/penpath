@@ -69,7 +69,7 @@ def _dump_yaml_value(value: Any, indent: int = 0) -> list[str]:
     return lines
 
 
-def _add_yaml_comments(data: dict[str, Any]) -> str:
+def _add_yaml_comments(data: dict[str, Any], palette_name: str | None = None) -> str:
     """Generate YAML string with comments for a project dictionary."""
     lines: list[str] = []
 
@@ -136,6 +136,14 @@ def _add_yaml_comments(data: dict[str, Any]) -> str:
         lines.append("")
         add_section("Pen configuration", "pen", pen)
 
+    # Palette (a built-in name, or an explicit ordered pen list)
+    if palette_name:
+        lines.append("")
+        add_section("Built-in palette (drawing order)", "palette", palette_name)
+    elif data.get("pens"):
+        lines.append("")
+        add_section("Ordered pens (drawing order)", "pens", data["pens"])
+
     # PFM
     pfm = data.get("pfm", {})
     if pfm:
@@ -149,6 +157,41 @@ def _add_yaml_comments(data: dict[str, Any]) -> str:
         add_section("Output SVG file path", "output_path", output_path)
 
     return "\n".join(lines)
+
+
+def _resolve_palette_yaml(data: dict[str, Any]) -> dict[str, Any]:
+    """Expand a YAML ``palette:`` name to pens and enforce pen exclusivity."""
+    selected = [
+        key
+        for key in ("pen", "palette", "pens")
+        if key in data and data[key] not in (None, "", [], {})
+    ]
+    if len(selected) > 1:
+        raise ProjectLoadError(
+            "Project sets mutually exclusive pen fields: "
+            + ", ".join(selected)
+            + ". Use only one of 'pen', 'palette' or 'pens'"
+        )
+
+    if not data.get("palette"):
+        return data
+
+    name = data["palette"]
+    if not isinstance(name, str):
+        raise ProjectLoadError("'palette' must be a built-in palette name")
+
+    from penpath.presets.palettes import get_palette
+
+    try:
+        palette = get_palette(name)
+    except ValueError as e:
+        raise ProjectLoadError(f"Unknown palette: {name}") from e
+
+    resolved = dict(data)
+    resolved["pens"] = [pen.model_dump(mode="json") for pen in palette.pens]
+    resolved["palette_name"] = palette.name
+    del resolved["palette"]
+    return resolved
 
 
 def load_yaml(path: Path) -> Project:
@@ -193,7 +236,7 @@ def load_yaml(path: Path) -> Project:
         data = _migrate_project(data, version)
 
     try:
-        project = Project.model_validate(data)
+        project = Project.model_validate(_resolve_palette_yaml(data))
     except ValidationError as e:
         raise ProjectLoadError(f"Project validation failed: {e}") from e
 
@@ -231,7 +274,7 @@ def save_yaml(project: Project, path: Path) -> None:
         }
 
     try:
-        yaml_str = _add_yaml_comments(data)
+        yaml_str = _add_yaml_comments(data, project.palette_name)
         with path.open("w", encoding="utf-8") as f:
             f.write(yaml_str)
     except OSError as e:
