@@ -121,11 +121,15 @@ penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 
 ### Working resolution
 
-Large photos are downscaled before drawing so they finish in seconds. Penpath
-uses one pixel per pen width on the longest side of the paper
-(`paper_longest_side_mm / pen_width_mm`, clamped to 256–1024 px) and never
-enlarges the source. Pixel-valued Sketch Lines settings (`min_length`,
-`max_length`, `sample_step`) are interpreted in working-image pixels and are
+Large photos are downscaled before drawing, so they take tens of seconds rather
+than hours: a 12 MP photo on 190x190 mm paper with a 0.4 mm pen converted in
+11.49 s on our VPS, and the reference `photo.jpg` with the default A4/0.3 mm
+settings took 56 s. These are measured times; see `docs/TESTING.md` for the
+commands and machine. Penpath uses one pixel per pen width on the longest
+side of the paper (`paper_longest_side_mm / pen_width_mm`, clamped to
+256–1024 px) and never enlarges the source. Pixel-valued Sketch Lines settings
+(`min_length`, `max_length`, `sample_step`) are interpreted in working-image
+pixels and are
 not scaled. The chosen size is printed on stderr and recorded in the SVG
 metadata; the image rectangle on the page is unchanged. Override it with
 `--max-resolution` or keep all source pixels with `--no-downscale`:
