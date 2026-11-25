@@ -165,3 +165,27 @@ def test_pipeline_draws_and_optimises_each_pen_once(
     assert len(pfm_counts) == len(optimize_counts) == 4
     assert pfm_counts[0] == pfm_counts[3] == 0
     assert pfm_counts[1] > 0 and pfm_counts[2] > 0
+
+
+def test_default_vpype_path_skips_unused_pens(two_region_image: Path, tmp_path: Path) -> None:
+    """The default vpype export handles unused pens without failing or adding layers."""
+    output = tmp_path / "vpype_multi_pen.svg"
+    result = CliRunner().invoke(
+        main,
+        [
+            "convert",
+            str(two_region_image),
+            "-o",
+            str(output),
+            "--palette",
+            PALETTE,
+            "-s",
+            "seed=42",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    layers = _layers(output)
+    assert [layer.id for layer in layers] == ["layer1", "layer2"]
+    assert [layer.label for layer in layers] == ["red", "blue"]
+    assert [layer.strokes for layer in layers] == [{"#FF0000"}, {"#0000FF"}]
+    assert all(layer.points for layer in layers)

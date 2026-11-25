@@ -454,7 +454,8 @@ def export_svg(
 
     Creates an SVG with the paper size as width/height and viewBox in
     millimetres, a background rect, and one Inkscape layer per used pen.
-    Until colour separation lands, all geometries go to the first pen.
+    All geometries go to the first pen; use :func:`export_pen_layers` to put
+    each pen's geometry in its own layer.
 
     Parameters
     ----------

@@ -155,7 +155,8 @@ def optimize_with_vpype(
     across pens. Strokes are read back in paper millimetres and penpath writes
     the final SVG. Without a placement vpype centres its output on the page;
     with one, the geometry is mapped into the placement rectangle first and
-    vpype is not allowed to move it.
+    vpype is not allowed to move it. Pens with no valid lines are skipped:
+    vpype writes no SVG for empty geometry, so they return an empty list.
 
     Parameters
     ----------
@@ -205,6 +206,9 @@ def optimize_with_vpype(
     placement = _as_placement(image_placement) if image_placement is not None else None
     optimized: list[list[PenStroke]] = []
     for lines in valid_by_pen:
+        if not lines:
+            optimized.append([])
+            continue
         if placement is not None and image_size_px is not None:
             placed_mm = _scale_geometries_to_placement(lines, placement, image_size_px)
             vpype_geometry = _to_vpype_units(placed_mm)
