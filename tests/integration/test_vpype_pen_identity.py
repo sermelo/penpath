@@ -132,7 +132,7 @@ class TestPenpathSvgLayout:
 
         root = ET.parse(plot).getroot()
         group = next(root.iter(SVG_NS + "g"))
-        assert group.get(INKSCAPE_NS + "label") == "stabilo_88_yellow"
+        assert group.get(INKSCAPE_NS + "label") == "stabilo_88_black"
         assert group.get("id") == "layer1"
 
     def test_evaluate_by_pen_label_keys_cost_by_pen_colour(

@@ -87,13 +87,20 @@ Working resolution: 475x358 px (source 4080x3072 px, scale 0.116)
 `penpath info image` shows the resolution penpath would plan for an image,
 using the paper and pen from the config defaults.
 
-A palette's order is the drawing order. Until colour separation lands, the
-whole image is still drawn with **one** pen — the first pen of the palette — so
-the SVG keeps a single pen layer. For `stabilo_88` that is
-`stabilo_88_yellow` (`#F7E300`); the remaining pens are listed by
-`penpath info palettes` and will get their layers when colour separation is
-implemented. `--pen` and `--palette` cannot be combined: penpath reports a
-usage error instead of choosing one silently.
+`--palette NAME|LIST` splits the loaded colour image before filtering: each
+pixel goes to the pen whose colour is nearest in CIE Lab space, and that pen
+receives a full-size greyscale image holding the luminance of its own pixels
+and white elsewhere. The filters and the drawing algorithm then run once per
+pen, and geometry is simplified, merged and sorted **within that pen only**.
+
+The palette's order is the drawing order and the order of the SVG layers. Each
+pen that produced strokes becomes one Inkscape layer named `layerN`, where `N`
+counts only the used pens from 1: an unused pen gets no layer and does not
+shift the numbering. The built-in `stabilo_88` palette is listed light → dark
+by `penpath info palettes`; an inline list is used exactly as given. `--pen`
+and `--palette` cannot be combined: penpath reports a usage error instead of
+choosing one silently. Without `--palette`, the default single pen draws the
+whole image and produces a single layer, exactly as before.
 
 #### Output Options
 
@@ -275,6 +282,8 @@ penpath convert --project my_project.yaml --pen "0.5,#FF0000" -o red_plot.svg
 # Use a built-in palette or an inline ordered list
 penpath convert photo.jpg --palette stabilo_88
 penpath convert photo.jpg --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E"
+# The ordered pens become layer1, layer2, ... in drawing order; pens that
+# receive no strokes are skipped, so a palette of twelve may yield fewer layers.
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype

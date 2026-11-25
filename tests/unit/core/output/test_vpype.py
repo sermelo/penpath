@@ -177,6 +177,31 @@ class TestOptimizeWithVpype:
             for stroke in strokes
         )
 
+    def test_optimize_with_vpype_skips_pens_with_no_lines(self, monkeypatch):
+        """A pen with no valid lines gets no vpype call and an empty result."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pens = [
+            Pen(name="unused", width_mm=0.3, color="#00FF00"),
+            Pen(name="red", width_mm=0.3, color="#FF0000"),
+        ]
+        batches: Sequence[Sequence[LineString]] = [
+            [],
+            [LineString([(0, 0), (10, 10)])],
+        ]
+        commands: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+            commands.append(cmd)
+            return SimpleNamespace(stdout=_FAKE_SVG, stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        strokes_by_pen = optimize_with_vpype(batches, paper, pens, vpype_path="vpype-stub")
+
+        assert len(commands) == 1
+        assert len(strokes_by_pen) == 2
+        assert strokes_by_pen[0] == []
+        assert len(strokes_by_pen[1]) == 1
+
     def test_optimize_with_vpype_failed_call_raises_runtime_error(self, monkeypatch):
         """A vpype failure is reported with its stderr."""
         paper = Paper(name="square", width_mm=100, height_mm=100)
