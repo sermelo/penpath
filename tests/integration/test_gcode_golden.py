@@ -1,69 +1,73 @@
-"""Golden G-code test: the exact text a user gets from the generic profile."""
+"""Golden G-code tests: the exact text a user gets from each fixture SVG."""
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 
 from penpath.core import (
-    GcodeLayer,
     build_gcode,
     get_svg_paper_size,
+    list_svg_layers,
     load_profile,
+    parse_svg_layers,
     parse_svg_strokes,
 )
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
-SVG_PATH = FIXTURES / "svg" / "gcode" / "simple.svg"
-GOLDEN_PATH = FIXTURES / "golden" / "gcode" / "generic.gcode"
-INKSCAPE_LABEL = "{http://www.inkscape.org/namespaces/inkscape}label"
+SIMPLE_SVG = FIXTURES / "svg" / "gcode" / "simple.svg"
+MULTI_PEN_SVG = FIXTURES / "svg" / "gcode" / "multi_pen.svg"
+GOLDEN_DIR = FIXTURES / "golden" / "gcode"
 
 
-def _layer_label(svg_path: Path) -> str:
-    root = ET.parse(svg_path).getroot()
-    for group in root.iter():
-        label = group.get(INKSCAPE_LABEL)
-        if label:
-            return label
-    raise AssertionError(f"{svg_path} has no Inkscape layer label")
-
-
-def _build_fixture_gcode(profiles_path: Path) -> str:
-    strokes = parse_svg_strokes(SVG_PATH)
-    layer = GcodeLayer(
-        pen=_layer_label(SVG_PATH),
-        polylines=tuple(tuple(stroke.polyline) for stroke in strokes),
-    )
-    page_size = get_svg_paper_size(SVG_PATH)
+def _build_fixture_gcode(svg_path: Path, profiles_path: Path) -> str:
+    page_size = get_svg_paper_size(svg_path)
     assert page_size is not None
-    return build_gcode([layer], load_profile("generic", profiles_path=profiles_path), page_size)
+    return build_gcode(
+        parse_svg_layers(svg_path),
+        load_profile("generic", profiles_path=profiles_path),
+        page_size,
+    )
 
 
-def test_generic_gcode_matches_golden_byte_for_byte(
+@pytest.mark.parametrize(
+    ("svg_path", "golden_name"),
+    [(SIMPLE_SVG, "generic.gcode"), (MULTI_PEN_SVG, "multi_pen.gcode")],
+)
+def test_gcode_matches_golden_byte_for_byte(
+    svg_path: Path,
+    golden_name: str,
     update_golden: bool,
     tmp_path: Path,
 ) -> None:
-    produced = _build_fixture_gcode(tmp_path / "profiles.yaml").encode("utf-8")
+    produced = _build_fixture_gcode(svg_path, tmp_path / "profiles.yaml").encode("utf-8")
+    golden_path = GOLDEN_DIR / golden_name
     if update_golden:
-        GOLDEN_PATH.write_bytes(produced)
+        golden_path.write_bytes(produced)
         return
 
-    expected = GOLDEN_PATH.read_bytes() if GOLDEN_PATH.exists() else b""
+    expected = golden_path.read_bytes() if golden_path.exists() else b""
     assert produced == expected, (
-        f"G-code golden drift in {GOLDEN_PATH}. "
+        f"G-code golden drift in {golden_path}. "
         "Regenerate with: uv run pytest tests/integration/test_gcode_golden.py --update-golden\n"
         f"produced:\n{produced.decode('utf-8')}\nexpected:\n{expected.decode('utf-8')}"
     )
 
 
-@pytest.mark.parametrize("profile_name", ["generic"])
-def test_golden_fixture_parses_two_drawn_polylines(profile_name: str, tmp_path: Path) -> None:
-    strokes = parse_svg_strokes(SVG_PATH)
-    assert len(strokes) == 2
-    assert strokes[0].polyline == [(10.0, 10.0), (20.0, 10.0), (20.0, 20.0)]
-    assert strokes[1].polyline == [(30.0, 30.0), (40.0, 30.0)]
-    assert _build_fixture_gcode(tmp_path / "profiles.yaml").startswith(
-        f"; penpath gcode profile={profile_name} "
+@pytest.mark.parametrize("svg_path", [SIMPLE_SVG, MULTI_PEN_SVG])
+def test_golden_fixture_parses_the_expected_strokes(svg_path: Path, tmp_path: Path) -> None:
+    strokes = parse_svg_strokes(svg_path)
+    if svg_path == SIMPLE_SVG:
+        assert len(strokes) == 2
+        assert strokes[0].polyline == [(10.0, 10.0), (20.0, 10.0), (20.0, 20.0)]
+        assert strokes[1].polyline == [(30.0, 30.0), (40.0, 30.0)]
+    else:
+        assert len(strokes) == 4
+        assert list_svg_layers(svg_path) == [
+            ("layer1", "stabilo_88_yellow"),
+            ("layer2", "stabilo_88_red"),
+        ]
+    assert _build_fixture_gcode(svg_path, tmp_path / "profiles.yaml").startswith(
+        "; penpath gcode profile=generic "
     )

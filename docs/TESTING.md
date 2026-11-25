@@ -75,9 +75,11 @@
 The G-code emitter has its own golden files because its output is text: one
 exact file per built-in profile.
 
-- **Location**: `tests/fixtures/golden/gcode/<profile>.gcode` for expected text;
+- **Location**: `tests/fixtures/golden/gcode/<name>.gcode` for expected text;
   `tests/fixtures/svg/gcode/<name>.svg` for the input drawings. `simple.svg`
-  holds one layer with two known polylines.
+  holds one layer with two known polylines; `multi_pen.svg` holds two layers in
+  document order, and `multi_pen.gcode` pins one pen-change block before the
+  second layer.
 - **Format**: the produced text is compared byte for byte (UTF-8, LF line
   endings, one trailing newline). The test
   `tests/integration/test_gcode_golden.py` loads the built-in profile through

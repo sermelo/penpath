@@ -115,6 +115,82 @@ def _header(profile: MachineProfile) -> str:
     return f"{profile.gcode.comment_prefix} penpath gcode " + " ".join(fields)
 
 
+def _pen_change_needed(profile: MachineProfile, index: int) -> bool:
+    """Return whether a pen change belongs before this used layer."""
+    mode = profile.pen_change.mode
+    return mode == "each" or (mode == "between" and index > 1)
+
+
+def _z_height(value: str | float, profile: MachineProfile) -> float:
+    """Resolve a pen-change Z step to a millimetre height from the profile."""
+    pen = profile.pen
+    if isinstance(value, str):
+        if value == "up":
+            return pen.z_up
+        if value == "down":
+            return pen.z_down
+        if value == "touch":
+            if pen.z_touch is None:
+                raise GcodeError("pen_change step z=touch needs pen.z_touch in the profile")
+            return pen.z_touch
+        if value == "hover":
+            if pen.z_hover is None:
+                raise GcodeError("pen_change step z=hover needs pen.z_hover in the profile")
+            return pen.z_hover
+        raise GcodeError(f"Unknown pen_change Z height {value!r}")
+    return value
+
+
+def _xy_point(value: str | tuple[float, float], profile: MachineProfile) -> Coordinate:
+    """Resolve a pen-change XY step to a point in pen space."""
+    if isinstance(value, str):
+        if value == "touch":
+            point = profile.pen.touch_xy_mm
+            if point is None:
+                raise GcodeError("pen_change step xy=touch needs pen.touch_xy_mm in the profile")
+            return point
+        raise GcodeError(f"Unknown pen_change XY target {value!r}")
+    return value
+
+
+def _feed_clause(feed: str | None, values: dict[str, str]) -> str:
+    """Return the feed suffix for a pen-change move, using G1 when it is set."""
+    return "" if feed is None else f" F{values[f'feed_{feed}']}"
+
+
+def _pen_change_lines(profile: MachineProfile, values: dict[str, str]) -> list[str]:
+    """Render the ordered pen-change steps for one layer."""
+    prefix = profile.gcode.comment_prefix
+    lines = [f"{prefix} pen change"]
+    offset_x, offset_y = profile.bed.pen_offset_mm
+    for step in profile.pen_change.steps:
+        if step.z is not None:
+            command = "G1" if step.feed is not None else "G0"
+            lines.append(
+                f"{command} Z{_format_mm(_z_height(step.z, profile))}"
+                f"{_feed_clause(step.feed, values)}"
+            )
+        elif step.xy is not None:
+            x_pen, y_pen = _xy_point(step.xy, profile)
+            command = "G1" if step.feed is not None else "G0"
+            lines.append(
+                f"{command} X{_format_mm(x_pen - offset_x)} Y{_format_mm(y_pen - offset_y)}"
+                f"{_feed_clause(step.feed, values)}"
+            )
+        elif step.raw is not None:
+            lines.extend(
+                line
+                for line in step.raw.format_map(values).strip("\n").splitlines()
+                if line.strip()
+            )
+        elif step.message is not None:
+            lines.append(f"M117 {step.message.format_map(values)}".rstrip())
+        elif step.pause is not None:
+            text = step.pause.format_map(values)
+            lines.append(f"M0 {text}".rstrip() if text else "M0")
+    return lines
+
+
 def _nozzle_points(
     polyline: Polyline,
     profile: MachineProfile,
@@ -154,7 +230,9 @@ def build_gcode(
     ----------
     layers : Sequence[GcodeLayer]
         Layers of polylines in SVG page millimetres, in drawing order. Empty
-        polylines and layers without drawn points are skipped.
+        polylines and layers without drawn points are skipped, so an unused pen
+        never triggers a pen change. Each used layer gets one pen-change block
+        according to ``pen_change.mode``.
     profile : MachineProfile
         Validated machine profile; the only source of machine values.
     page_size_mm : tuple[float, float]
@@ -194,6 +272,8 @@ def build_gcode(
             "pen_index": str(index),
             "layer_index": str(index),
         }
+        if _pen_change_needed(profile, index):
+            lines.extend(_pen_change_lines(profile, values))
         lines.append(f"{prefix} layer {index}/{layer_count} pen={layer.pen}")
         lines.extend(_block(profile.gcode.layer_start, values))
         for polyline in layer.polylines:

@@ -133,6 +133,9 @@ penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 # Turn the reviewed SVG into G-code for a machine profile (stdout stays empty)
 penpath gcode plot.svg --profile generic -o plot.gcode
 penpath gcode plot.svg --profile generic --dry-run > plot.gcode
+# A multi-pen SVG becomes one G-code layer per used pen, in layer order, with
+# one pen-change block before each layer that follows the first
+penpath gcode palette_plot.svg --profile generic -o palette_plot.gcode
 ```
 
 ### Working resolution

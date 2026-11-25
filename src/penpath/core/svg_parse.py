@@ -7,6 +7,10 @@ import xml.etree.ElementTree as ET
 from math import hypot
 from pathlib import Path
 
+from shapely import LineString
+
+from penpath.core.geometry.sort import sort_lines
+from penpath.core.output.gcode import GcodeLayer
 from penpath.core.output.svg import ImagePlacement, fit_image_placement
 from penpath.core.simulation import PenStroke
 
@@ -540,9 +544,115 @@ def get_image_placement(
     return fit_image_placement(original_image_size_px, page_width_mm, page_height_mm)
 
 
+def _inkscape_attr(element: ET.Element, name: str) -> str | None:
+    """Read an Inkscape attribute in either the prefixed or namespaced form."""
+    return element.get(f"inkscape:{name}") or element.get(f"{{{INKSCAPE_NAMESPACE}}}{name}")
+
+
+def list_svg_layers(svg_path: str | Path) -> list[tuple[str, str]]:
+    """Return ``(id, label)`` for each Inkscape layer, in document order.
+
+    A layer is a ``<g inkscape:groupmode="layer">`` group as written by
+    ``penpath convert``. Its ``inkscape:label`` is the pen name; when the label
+    is missing the id is used instead, and vice versa. Groups with neither are
+    skipped because they cannot be addressed by :func:`parse_svg_strokes`.
+
+    Parameters
+    ----------
+    svg_path : str | Path
+        Path to the SVG file.
+
+    Returns
+    -------
+    list[tuple[str, str]]
+        Layer ids and pen names in the order they appear in the document, which
+        is the drawing order of the pens.
+    """
+    root = ET.parse(Path(svg_path)).getroot()
+    layers: list[tuple[str, str]] = []
+    for element in root.iter():
+        if _local_name(element.tag).lower() != "g":
+            continue
+        if _inkscape_attr(element, "groupmode") != "layer":
+            continue
+        element_id = element.get("id")
+        label = _inkscape_attr(element, "label")
+        if element_id is None:
+            element_id = label
+        if label is None:
+            label = element_id
+        if element_id is None or label is None:
+            continue
+        layers.append((element_id, label))
+    return layers
+
+
+def _sorted_polylines(strokes: list[PenStroke]) -> list[tuple[tuple[float, float], ...]]:
+    """Order a layer's strokes by pen-up travel using the shared line sorter."""
+    drawn = [stroke for stroke in strokes if not stroke.pen_up and len(stroke.polyline) >= 2]
+    lines = [LineString(stroke.polyline) for stroke in drawn]
+    return [
+        tuple((float(x), float(y)) for x, y in line.coords)
+        for line in sort_lines(lines)
+        if len(line.coords) >= 2
+    ]
+
+
+def _default_pen_name(svg_path: str | Path, strokes: list[PenStroke]) -> str:
+    """Name a layerless SVG after its first label, stroke colour or ``black``."""
+    root = ET.parse(Path(svg_path)).getroot()
+    for element in root.iter():
+        label = _inkscape_attr(element, "label")
+        if label:
+            return label
+    return strokes[0].color if strokes else "black"
+
+
+def parse_svg_layers(svg_path: str | Path) -> list[GcodeLayer]:
+    """Return the SVG's pen layers as G-code layers in drawing order.
+
+    Each Inkscape layer becomes one layer, named by its label, with its strokes
+    ordered inside the layer by :func:`penpath.core.geometry.sort.sort_lines` to
+    keep pen-up travel short. An SVG without Inkscape layers becomes a single
+    layer, named by its first label or stroke colour, preserving the old plain
+    stroke SVG behaviour. Strokes outside any declared layer are added to the
+    first layer so none are silently dropped.
+
+    Parameters
+    ----------
+    svg_path : str | Path
+        Path to the SVG file, in millimetres.
+
+    Returns
+    -------
+    list[GcodeLayer]
+        Layers with polylines in SVG page millimetres, in document order.
+    """
+    layers = list_svg_layers(svg_path)
+    strokes = parse_svg_strokes(svg_path)
+    if not layers:
+        if not strokes:
+            return []
+        return [GcodeLayer(_default_pen_name(svg_path, strokes), _sorted_polylines(strokes))]
+
+    groups: list[tuple[str, list[PenStroke]]] = []
+    unassigned = list(strokes)
+    for layer_id, label in layers:
+        layer_strokes = parse_svg_strokes(svg_path, layer=layer_id)
+        for stroke in layer_strokes:
+            if stroke in unassigned:
+                unassigned.remove(stroke)
+        groups.append((label, layer_strokes))
+    if unassigned:
+        groups[0] = (groups[0][0], unassigned + groups[0][1])
+    return [GcodeLayer(label, _sorted_polylines(layer_strokes)) for label, layer_strokes in groups]
+
+
 __all__ = [
     "ImagePlacement",
     "get_image_placement",
     "get_svg_paper_size",
+    "list_svg_layers",
+    "parse_svg_layers",
     "parse_svg_strokes",
 ]
