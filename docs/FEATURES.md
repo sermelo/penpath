@@ -30,7 +30,7 @@
 | 15 | Spiral (sawtooth) | Continuous-line, single-pass plots | Spiral type (Archimedean/parabolic), centre, ring spacing, amplitude, velocity range, connected lines | `pfm/PFMSpiralBasic.java` | M | NumPy | **later** |
 | 16 | Contour tracing (potrace-style) | Clean vector outlines from thresholded image | Turn policy, turd size, alpha max, opticurve | New (DrawingBotV3 Premium only) | L | potrace / pypotrace | **later** |
 | 17 | Stippling / pointillism | Dot-based shading | Dot density, min/max radius, jitter, seed | New | M | NumPy, Poisson disk | **out** — niche, can be built on Sketch Lines |
-| 18 | Multi-pen / colour separation | CMYK, RGB, or custom palette splits | Separation mode (CMYK, RGB, threshold layers), per-layer PFM | `drawing/ColorSeparationHandler.java` (Default only in free) | L | — | **later** — MVP is single-pen |
+| 18 | Multi-pen / colour separation | CMYK, RGB, or custom palette splits | Separation mode (CMYK, RGB, threshold layers), per-layer PFM | `drawing/ColorSeparationHandler.java` (Default only in free) | L | — | **MVP** — sergio approved on 2026-11-24; the Christmas card needs it and the default path stays simple: one pen gives one layer, exactly as before |
 | **Pens & Colour** |||||||
 | 19 | Pen library (width, colour, type) | Match physical pens | Width (mm), colour (hex/CMYK), type (ballpoint, fountain, brush, marker), opacity | `files/json/presets/PresetDrawingPen*.java` | S | — | **MVP** |
 | 20 | Pen pressure / width variation | Expressive strokes | Min/max width, pressure curve | New (DrawingBotV3 has easing) | M | — | **later** |
@@ -54,7 +54,7 @@
 
 ## Decision Rationale
 
-### MVP (10 features) — "Photo → good, plottable SVG"
+### MVP (18 features) — "Photo → good, plottable SVG"
 | # | Feature | Why MVP |
 |---|---------|---------|
 | 1 | Load raster image | Absolute prerequisite |
@@ -65,6 +65,7 @@
 | 8 | Invert | Light-on-dark workflows |
 | 9 | Crop/resize/rotate | Fit to paper, set DPI |
 | 13 | Sketch Lines | Most versatile free PFM; handles shading, texture, artistic control |
+| 18 | Multi-pen / colour separation | sergio approved on 2026-11-24; the Christmas card needs it and the default path stays simple: one pen gives one layer, exactly as before |
 | 19 | Pen library | Physical pen matching is core to plotting |
 | 21 | Virtual paper | Defines output bounds |
 | 22 | Line simplification | Raw PFM output is dense; RDP makes it plottable |
@@ -75,12 +76,11 @@
 | 30 | Project file | Reproducibility, handoff |
 | 32 | CLI config | Sensible defaults without flags every run |
 
-**MVP Scope**: One PFM (Sketch Lines), single pen, vpype for optimization/export, minimal but complete filter chain for photo prep.
+**MVP Scope**: One PFM (Sketch Lines), one pen by default and an ordered palette for multi-pen, vpype for optimization/export, minimal but complete filter chain for photo prep.
 
-### Later (12 features) — "Polish, versatility, multi-pen"
+### Later (11 features) — "Polish and versatility"
 - Sketch Squares, Spiral (additional styles)
 - Contour tracing (clean outlines)
-- Multi-pen / colour separation (CMYK, threshold layers)
 - Edge detect (outline mode)
 - Filter pipeline/presets, pen pressure, GCode, preview renders, preset system
 - Batch input

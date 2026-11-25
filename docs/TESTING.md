@@ -451,6 +451,94 @@ pixel settings in working-image pixels keeps their ink independent of the
 source size; with the old source-ratio scaling, `face.jpg` drew for over 40 min
 before the gate could finish.
 
+### Multi-pen per-layer gate (LUC-50 part 5, 2026-11-25)
+
+One palette drawing has several pens, each responsible for a different colour
+region. The LUC-47 measures are therefore taken **once per used layer**, with
+that pen's own colour channel as the reference instead of the whole photo.
+
+Reproduce the table with:
+
+```bash
+uv run pytest tests/integration/test_multi_pen_gate.py -s
+```
+
+The harness (`tests/integration/multi_pen_gate.py`) runs the real CLI on
+`tests/fixtures/images/reference/photo.jpg` with `--palette stabilo_88` and
+`-s seed=42`, on A4 with a 10 mm margin and vpype 1.15 on the default export
+path; the derived working image is 742x494 px. It splits the photo with
+`separate_palette` — one full-size `L` channel per pen, holding that pen's
+luminance on its own pixels and white elsewhere — exactly as `convert` does.
+For each pen that produced strokes it selects that layer's strokes by colour,
+**recolours them black** so the gate's `< 128` ink threshold applies to every
+pen regardless of its physical colour, simulates the plot, and reuses the
+LUC-47 helpers unchanged: `measure_plot` (`compute_likeness`,
+`coverage_fractions`, `ink_spread`, `tone_metrics`) plus the blank, random and
+ideal baselines. All layers share the one placement rectangle recorded in the
+SVG. `region px` below counts ink-cutoff-dark pixels in that pen's own channel
+inside the placement crop; no layer is measured on a channel that has none.
+
+Tolerances are the LUC-47 floors for `photo.jpg`, unchanged:
+
+| Measure | Floor |
+|---------|------:|
+| SSIM | 0.18 |
+| Covered width | 0.60 |
+| Covered height | 0.60 |
+| Bounding-box area | 0.40 |
+| Ink per 4x4 cell | 0.0003 |
+| Dark/light tone ratio | 2.0 |
+
+#### Measured per-layer numbers
+
+| layer | strokes | region px | SSIM | cov W | cov H | bbox | ink min | ink max | tone |
+|-------|--------:|----------:|-----:|------:|------:|-----:|--------:|--------:|-----:|
+| `stabilo_88_light_blue` | 73 | 2817 | 0.5537 | 0.996 | 0.998 | 0.994 | 0.0000 | 0.1259 | 133.91 |
+| `stabilo_88_brown` | 5 | 4298 | 0.9499 | 0.891 | 0.368 | 0.328 | 0.0000 | 0.3290 | 6.70 |
+| `stabilo_88_black` | 384 | 159274 | 0.7523 | 0.999 | 0.998 | 0.997 | 0.0000 | 0.1370 | 152.42 |
+
+Only these three of the twelve palette pens produced strokes. Baselines for
+the same layers:
+
+| layer | blank SSIM | random SSIM | ideal SSIM | ideal ink min |
+|-------|-----------:|------------:|-----------:|--------------:|
+| `stabilo_88_light_blue` | 0.7872 | 0.2418 | 0.9959 | 0.0007 |
+| `stabilo_88_brown` | 0.9281 | 0.8145 | 0.9972 | 0.0000 |
+| `stabilo_88_black` | 0.5420 | 0.0855 | 0.9955 | 0.0000 |
+
+#### Result: five floor checks fail across the layers
+
+`test_multi_pen_gate.py` asserts the SSIM and covered-width floors (every layer
+clears both) and prints the rest. The following floors do **not** pass; they
+are reported here with their numbers rather than lowered:
+
+| layer | measure | value | floor |
+|-------|---------|------:|------:|
+| `stabilo_88_light_blue` | ink per 4x4 cell | 0.0000 | 0.0003 |
+| `stabilo_88_brown` | covered height | 0.3684 | 0.6000 |
+| `stabilo_88_brown` | bbox area | 0.3282 | 0.4000 |
+| `stabilo_88_brown` | ink per 4x4 cell | 0.0000 | 0.0003 |
+| `stabilo_88_black` | ink per 4x4 cell | 0.0000 | 0.0003 |
+
+Two observations from the baselines explain the misses, and are recorded as
+limitations of this per-layer yardstick, not fixed here:
+
+1. A pen's channel is mostly white, so the blank page already scores 0.7872 on
+   light blue and 0.9281 on brown. SSIM above 0.18 does not by itself prove a
+   likeness for those layers; the light-blue algorithm (0.5537) even scores
+   below its blank page. Coverage and ink spread have to carry the check.
+2. The 4x4 ink floor is measured over the whole placement. A pen that owns a
+   local colour region cannot put ink in all sixteen cells: even the ideal
+   tone-mapped channel fails it for brown (0.0000) and black (0.0000), and
+   only just clears it for light blue (0.0007). Brown's five strokes also
+   cover 0.368 of the placement height against a 0.60 floor. Applying the
+   full-image floors verbatim to a single colour region is therefore not a
+   valid pass/fail test for every pen.
+
+The multi-pen gate result was reported to sergio for a decision on how the
+per-layer yardstick should treat local colour regions. Thresholds, the drawing
+algorithm and the palette were **not** changed here.
+
 ### Machine Cost (LUC-27)
 
 Machine cost measures how much work the plotter does, independently of how the

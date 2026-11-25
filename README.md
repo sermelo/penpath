@@ -78,6 +78,7 @@ writes the final SVG: vpype contributes geometry only.
 | Concept | Description |
 |---------|-------------|
 | **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. MVP includes `sketch_lines` (ported from DrawingBotV3). |
+| **Palette** | An ordered set of pens. Each pixel is drawn by its nearest palette colour; each used pen becomes one SVG layer. |
 | **Filters** | Image preprocessing: grayscale, threshold, blur, contrast, etc. Applied in order before PFM. |
 | **Geometry optimization** | Simplify (RDP), merge (collinear join), sort (greedy NN + 2-opt) — runs automatically. |
 | **vpype** | External CLI for final SVG optimization (linemerge, linesimplify, reloop, linesort). |
@@ -360,20 +361,51 @@ penpath convert photo.jpg -s seed=42 -o plot2.svg
 
 **Inline format:** `WIDTH,COLOR,TYPE` — e.g., `0.4,#FF6600,fountain`
 
-### Palettes
+### Palettes: one SVG layer per pen
 
-The built-in `stabilo_88` palette has twelve 0.4 mm Stabilo Point 88 pens in
-light → dark drawing order:
+Each pixel is assigned to the palette pen whose colour is nearest in CIE Lab,
+and that pen receives a full-size greyscale image holding the luminance of its
+own pixels and white elsewhere. Filters, the Sketch Lines PFM and geometry
+optimization then run once per pen, so lines from different pens are never
+sorted together. Every pen that draws becomes one Inkscape layer, named after
+the pen, in palette order:
 
 ```bash
-penpath convert photo.jpg --palette stabilo_88
+# Photo -> SVG with one layer per used pen (the Christmas-card workflow)
+penpath convert photo.jpg -o card.svg --palette stabilo_88 -s seed=42
+
+# See the pens, colours and drawing order
 penpath info palettes
+penpath info palettes --format json
+
+# Check the result before plotting
+penpath preview card.svg -o card.png --dpi 10
+penpath evaluate photo.jpg card.svg
 ```
 
 A project file can use `palette: stabilo_88` or an explicit ordered `pens:` list
-instead of `pen:`. Palette order is drawing order. Until colour separation
-lands, the whole image is drawn with the first palette pen, so the SVG keeps a
-single pen layer.
+instead of `pen:`. Palette order is drawing order and the layer order. An
+unused pen gets no layer, so a twelve-pen palette may yield fewer than twelve
+layers. Without `--palette`, the single default pen draws the whole image and
+produces one layer, exactly as before. `--pen` and `--palette` are mutually
+exclusive.
+
+The built-in `stabilo_88` palette, in drawing order (all 0.4 mm):
+
+| # | Layer label | Colour |
+|--:|-------------|--------|
+| 1 | `stabilo_88_yellow` | `#F7E300` |
+| 2 | `stabilo_88_cyan` | `#00B5B0` |
+| 3 | `stabilo_88_light_blue` | `#8CCFE8` |
+| 4 | `stabilo_88_blue` | `#1B4C9E` |
+| 5 | `stabilo_88_light_green` | `#A9D18E` |
+| 6 | `stabilo_88_purple` | `#6C3B9E` |
+| 7 | `stabilo_88_pink` | `#F2A0BE` |
+| 8 | `stabilo_88_brown` | `#7A4B23` |
+| 9 | `stabilo_88_orange` | `#F4741F` |
+| 10 | `stabilo_88_black` | `#000000` |
+| 11 | `stabilo_88_red` | `#E4002B` |
+| 12 | `stabilo_88_green` | `#00963E` |
 
 ### SVG layout and `vpype read`
 
