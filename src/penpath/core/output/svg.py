@@ -387,6 +387,59 @@ def write_penpath_svg(
     dwg.save()
 
 
+def export_pen_layers(
+    geometries_by_pen: Sequence[Sequence[LineString]],
+    paper: Paper,
+    pens: Sequence[Pen],
+    output_path: str | Path,
+    image_placement: ImagePlacement | tuple[float, float, float, float],
+    image_size_px: tuple[int, int],
+    resolution: WorkingResolution | None = None,
+) -> None:
+    """Export one geometry list per pen into that pen's Inkscape layer.
+
+    Parameters
+    ----------
+    geometries_by_pen : Sequence[Sequence[LineString]]
+        Image pixel geometries, one list per pen in drawing order. Each list
+        is mapped into the same placement, so a pen's strokes stay where its
+        region of the image was.
+    paper : Paper
+        Paper configuration (size and background colour).
+    pens : Sequence[Pen]
+        Pens in drawing order, one entry per item of ``geometries_by_pen``.
+    output_path : str | Path
+        Output SVG file path.
+    image_placement : ImagePlacement | tuple
+        Rectangle (x, y, width, height in mm) where the source image sits.
+    image_size_px : tuple[int, int]
+        Size of the image the geometries belong to, in pixels.
+    resolution : WorkingResolution | None, optional
+        Working resolution to record as image/source size attributes.
+
+    Notes
+    -----
+    Pens with no lines get no layer. Numbering counts only the used pens,
+    in pen order. Geometry is never mixed between pens.
+    """
+    if not pens:
+        raise ValueError("At least one pen must be provided")
+    if len(geometries_by_pen) != len(pens):
+        raise ValueError("geometries_by_pen must have one entry per pen")
+    valid_by_pen = [
+        [line for line in lines if not line.is_empty and len(list(line.coords)) >= 2]
+        for lines in geometries_by_pen
+    ]
+    if not any(valid_by_pen):
+        raise ValueError("No valid geometries (need at least 2 points per line)")
+
+    placement = _as_placement(image_placement)
+    transformed_by_pen = [
+        _scale_geometries_to_placement(lines, placement, image_size_px) for lines in valid_by_pen
+    ]
+    write_penpath_svg(transformed_by_pen, paper, pens, output_path, image_placement, resolution)
+
+
 def export_svg(
     geometries: list[LineString],
     paper: Paper,
@@ -459,6 +512,7 @@ __all__ = [
     "PENPATH_NAMESPACE",
     "ImagePlacement",
     "add_placement_metadata",
+    "export_pen_layers",
     "export_svg",
     "fit_image_placement",
     "write_penpath_svg",

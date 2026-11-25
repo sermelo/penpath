@@ -20,10 +20,14 @@ from penpath.core.drawing.registry import get_pfm
 from penpath.core.image.pipeline import FilterPipeline
 from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM
 from penpath.core.project import save_yaml
+from penpath.presets.palettes import get_palette
 from penpath.presets.pfms import PFM_PRESETS
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
+
+SVG_NS = "{http://www.w3.org/2000/svg}"
+INKSCAPE_NS = "{http://www.inkscape.org/namespaces/inkscape}"
 
 
 @pytest.fixture
@@ -312,9 +316,9 @@ class TestConvertSettings:
 
 
 class TestConvertPalette:
-    """A project file with a palette runs through the CLI as a user expects."""
+    """A palette splits the image and produces one layer per used pen."""
 
-    def test_project_palette_key_produces_one_layer(
+    def test_project_palette_key_produces_pen_layers(
         self, runner: CliRunner, reference_image: Path, tmp_path: Path
     ) -> None:
         output = tmp_path / "from_palette.svg"
@@ -343,14 +347,23 @@ output_path: "{output}"
             ["convert", str(reference_image), "-p", str(project_path), "--no-vpype"],
         )
         assert result.exit_code == 0, result.output
-        svg = output.read_text()
-        assert 'inkscape:label="stabilo_88_yellow"' in svg
-        assert svg.count('inkscape:groupmode="layer"') == 1  # one used pen
 
-    def test_palette_does_not_change_the_drawing(
+        layers = [
+            group
+            for group in ET.parse(output).getroot().iter(SVG_NS + "g")
+            if group.get(INKSCAPE_NS + "groupmode") == "layer"
+        ]
+        assert layers
+        names = {pen.name for pen in get_palette("stabilo_88").pens}
+        assert [layer.get("id") for layer in layers] == [
+            f"layer{index}" for index in range(1, len(layers) + 1)
+        ]
+        assert {layer.get(INKSCAPE_NS + "label") for layer in layers} <= names
+
+    def test_palette_draws_different_strokes_than_a_single_pen(
         self, runner: CliRunner, reference_image: Path, tmp_path: Path
     ) -> None:
-        """With a fixed seed, a palette run draws exactly the same strokes."""
+        """With a fixed seed, separation changes which pixels each pen draws."""
         plain = tmp_path / "plain.svg"
         palette = tmp_path / "palette.svg"
         plain_result = _convert(runner, reference_image, plain)
@@ -370,7 +383,7 @@ output_path: "{output}"
         )
         assert plain_result.exit_code == 0, plain_result.output
         assert palette_result.exit_code == 0, palette_result.output
-        assert _stroke_geometry(plain) == _stroke_geometry(palette)
+        assert _stroke_geometry(plain) != _stroke_geometry(palette)
 
     def test_project_pens_list_uses_the_first_pen_once(
         self, runner: CliRunner, reference_image: Path, tmp_path: Path

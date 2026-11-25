@@ -270,10 +270,10 @@ class TestConvertCommand:
         assert result.exit_code == 0
         assert output_path.exists()
 
-    def test_convert_with_builtin_palette_uses_first_pen_once(
+    def test_convert_with_builtin_palette_draws_the_nearest_pen(
         self, runner: CliRunner, test_image: Path, tmp_path: Path
     ) -> None:
-        """A palette still draws the whole image with one pen: the first one."""
+        """A palette splits by colour; this greyscale image's dark pixels pick black."""
         output_path = tmp_path / "palette.svg"
         result = runner.invoke(
             main,
@@ -291,10 +291,11 @@ class TestConvertCommand:
         )
         assert result.exit_code == 0, result.output
         svg = output_path.read_text()
-        assert 'inkscape:label="stabilo_88_yellow"' in svg
-        assert 'stroke="#F7E300"' in svg
-        assert "stabilo_88_cyan" not in svg
-        assert svg.count('inkscape:groupmode="layer"') == 1  # one used pen
+        assert 'inkscape:label="stabilo_88_black"' in svg
+        assert 'stroke="#000000"' in svg
+        assert "stabilo_88_yellow" not in svg
+        assert svg.count('inkscape:groupmode="layer"') >= 1  # unused pens get no layer
+        assert 'id="layer1"' in svg
 
     def test_convert_with_inline_palette_keeps_user_order(
         self, runner: CliRunner, test_image: Path, tmp_path: Path

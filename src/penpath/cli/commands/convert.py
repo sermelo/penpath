@@ -20,8 +20,9 @@ from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
+from penpath.core.image.separate import separate_palette
 from penpath.core.models import ImageRef, Palette, Paper, Pen, Project, SketchLinesPFM
-from penpath.core.output.svg import export_svg, fit_image_placement, write_penpath_svg
+from penpath.core.output.svg import export_pen_layers, fit_image_placement, write_penpath_svg
 from penpath.core.output.vpype import optimize_with_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
 from penpath.presets.palettes import get_palette, list_palettes
@@ -340,10 +341,9 @@ def _run_convert_pipeline(
     reporter: StageReporter,
     max_resolution_px: int | None = None,
     no_downscale: bool = False,
-) -> list[LineString]:
-    """Run the full conversion pipeline, reporting each stage as it finishes."""
-    # Until colour separation lands, the whole image uses the first palette pen.
-    pen = project.palette[0]
+) -> list[list[LineString]]:
+    """Draw every pen and return its optimized lines, in pen order."""
+    pens = project.palette
 
     # Step 1: Load image and plan the working resolution. Placement is derived
     # from the source size so the drawing rectangle does not move when the
@@ -362,7 +362,7 @@ def _run_convert_pipeline(
     resolution = plan_working_resolution(
         source_size_px,
         project.paper,
-        pen.width_mm,
+        pens[0].width_mm,
         max_longest_px=max_resolution_px,
     )
     if no_downscale:
@@ -385,50 +385,58 @@ def _run_convert_pipeline(
         reporter.finish()
     working_size_px = working_image.size
 
-    # Step 3: Apply filters
+    # Step 3: Split before filtering, so the default grayscale filter cannot
+    # throw away the colour needed to choose a pen.
     reporter.start("Applying filters")
-    filtered_image = project.image.filters.apply(working_image)
+    pen_images = separate_palette(working_image, pens)
+    filtered_by_pen = [project.image.filters.apply(image) for _, image in pen_images]
     reporter.finish()
 
-    # Step 4: Run PFM (Sketch Lines)
+    # Step 4: Run the PFM once per pen, with settings in working-image pixels.
     reporter.start("Generating lines (PFM)")
     pfm_fn, _ = get_pfm(project.pfm.pfm_type)
     pfm_settings = cast(SketchLinesSettings, project.pfm.to_typed_settings())
-    lines = pfm_fn(filtered_image, pfm_settings)
+    lines_by_pen = [pfm_fn(image, pfm_settings) for image in filtered_by_pen]
     reporter.finish()
 
-    if not lines:
+    if not any(lines_by_pen):
         reporter.message("Warning: No lines generated", style="yellow")
-        return []
+        return [[] for _ in pens]
 
-    # Step 5: Optimize geometry
+    # Step 5: Optimize geometry per pen; never merge or sort across pens.
     reporter.start("Optimizing geometry")
-    optimized_lines = optimize(
-        lines,
-        project.paper,
-        simplify_tol_mm=0.1,
-        merge_angle_deg=5.0,
-        merge_dist_mm=0.5,
-    )
+    strokes_by_pen = [
+        optimize(
+            lines,
+            project.paper,
+            simplify_tol_mm=0.1,
+            merge_angle_deg=5.0,
+            merge_dist_mm=0.5,
+        )
+        for lines in lines_by_pen
+    ]
     reporter.finish()
 
-    # Step 6: Export. vpype optimises geometry only; penpath writes the SVG
-    # on both paths so the millimetre layout is identical.
+    # Step 6: Export. vpype optimises geometry one pen at a time; penpath writes
+    # the SVG on both paths so the millimetre layout is identical.
     reporter.start("Exporting SVG")
     if use_vpype:
         try:
-            strokes_by_pen = optimize_with_vpype(
-                [optimized_lines],
+            strokes_mm_by_pen = optimize_with_vpype(
+                strokes_by_pen,
                 project.paper,
-                [pen],
+                pens,
                 vpype_path,
                 image_placement,
                 working_size_px,
             )
             write_penpath_svg(
-                [[LineString(stroke.polyline) for stroke in strokes] for strokes in strokes_by_pen],
+                [
+                    [LineString(stroke.polyline) for stroke in strokes]
+                    for strokes in strokes_mm_by_pen
+                ],
                 project.paper,
-                [pen],
+                pens,
                 project.output_path,
                 image_placement,
                 resolution,
@@ -440,30 +448,28 @@ def _run_convert_pipeline(
                 style="yellow",
                 markup=False,
             )
-            export_svg(
-                optimized_lines,
+            export_pen_layers(
+                strokes_by_pen,
                 project.paper,
-                [pen],
+                pens,
                 project.output_path,
-                project.image.dpi,
                 image_placement,
                 working_size_px,
                 resolution,
             )
     else:
-        export_svg(
-            optimized_lines,
+        export_pen_layers(
+            strokes_by_pen,
             project.paper,
-            [pen],
+            pens,
             project.output_path,
-            project.image.dpi,
             image_placement,
             working_size_px,
             resolution,
         )
 
     reporter.finish()
-    return optimized_lines
+    return strokes_by_pen
 
 
 @click.command(name="convert")
@@ -499,7 +505,10 @@ def _run_convert_pipeline(
 @click.option(
     "--palette",
     "palette_spec",
-    help="Built-in palette name or inline 'name=width,#hex;name2=width,#hex'",
+    help=(
+        "Built-in palette name or inline 'name=width,#hex;...': "
+        "split by colour, one layer per used pen"
+    ),
 )
 @click.option("--paper", "paper_spec", help="Paper preset or inline 'WIDTHxHEIGHT[,margins]'")
 @click.option("--no-vpype", is_flag=True, help="Skip vpype optimization (use direct SVG export)")

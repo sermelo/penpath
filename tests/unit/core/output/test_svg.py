@@ -14,6 +14,7 @@ from penpath.core.output.svg import (
     PENPATH_NAMESPACE,
     ImagePlacement,
     add_placement_metadata,
+    export_pen_layers,
     export_svg,
     fit_image_placement,
     write_penpath_svg,
@@ -331,6 +332,55 @@ class TestWritePenpathSvg:
 
         with pytest.raises(ValueError, match="one entry per pen"):
             write_penpath_svg([], paper, pens, tmp_path / "bad.svg")
+
+
+class TestExportPenLayers:
+    """Per-pen geometry maps into each pen's own layer, never across pens."""
+
+    def test_export_pen_layers_skips_unused_pens_in_drawing_order(self, tmp_path: Path) -> None:
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pens = [
+            Pen(name="red", width_mm=0.4, color="#FF0000"),
+            Pen(name="unused", width_mm=0.4, color="#00FF00"),
+            Pen(name="blue", width_mm=0.4, color="#0000FF"),
+        ]
+        placement = ImagePlacement(10.0, 20.0, 100.0, 50.0)
+        output_path = tmp_path / "layers.svg"
+
+        export_pen_layers(
+            [
+                [LineString([(0, 0), (50, 50)])],
+                [],
+                [LineString([(50, 0), (100, 50)])],
+            ],
+            paper,
+            pens,
+            output_path,
+            image_placement=placement,
+            image_size_px=(100, 100),
+        )
+
+        root = ET.parse(output_path).getroot()
+        layers = _layer_groups(root)
+        assert [layer.get("id") for layer in layers] == ["layer1", "layer2"]
+        assert [layer.get(INKSCAPE_NS + "label") for layer in layers] == ["red", "blue"]
+        assert [
+            layer.find(SVG_NS + "path").get("stroke")  # type: ignore[union-attr]
+            for layer in layers
+        ] == ["#FF0000", "#0000FF"]
+
+    def test_export_pen_layers_rejects_mismatched_pen_counts(self, tmp_path: Path) -> None:
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pens = [Pen(name="red", width_mm=0.4), Pen(name="blue", width_mm=0.4)]
+        with pytest.raises(ValueError, match="one entry per pen"):
+            export_pen_layers(
+                [[]],
+                paper,
+                pens,
+                tmp_path / "bad.svg",
+                ImagePlacement(0, 0, 100, 100),
+                (100, 100),
+            )
 
 
 class TestPlacementMetadata:
