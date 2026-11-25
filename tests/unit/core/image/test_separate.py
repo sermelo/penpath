@@ -7,6 +7,7 @@ from PIL import Image
 from penpath.core.image.filters import grayscale
 from penpath.core.image.separate import separate_palette
 from penpath.core.models import Pen
+from penpath.presets.palettes import get_palette
 
 RED = Pen(name="red", width_mm=0.4, color="#FF0000")
 BLUE = Pen(name="blue", width_mm=0.4, color="#0000FF")
@@ -94,3 +95,49 @@ def test_separate_palette_invalid_pen_colour_names_pen() -> None:
 
     with pytest.raises(ValueError, match="broken"):
         separate_palette(_three_region_image(), [broken])
+
+
+def test_separate_palette_with_builtin_stabilo_palette() -> None:
+    image = _three_region_image()
+    pens = get_palette("stabilo_88").pens
+
+    separated = separate_palette(image, pens)
+
+    assert [pen for pen, _ in separated] == pens
+    assert all(layer.mode == "L" and layer.size == image.size for _, layer in separated)
+
+    layers = [np.asarray(layer) for _, layer in separated]
+    red_mask = _region_mask(30, 2, 13)
+    blue_mask = _region_mask(30, 16, 27)
+    red_owners = [i for i, layer in enumerate(layers) if np.any(layer[red_mask] < 128)]
+    blue_owners = [i for i, layer in enumerate(layers) if np.any(layer[blue_mask] < 128)]
+
+    assert len(red_owners) == 1
+    assert len(blue_owners) == 1
+    assert red_owners != blue_owners
+    background = ~(red_mask | blue_mask)
+    assert all(np.all(layer[background] == 255) for layer in layers)
+
+
+def test_separate_palette_accepts_named_css_colours() -> None:
+    red = Pen(name="red", width_mm=0.4, color="red")
+    white = Pen(name="white", width_mm=0.4, color="white")
+
+    separated = separate_palette(_three_region_image(), [red, white])
+
+    assert [pen for pen, _ in separated] == [red, white]
+    red_layer = np.asarray(separated[0][1])
+    assert np.all(red_layer[_region_mask(30, 2, 13)] < 128)
+
+
+@pytest.mark.parametrize("mode", ["RGBA", "L"])
+def test_separate_palette_handles_non_rgb_input(mode: str) -> None:
+    image = _three_region_image().convert(mode)
+    pens = [RED, BLUE, WHITE]
+
+    separated = separate_palette(image, pens)
+
+    assert [pen for pen, _ in separated] == pens
+    assert all(layer.mode == "L" and layer.size == image.size for _, layer in separated)
+    dark_in_layers = sum(int(np.count_nonzero(np.asarray(layer) < 128)) for _, layer in separated)
+    assert dark_in_layers == int(np.count_nonzero(np.asarray(grayscale(image)) < 128))
