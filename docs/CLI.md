@@ -329,6 +329,63 @@ penpath preview plot.svg -o fine.png --layer fine
 
 ---
 
+### `penpath gcode` — SVG → G-code for a machine
+
+Turn a reviewed SVG into machine G-code using a machine profile. Penpath never
+guesses which machine it is talking to: `--profile` is required.
+
+```bash
+penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `DRAWING_SVG` | Reviewed SVG (penpath SVG or plain stroke SVG), in millimetres |
+
+#### Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--profile NAME` | — | — | Machine profile name (required; see `penpath info profiles`) |
+| `--output PATH` | `-o` | `<input>.gcode` | Output file, beside the input SVG |
+| `--profiles PATH` | — | user config | Alternate user profiles YAML file for this run |
+| `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
+
+The default output path replaces the SVG suffix: `card.svg` becomes
+`card.gcode` beside the input. It is printed to stderr with the summary.
+`--profiles PATH` replaces the default user file for one run; a profile there
+overrides a built-in of the same name. See **Machine Profile Format** below for
+the YAML shape.
+
+With `--dry-run`, stdout carries only G-code (no file is written), so the output
+can be piped to a printer or captured by a script. Without it, stdout stays
+empty. Every message, including the output path and the summary, goes to
+stderr in both cases.
+
+The stderr summary reports the number of layers, drawing length, pen-up travel
+and pen lifts measured from the SVG's strokes, plus an estimated plot time
+from the profile's draw, travel and Z feeds (one down and one up per stroke plus
+a final lift). A point outside the drawable area (minus `bed.margin_mm`) fails
+the run with its coordinates instead of writing G-code the machine cannot
+follow.
+
+Exit codes: **2** for a missing or unknown `--profile` (the message lists the
+available profiles), **3** for an unreadable or invalid profile file or a point
+outside the drawable area, and 1 for other file errors.
+
+#### Examples
+
+```bash
+penpath gcode card.svg --profile generic -o card.gcode
+penpath gcode card.svg --profile generic             # writes card.gcode
+penpath gcode card.svg --profile generic --dry-run > card.gcode
+penpath gcode card.svg --profile my_plotter --profiles ./profiles.yaml
+```
+
+---
+
 ### `penpath evaluate` — Score likeness and machine cost
 
 Simulate the SVG at the chosen resolution, crop it to the recorded image
@@ -586,8 +643,9 @@ pen colours and pen widths stay in the reviewed SVG.
   built-in's name **overrides** the built-in.
 
 `penpath info profiles` lists both, marks the source of each (`built-in` or
-`user`) and shows its description, bed size and feeds. Creating or editing
-profiles is done by hand for now.
+`user`) and shows its description, bed size and feeds. `penpath gcode` reads
+these files through `--profile` and `--profiles`. Creating or editing profiles
+is done by hand for now.
 
 ### Complete example
 
@@ -772,7 +830,7 @@ coordinates instead of writing G-code the machine cannot follow.
 | 0 | Success |
 | 1 | Runtime error (file not found, vpype failed, image load failed) |
 | 2 | Usage error (invalid args, missing required, bad filter param) |
-| 3 | Validation error (project file invalid, config invalid, PFM settings invalid) |
+| 3 | Validation error (project file invalid, config invalid, PFM settings invalid, profile file invalid or drawing outside the bed) |
 
 ---
 

@@ -1,0 +1,180 @@
+"""``penpath gcode`` - turn a reviewed SVG into machine G-code."""
+
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from collections.abc import Sequence
+from pathlib import Path
+from typing import cast
+
+import click
+from rich.console import Console
+
+from penpath.core import (
+    GcodeError,
+    GcodeLayer,
+    MachineProfile,
+    ProfileError,
+    UnknownProfileError,
+    build_gcode,
+    compute_machine_cost,
+    get_svg_paper_size,
+    list_profiles,
+    load_profile,
+    parse_svg_strokes,
+)
+from penpath.core.simulation import LayerMetrics, PenStroke
+
+INKSCAPE_LABEL = "{http://www.inkscape.org/namespaces/inkscape}label"
+
+console = Console(stderr=True, soft_wrap=True)
+
+
+class ProfileValidationError(click.ClickException):
+    """Invalid profile file or unreachable drawing; maps to exit code 3."""
+
+    exit_code = 3
+
+
+def _available_hint(profiles_path: Path | None) -> str:
+    """Return the profile names for an actionable usage error."""
+    try:
+        available = ", ".join(list_profiles(profiles_path))
+    except ProfileError:
+        return "Run 'penpath info profiles' to list the available profiles."
+    return f"Available profiles: {available}"
+
+
+def _layer_pen(svg_path: Path, strokes: Sequence[PenStroke]) -> str:
+    """Return the layer label, or the first stroke colour for a plain SVG."""
+    fallback = strokes[0].color if strokes else "black"
+    try:
+        for element in ET.parse(svg_path).getroot().iter():
+            label = element.get(INKSCAPE_LABEL)
+            if label:
+                return label
+    except ET.ParseError, OSError:
+        return fallback
+    return fallback
+
+
+def _estimate_plot_seconds(profile: MachineProfile, total: LayerMetrics) -> float:
+    """Estimate plot time from the profile's draw, travel and Z feeds.
+
+    Z travel is one down and one up per stroke plus a final lift, over the
+    distance between ``z_up`` and ``z_down``.
+    """
+    draw_seconds = float(total["drawing_length_mm"]) / profile.feed.draw_mm_s
+    travel_seconds = float(total["pen_up_travel_mm"]) / profile.feed.travel_mm_s
+    stroke_count = int(total["num_strokes"])
+    z_moves = 2 * stroke_count + 1 if stroke_count else 0
+    z_distance = z_moves * abs(profile.pen.z_up - profile.pen.z_down)
+    z_seconds = z_distance / profile.feed.effective_z_mm_s
+    return draw_seconds + travel_seconds + z_seconds
+
+
+@click.command(name="gcode")
+@click.argument("drawing_svg", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--profile",
+    "profile_name",
+    default=None,
+    help="Machine profile name (required). Run 'penpath info profiles' to list them.",
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output .gcode path (default: <input>.gcode beside the input).",
+)
+@click.option(
+    "--profiles",
+    "profiles_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="User profiles YAML file (default: $XDG_CONFIG_HOME/penpath/profiles.yaml).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Write the G-code to stdout instead of a file; all messages go to stderr.",
+)
+def gcode_cmd(
+    drawing_svg: Path,
+    profile_name: str | None,
+    output_path: Path | None,
+    profiles_path: Path | None,
+    dry_run: bool,
+) -> None:
+    """Turn DRAWING_SVG into G-code for the machine named by --profile.
+
+    Penpath does not guess the machine: --profile is required, and a missing or
+    unknown name is a usage error (exit 2) that lists the available profiles.
+    An unreadable or invalid profile file, or a point outside the machine's
+    drawable area, is a validation error (exit 3). With --dry-run, stdout holds
+    only G-code; every message goes to stderr.
+    """
+    if profile_name is None:
+        raise click.UsageError(f"Missing option '--profile'. {_available_hint(profiles_path)}")
+
+    if profiles_path is not None and not profiles_path.is_file():
+        raise ProfileValidationError(
+            f"Cannot read profile file {profiles_path}: no such file. "
+            "Pass an existing YAML file to --profiles, or omit it to use the default."
+        )
+
+    try:
+        profile = load_profile(profile_name, profiles_path)
+    except UnknownProfileError as exc:
+        raise click.UsageError(str(exc)) from exc
+    except ProfileError as exc:
+        raise ProfileValidationError(str(exc)) from exc
+
+    try:
+        strokes = parse_svg_strokes(drawing_svg)
+    except (ET.ParseError, OSError, ValueError) as exc:
+        raise click.ClickException(f"Could not parse SVG: {exc}") from exc
+    if not strokes:
+        raise click.ClickException(f"No pen strokes found in {drawing_svg}")
+
+    page_size = get_svg_paper_size(drawing_svg)
+    if page_size is None:
+        raise click.ClickException(
+            f"Could not read the page size from {drawing_svg}; set width and height in mm"
+        )
+
+    layer = GcodeLayer(
+        pen=_layer_pen(drawing_svg, strokes),
+        polylines=[tuple(stroke.polyline) for stroke in strokes],
+    )
+    try:
+        text = build_gcode([layer], profile, page_size)
+    except GcodeError as exc:
+        raise ProfileValidationError(str(exc)) from exc
+
+    strokes_with_travel = parse_svg_strokes(drawing_svg, include_pen_up=True)
+    total = cast(LayerMetrics, compute_machine_cost(strokes_with_travel)["total"])
+
+    if dry_run:
+        click.echo(text, nl=False)
+    else:
+        destination = output_path if output_path is not None else drawing_svg.with_suffix(".gcode")
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(text, encoding="utf-8", newline="\n")
+        except OSError as exc:
+            raise click.ClickException(f"Could not write G-code to {destination}: {exc}") from exc
+        console.print(f"G-code saved to: {destination}")
+
+    console.print("G-code summary")
+    console.print(f"  Profile: {profile.name}")
+    console.print("  Layers: 1")
+    console.print(f"  Drawing length: {float(total['drawing_length_mm']):.2f} mm")
+    console.print(f"  Pen-up travel: {float(total['pen_up_travel_mm']):.2f} mm")
+    console.print(f"  Pen lifts: {int(total['num_lifts'])}")
+    console.print(f"  Estimated plot time: {_estimate_plot_seconds(profile, total):.1f} s")
+
+
+__all__ = ["gcode_cmd"]
