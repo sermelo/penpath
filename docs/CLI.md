@@ -307,18 +307,19 @@ penpath convert photo.jpg --quiet
 
 ### `penpath preview` — Simulate a plot as an image
 
-Render an SVG's pen strokes with the core plot simulator, so you can check how
-the finished plot will look before plotting.
+Render an SVG's or G-code file's pen strokes with the core plot simulator, so
+you can check how the finished plot will look before plotting. The input format
+is chosen by suffix: `.gcode` is interpreted as G-code, everything else as SVG.
 
 ```bash
-penpath preview DRAWING_SVG -o OUTPUT [OPTIONS]
+penpath preview DRAWING -o OUTPUT [OPTIONS]
 ```
 
 #### Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `DRAWING_SVG` | SVG to preview (penpath SVG or plain stroke SVG) |
+| `DRAWING` | SVG (penpath SVG or plain stroke SVG) or `.gcode` file written by `penpath gcode` |
 
 #### Options
 
@@ -327,10 +328,25 @@ penpath preview DRAWING_SVG -o OUTPUT [OPTIONS]
 | `--output PATH` | `-o` | — | Output image path (required, PNG) |
 | `--dpi FLOAT` | — | `10.0` | Resolution in **pixels per millimetre** |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour (hex or named CSS colour) |
-| `--layer LABEL` | — | all | Only preview this pen layer (layer label or id) |
+| `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name) |
 
-The page size is read from the SVG (`width`/`height` or `viewBox`); SVGs without
-one fall back to A4. All progress messages go to stderr, so stdout stays clean.
+For an SVG the page size is read from `width`/`height` or `viewBox`; SVGs without
+one fall back to A4. For G-code the page is the bed of the profile named in the
+header, falling back to A4 when that profile is not available. All messages go
+to stderr, so stdout stays clean.
+
+#### Previewing G-code
+
+A `.gcode` file is read by a small interpreter for `G0`/`G1` moves, `Z` pen
+up/down, `F` feeds and comments; everything else is ignored. **Arcs (`G2`/`G3`)
+are not supported** and fail with a clear error. The header carries the profile
+name and Z values: a segment is drawn when the pen is at or below `z_touch`, or
+`z_down` when no touch height is declared. A file without a header uses its
+lowest Z as "down". The profile undoes the page origin, pen offset and Y
+inversion, so the G-code PNG matches the SVG PNG at the same `--dpi`. Layers use
+the width and colour of their pen from the built-in presets (`stabilo_88_*`,
+`red_fine`, ...); an unknown pen renders black at 0.3 mm because G-code carries
+no colours.
 
 #### Examples
 
@@ -338,6 +354,11 @@ one fall back to A4. All progress messages go to stderr, so stdout stays clean.
 penpath preview plot.svg -o preview.png
 penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
 penpath preview plot.svg -o fine.png --layer fine
+
+# Check the G-code against the reviewed SVG (the two PNGs match)
+penpath gcode card.svg --profile generic -o card.gcode
+penpath preview card.gcode -o card.png
+penpath preview card.gcode -o red.png --layer stabilo_88_red
 ```
 
 ---

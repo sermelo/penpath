@@ -91,7 +91,7 @@ writes the final SVG: vpype contributes geometry only.
 | Command | Purpose |
 |---------|---------|
 | `penpath convert` | Photo → SVG (main command) |
-| `penpath preview` | Simulate an SVG and save a preview image |
+| `penpath preview` | Simulate an SVG or G-code file and save a preview image |
 | `penpath evaluate` | Score an SVG's likeness to the original image and its machine cost |
 | `penpath gcode` | Turn a reviewed SVG into machine G-code with a machine profile |
 | `penpath info` | List presets and machine profiles, show image details, inspect config |
@@ -139,6 +139,9 @@ penpath gcode plot.svg --profile generic --dry-run > plot.gcode
 # A multi-pen SVG becomes one G-code layer per used pen, in layer order, with
 # one pen-change block before each layer that follows the first
 penpath gcode palette_plot.svg --profile generic -o palette_plot.gcode
+
+# Check the G-code without a machine: the PNG matches the SVG preview
+penpath preview plot.gcode -o gcode_preview.png
 ```
 
 ### Working resolution
