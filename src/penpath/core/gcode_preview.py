@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
+from penpath.core.output.gcode import page_origin_mm
 from penpath.core.profiles import MachineProfile
 from penpath.core.simulation import PenStroke
 
@@ -16,6 +17,9 @@ HEADER_RE: Final = re.compile(r"penpath\s+gcode\s*(.*)", re.IGNORECASE)
 FIELD_RE: Final = re.compile(r"([a-z_]+)=(\S+)", re.IGNORECASE)
 LAYER_RE: Final = re.compile(r"\blayer\b.*\bpen=(.+)$", re.IGNORECASE)
 COORDINATE_RE: Final = re.compile(r"^([XYZ])([-+]?(?:\d*\.\d+|\d+\.?))", re.IGNORECASE)
+PAGE_RE: Final = re.compile(
+    r"^([-+]?(?:\d*\.\d+|\d+\.?))\s*x\s*([-+]?(?:\d*\.\d+|\d+\.?))$", re.IGNORECASE
+)
 DEFAULT_PEN_STYLE: Final[PenStyle] = ("#000000", 0.3)
 Z_EPSILON_MM: Final = 1e-6
 
@@ -29,6 +33,7 @@ class GcodeHeader:
     """Profile name and Z heights a penpath header declares."""
 
     profile: str | None = None
+    page: tuple[float, float] | None = None
     z_up: float | None = None
     z_touch: float | None = None
     z_down: float | None = None
@@ -49,6 +54,17 @@ def _number(text: str) -> float | None:
         return None
 
 
+def _page_size(text: str) -> tuple[float, float] | None:
+    match = PAGE_RE.match(text)
+    if match is None:
+        return None
+    width = _number(match.group(1))
+    height = _number(match.group(2))
+    if width is None or height is None or width <= 0.0 or height <= 0.0:
+        return None
+    return (width, height)
+
+
 def parse_gcode_header(text: str) -> GcodeHeader:
     """Return the penpath header fields, empty when the file has no header."""
     for line in text.splitlines():
@@ -60,6 +76,7 @@ def parse_gcode_header(text: str) -> GcodeHeader:
         fields = {key.lower(): value for key, value in FIELD_RE.findall(match.group(1))}
         return GcodeHeader(
             profile=fields.get("profile"),
+            page=_page_size(fields["page"]) if "page" in fields else None,
             z_up=_number(fields["z_up"]) if "z_up" in fields else None,
             z_touch=_number(fields["z_touch"]) if "z_touch" in fields else None,
             z_down=_number(fields["z_down"]) if "z_down" in fields else None,
@@ -99,15 +116,15 @@ def _moves(text: str) -> list[_Move]:
 
 def _to_page(
     point: tuple[float, float],
-    paper_size_mm: tuple[float, float],
+    page_size_mm: tuple[float, float],
     profile: MachineProfile | None,
 ) -> tuple[float, float]:
     offset = profile.bed.pen_offset_mm if profile is not None else (0.0, 0.0)
-    origin = profile.bed.page.origin_mm if profile is not None else (0.0, 0.0)
+    origin = page_origin_mm(profile, page_size_mm) if profile is not None else (0.0, 0.0)
     x = point[0] + offset[0] - origin[0]
     y = point[1] + offset[1] - origin[1]
     if profile is None or profile.bed.invert_y:
-        return (x, paper_size_mm[1] - y)
+        return (x, page_size_mm[1] - y)
     return (x, y)
 
 
@@ -121,11 +138,14 @@ def gcode_to_strokes(
     """Turn penpath G-code into pen-down strokes in preview page millimetres.
 
     ``z_touch`` from the header decides when the pen is down; a header without
-    it uses ``z_down`` and a foreign file uses its lowest Z. ``pen_styles`` maps
-    pen names to ``(color, width_mm)``; unknown pens render black at 0.3 mm.
-    Arcs and malformed coordinates raise :class:`GcodePreviewError`.
+    it uses ``z_down`` and a foreign file uses its lowest Z. The header's ``page``
+    overrides ``paper_size_mm`` so an SVG page that differs from the bed inverts
+    around the same height the emitter used. ``pen_styles`` maps pen names to
+    ``(color, width_mm)``; unknown pens render black at 0.3 mm. Arcs and
+    malformed coordinates raise :class:`GcodePreviewError`.
     """
     header = parse_gcode_header(text)
+    page_size_mm = header.page or paper_size_mm
     moves = _moves(text)
     if header.z_touch is not None:
         touch_z = header.z_touch
@@ -164,8 +184,8 @@ def gcode_to_strokes(
             )
             if z <= touch_z + Z_EPSILON_MM:
                 if not points:
-                    points.append(_to_page(start, paper_size_mm, profile))
-                points.append(_to_page(position, paper_size_mm, profile))
+                    points.append(_to_page(start, page_size_mm, profile))
+                points.append(_to_page(position, page_size_mm, profile))
     finish()
     return strokes
 

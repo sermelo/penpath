@@ -63,6 +63,31 @@ def test_gcode_png_equals_svg_png(
     assert ImageChops.difference(svg_image, gcode_image).getbbox() is None
 
 
+def test_gcode_png_equals_svg_png_when_page_differs_from_bed(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """The header page makes the preview invert Y around the page, not the bed."""
+    drawing = tmp_path / "small.svg"
+    drawing.write_text(
+        f"""<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  width="190mm" height="190mm" viewBox="0 0 190 190">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_yellow" id="layer1"
+  fill="none" stroke="{COLORS["stabilo_88_yellow"]}" stroke-width="0.4">
+<polyline points="10,10 20,10 20,20"/><polyline points="30,30 40,30"/></g></svg>""",
+        encoding="utf-8",
+    )
+    gcode = drawing.with_suffix(".gcode")
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "generic", "-o", str(gcode)])
+    assert result.exit_code == 0, result.output
+
+    svg_image = _preview(runner, drawing, tmp_path / "small-svg.png")
+    gcode_image = _preview(runner, gcode, tmp_path / "small-gcode.png")
+
+    assert gcode_image.size == svg_image.size == (190 * DPI, 190 * DPI)
+    assert ImageChops.difference(svg_image, gcode_image).getbbox() is None
+
+
 def test_preview_help_says_arcs_are_unsupported(runner: CliRunner) -> None:
     result = runner.invoke(main, ["preview", "--help"])
 

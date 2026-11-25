@@ -1,4 +1,4 @@
-; penpath gcode profile=generic z_up=5.000 z_down=0.000
+; penpath gcode profile=generic page=210.000x297.000 z_up=5.000 z_down=0.000
 G21
 G90
 G28

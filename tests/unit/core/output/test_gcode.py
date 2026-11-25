@@ -50,7 +50,7 @@ def test_build_gcode_emits_profile_values_and_pen_state_machine() -> None:
     produced = build_gcode(layers, profile, (50.0, 60.0))
 
     assert produced == (
-        "; penpath gcode profile=test_machine z_up=4.000 z_down=1.000\n"
+        "; penpath gcode profile=test_machine page=50.000x60.000 z_up=4.000 z_down=1.000\n"
         "G21\n"
         "G90\n"
         "; layer 1/1 pen=ink\n"
@@ -205,7 +205,8 @@ def test_build_gcode_header_carries_z_touch_for_the_preview() -> None:
     produced = build_gcode(_one_layer(((1.0, 1.0), (2.0, 1.0))), profile, (20.0, 20.0))
 
     assert produced.startswith(
-        "; penpath gcode profile=test_machine z_up=12.500 z_touch=10.000 z_down=9.000\n"
+        "; penpath gcode profile=test_machine page=20.000x20.000 "
+        "z_up=12.500 z_touch=10.000 z_down=9.000\n"
     )
 
 
@@ -230,7 +231,9 @@ def test_build_gcode_generic_profile_comes_from_the_builtin_yaml(tmp_path: Path)
         (210.0, 297.0),
     )
 
-    assert produced.startswith("; penpath gcode profile=generic z_up=5.000 z_down=0.000\n")
+    assert produced.startswith(
+        "; penpath gcode profile=generic page=210.000x297.000 z_up=5.000 z_down=0.000\n"
+    )
     assert "G21\nG90\nG28\n" in produced
     assert "G0 Z5.000\nG0 X1.000 Y296.000\nG0 Z0.000\n" in produced
     assert "G1 X2.000 Y296.000 F3000\n" in produced
@@ -252,7 +255,8 @@ def test_build_gcode_with_no_drawn_layers_emits_only_wrapper() -> None:
     produced = build_gcode([], _profile(), (10.0, 10.0))
 
     assert (
-        produced == "; penpath gcode profile=test_machine z_up=4.000 z_down=1.000\nG21\nG90\nM2\n"
+        produced == "; penpath gcode profile=test_machine page=10.000x10.000 "
+        "z_up=4.000 z_down=1.000\nG21\nG90\nM2\n"
     )
 
 

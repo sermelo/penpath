@@ -43,7 +43,7 @@ def _pen_styles() -> dict[str, tuple[str, float]]:
 def _preview_gcode(
     path: Path, layer_label: str | None
 ) -> tuple[list[PenStroke], tuple[float, float]]:
-    """Read penpath G-code, undoing the profile's coordinate transform."""
+    """Read penpath G-code, undoing the emitter's page and profile transforms."""
     text = path.read_text(encoding="utf-8")
     header = parse_gcode_header(text)
     profile = None
@@ -52,7 +52,9 @@ def _preview_gcode(
             profile = load_profile(header.profile)
         except ProfileError:
             console.print(f"Profile {header.profile!r} not found; previewing machine coordinates.")
-    paper_size_mm = profile.bed.size_mm if profile is not None else FALLBACK_PAPER_MM
+    paper_size_mm = header.page or (
+        profile.bed.size_mm if profile is not None else FALLBACK_PAPER_MM
+    )
     try:
         strokes = gcode_to_strokes(text, paper_size_mm, profile, _pen_styles(), layer_label)
     except GcodePreviewError as exc:
