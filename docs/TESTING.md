@@ -546,3 +546,208 @@ Before tagging a release:
 - Load/stress testing (large images, batch)
 - Accessibility testing (screen readers)
 - Internationalization (non-ASCII paths)
+
+---
+
+## Basic shapes gate (LUC-75)
+
+Part 2 of LUC-75 measures a small gate for six simple shapes. It records the
+numbers here; part 3 (LUC-78) turns them into assertions in
+`tests/integration/test_basic_shapes.py`. No assertion is made by this part.
+
+### Fixtures and format
+
+The fixtures live in `tests/fixtures/images/basic/` and are plain-text PBM (P1)
+files: the first line is `P1`, the second `64 64`, and the 64 following lines
+hold one character per pixel (`1` black, `0` white). An agent that cannot open
+a raster image can read every pixel as text. They are test data only; `.pbm` is
+not a product input format.
+
+| Fixture | What it is | What it catches |
+|---------|------------|-----------------|
+| `black_square.pbm` | Black square, rows/columns 19:44 (25x25), centred on white | Filling a compact solid area in the middle of the canvas |
+| `white_square.pbm` | The same square in white, on a black canvas | Inverted tone: 85% of the canvas is black |
+| `black_disc.pbm` | Black disc, centre (31.5, 31.5), radius `64 * 0.35` | Curved edges and even coverage of a round shape |
+| `horizontal_line.pbm` | Black bar, rows 31:33 (2 px), columns 6:57 (51 px) | Very thin features: a shape only two pixels tall |
+| `checkerboard.pbm` | 8x8 cells of 8x8 px, black when row + col is even | Sharp alternating edges and repeated detail |
+| `triangle.pbm` | Filled triangle, apex up, spanning `32 +/- int(y * 0.45)` at row y | Slanted edges and growing width towards the base |
+
+### Harness and pipeline
+
+`tests/integration/basic_shapes_gate.py` loads each PBM with Pillow and resizes
+it to **400x400 with nearest neighbour** before running the CLI. This keeps the
+same pixel scale as the reference images in LUC-47: at the native 64x64 the
+algorithm's ink purity on the black square drops from 0.99 to 0.56. The CLI
+reads only PNG/JPEG/TIFF/BMP, so the harness writes a PNG twin of each fixture
+into a temporary folder. The command it runs is:
+
+```bash
+penpath convert shape.png -o plot.svg --pfm-setting seed=42
+```
+
+Settings are the shipped defaults: A4 paper with a 10 mm margin, the default
+0.3 mm black pen, 96/25.4 px per mm, vpype 1.15 on the default export path and
+seed 42. The harness reads the recorded placement from the SVG, parses the
+strokes and simulates the plot the same way `penpath evaluate` does.
+
+- **likeness**: `compute_likeness` (SSIM at 256x256, blur sigma 1.5) on the
+  simulated plot and the original in the placement crop.
+- **ink_outside**: share of simulated ink pixels darker than 128 that fall
+  outside the original's dark region (luminance < 128), with the original
+  resized to the placement crop.
+- **dark_coverage**: share of the original's dark pixels that receive ink.
+- **tone_ratio**: ink density in the darkest quarter divided by ink density in
+  the lightest quarter of the original, smoothed by one ink pixel over the
+  crop area (the same measure as the LUC-47 gate).
+- **drawing_length_mm / strokes / lifts**: `compute_machine_cost` with
+  `include_pen_up=True`, as reported by `penpath evaluate`.
+- **blank**: an SVG with the same page and placement metadata but no strokes.
+  **random**: as many seeded two-point strokes as the real output had, with
+  endpoints uniform in the placement rectangle. Both are measured identically
+  for every shape.
+
+Reproduce the table with:
+
+```bash
+uv run pytest tests/integration/test_basic_shapes.py -vs
+```
+
+### Measured numbers (2026-11-25, `main` at `9d1ba25`)
+
+| shape | mode | likeness | ink_outside | dark_coverage | tone_ratio | length mm | strokes | lifts |
+|-------|------|---------:|------------:|--------------:|-----------:|----------:|--------:|------:|
+| `black_square` | algorithm | 0.8471 | 0.011 | 0.502 | 39798.00 | 15624.5 | 62 | 61 |
+| `black_square` | blank | 0.8082 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
+| `black_square` | random | 0.4934 | 0.728 | 0.073 | 1.17 | 6428.1 | 62 | 61 |
+| `white_square` | algorithm | 0.1667 | 0.002 | 0.512 | 1.18 | 89579.3 | 343 | 342 |
+| `white_square` | blank | 0.1298 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
+| `white_square` | random | 0.0270 | 0.271 | 0.162 | 0.85 | 33016.1 | 343 | 342 |
+| `black_disc` | algorithm | 0.6077 | 0.003 | 0.509 | 10925.30 | 40439.6 | 158 | 157 |
+| `black_disc` | blank | 0.5464 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
+| `black_disc` | random | 0.2695 | 0.379 | 0.155 | 2.68 | 15643.0 | 158 | 157 |
+| `horizontal_line` | algorithm | 0.9787 | 0.000 | 0.448 | 5653.00 | 2092.3 | 8 | 7 |
+| `horizontal_line` | blank | 0.9404 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
+| `horizontal_line` | random | 0.8500 | 0.959 | 0.010 | 1.02 | 917.3 | 8 | 7 |
+| `checkerboard` | algorithm | 0.5602 | 0.019 | 0.509 | 1582.20 | 52795.9 | 236 | 235 |
+| `checkerboard` | blank | 0.2650 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
+| `checkerboard` | random | 0.1094 | 0.501 | 0.139 | 1.01 | 23372.4 | 236 | 235 |
+| `triangle` | algorithm | 0.5736 | 0.004 | 0.510 | 4571.43 | 44826.0 | 170 | 169 |
+| `triangle` | blank | 0.5175 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
+| `triangle` | random | 0.2184 | 0.475 | 0.125 | 1.50 | 16582.9 | 170 | 169 |
+
+The last digits of `tone_ratio` and `drawing_length_mm` move in the fourth
+decimal between runs because the mm SVG layout rounds coordinates; the caps
+below have a factor of two of headroom for that reason.
+
+### Thresholds (recorded here, asserted in LUC-78)
+
+| shape | likeness >= | ink_outside <= | dark_coverage >= | tone_ratio >= | drawing_length_mm <= | num_strokes <= | num_lifts <= |
+|-------|------------:|---------------:|-----------------:|--------------:|---------------------:|---------------:|---------------:|
+| `black_square` | 0.82 | 0.10 | 0.45 | 2.0 | 32000 | 125 | 125 |
+| `white_square` | 0.14 | 0.12 | 0.46 | 1.05 | 180000 | 690 | 690 |
+| `black_disc` | 0.58 | 0.10 | 0.45 | 2.0 | 81000 | 320 | 320 |
+| `horizontal_line` | 0.96 | 0.25 | 0.39 | 2.0 | 4200 | 16 | 16 |
+| `checkerboard` | 0.54 | 0.20 | 0.45 | 2.0 | 106000 | 475 | 475 |
+| `triangle` | 0.55 | 0.10 | 0.46 | 2.0 | 90000 | 340 | 340 |
+
+And for every shape: `num_strokes >= 1`.
+
+How each number was chosen:
+
+- **likeness**: `max(higher of blank and random + 0.02, measured - 0.02)`,
+  rounded down to two decimals. For example `black_square`: blank 0.8082 +
+  0.02 = 0.8282, measured 0.8471 - 0.02 = 0.8271, floor 0.82. `horizontal_line`:
+  blank 0.9404 + 0.02 = 0.9604, measured 0.9787 - 0.02 = 0.9587, floor 0.96.
+  Every blank page and every random scribble fails this floor.
+- **ink_outside**: caps unchanged from the original decision (0.10, 0.12, 0.10,
+  0.25, 0.20, 0.10 in table order). The algorithm inks at most 0.019 outside a
+  shape; a blank page reports 1.0 and a random scribble at least 0.271, so
+  these caps are what reject both baselines.
+- **dark_coverage**: `max(higher baseline + 0.05, measured - 0.05)`, rounded
+  down to two decimals. The measured value minus 0.05 dominates for every
+  shape (e.g. `white_square` 0.512 - 0.05 = 0.462, floor 0.46;
+  `horizontal_line` 0.448 - 0.05 = 0.398, floor 0.39). A blank page inks
+  nothing (0.0) and fails every shape.
+- **tone_ratio**: floors unchanged from the original decision (2.0, except
+  1.05 for `white_square`). The algorithm clears them with room; the random
+  scribble reaches 2.68 on `black_disc`, the one baseline that passes a tone
+  floor, but that scribble fails both the likeness floor and the ink-outside
+  cap.
+- **machine cost**: per-shape caps at twice the measured value, rounded to a
+  round number — `black_square` 15624.5 mm → 32000, 62 strokes → 125, 61 lifts
+  → 125; `white_square` 89579.3 → 180000, 343 → 690, 342 → 690; `black_disc`
+  40439.6 → 81000, 158 → 320, 157 → 320; `horizontal_line` 2092.3 → 4200, 8 →
+  16, 7 → 16; `checkerboard` 52795.9 → 106000, 236 → 475, 235 → 475;
+  `triangle` 44826.0 → 90000, 170 → 340, 169 → 340. The old global rule
+  "`num_lifts <= 5` for every shape" is **withdrawn**: it described the
+  pre-LUC-53 algorithm, not the shape.
+
+### Withdrawn pre-LUC-53 target (recorded, not enforced)
+
+The first version of this gate was measured on commit `ac3206d`, before LUC-53
+("rewrite Sketch Lines to reference PFM semantics", merged 2026-11-25) replaced
+the drawing algorithm. The old algorithm produced a few long meandering
+strokes; the new one produces many short segments that vpype chains into long
+paths. Running this same harness on `ac3206d` reproduces the published numbers
+(black square likeness 0.9339, tone 121.09, 4 strokes; blank 0.8082; random
+0.7680), so those numbers describe an algorithm that no longer exists. They are
+kept here the way the withdrawn LUC-47 SSIM floors above are kept.
+
+| shape | likeness >= | ink_outside <= | dark_coverage >= | tone_ratio >= | drawing_length_mm <= |
+|-------|------------:|---------------:|-----------------:|--------------:|---------------------:|
+| `black_square` | 0.87 | 0.10 | 0.70 | 2.0 | 225000 |
+| `white_square` | 0.04 | 0.12 | 0.12 | 1.05 | 125000 |
+| `black_disc` | 0.60 | 0.10 | 0.45 | 2.0 | 235000 |
+| `horizontal_line` | 0.96 | 0.25 | 0.70 | 2.0 | 125000 |
+| `checkerboard` | 0.28 | 0.20 | 0.10 | 2.0 | 80000 |
+| `triangle` | 0.55 | 0.10 | 0.30 | 2.0 | 195000 |
+
+Plus the withdrawn global rule `num_lifts <= 5` for every shape. The old
+`white_square` likeness floor of 0.04 was a smoke check: the old algorithm
+inked only 20% of the dark region, scored 0.073 against the blank page's 0.130,
+and put 5% of its ink outside the square. Those thresholds are **not** used by
+the current gate and the current algorithm fails several of them (black square
+likeness 0.8471 < 0.87, coverage 0.502 < 0.70 and 61 lifts > 5; horizontal line
+coverage 0.448 < 0.70 and 7 lifts > 5).
+
+### Open limitations of the LUC-53 algorithm
+
+1. **SSIM has almost no headroom on a mostly-white image.** A blank page already
+   scores 0.8082 on `black_square`, 0.9404 on `horizontal_line`, 0.5175 on
+   `triangle` and 0.5464 on `black_disc`; the algorithm beats it by only 0.037
+   to 0.061. The likeness floor is a smoke check that rejects a blank page and
+   a scribble; the real guards are `ink_outside`, `dark_coverage` and
+   `tone_ratio`.
+2. **The tone measure degenerates on `white_square`.** 85% of that fixture's
+   pixels are black, so the lightest quarter is black as well and the ratio is
+   `1 / 0.85` by construction. Today's 1.18 is exactly what the ideal plot
+   scores too, so the 1.05 floor is a smoke check on that shape.
+3. **Machine cost went up for simple shapes.** A solid black square now needs
+   62 strokes and 61 pen lifts (the pre-LUC-53 algorithm drew it in 4 strokes),
+   and the white square 343 strokes and 342 lifts. The ink stays inside the
+   shape, but the plot is many separate paths.
+4. **The plot is lighter than the source.** The algorithm inks about half of the
+   dark region on every shape (0.45 to 0.51) against 0.984 for the pre-LUC-53
+   black square, and the black square's likeness fell from 0.9339 to 0.8471.
+
+Points 3 and 4 are candidate work for a later task. They are recorded here, not
+fixed here. The flaw described in the first version of this task *is fixed*:
+`white_square` is no longer lighter than the original. It now inks 51% of the
+dark region (was 20%) and scores 0.1667, above the blank page's 0.1298, so the
+0.14 likeness floor is a real floor again.
+
+### Previews
+
+Greyscale 600 px side-by-side previews — the 400x400 fixture on the left, the
+simulated plot cropped to its placement on the right — are committed under
+[`docs/images/luc-75/`](../images/luc-75/). They are evidence for reviewers,
+not golden files; no test compares against them.
+
+| shape | preview |
+|-------|---------|
+| `black_square` | [black_square.png](../images/luc-75/black_square.png) |
+| `white_square` | [white_square.png](../images/luc-75/white_square.png) |
+| `black_disc` | [black_disc.png](../images/luc-75/black_disc.png) |
+| `horizontal_line` | [horizontal_line.png](../images/luc-75/horizontal_line.png) |
+| `checkerboard` | [checkerboard.png](../images/luc-75/checkerboard.png) |
+| `triangle` | [triangle.png](../images/luc-75/triangle.png) |
