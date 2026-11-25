@@ -587,3 +587,26 @@ class TestLayerFiltering:
         svg = tmp_path / "layers.svg"
         svg.write_text(self._layered_svg())
         assert parse_svg_strokes(svg, layer="does not exist") == []
+
+    def test_parse_layer_by_id_when_pens_share_a_colour(self, tmp_path: Path) -> None:
+        svg = tmp_path / "layer-ids.svg"
+        svg.write_text(
+            """<svg xmlns="http://www.w3.org/2000/svg"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    width="100mm" height="100mm" viewBox="0 0 100 100">
+  <g id="layer1" inkscape:groupmode="layer" inkscape:label="pen a"
+     stroke="#FF0000" stroke-width="1">
+    <path d="M 0 0 L 10 10" fill="none"/>
+  </g>
+  <g id="layer2" inkscape:groupmode="layer" inkscape:label="pen b"
+     stroke="#FF0000" stroke-width="1">
+    <path d="M 20 20 L 30 30" fill="none"/>
+  </g>
+</svg>""",
+            encoding="utf-8",
+        )
+        first = parse_svg_strokes(svg, layer="layer1")
+        second = parse_svg_strokes(svg, layer="layer2")
+        assert len(first) == len(second) == 1
+        assert first[0].polyline == [(0.0, 0.0), (10.0, 10.0)]
+        assert second[0].polyline == [(20.0, 20.0), (30.0, 30.0)]

@@ -1,33 +1,41 @@
-"""Assert the multi-pen gate recorded in docs/TESTING.md.
+"""Enforce the multi-pen gate: union against the photo, each pen against its region.
 
-The whole palette plot must clear the five transferable LUC-47 structural
-floors (tone excluded). Each used pen must also own its assigned region on the
-working image. Brown's recall miss is the one documented failure, tracked for
-LUC-85: the test pins it with its measured value so it cannot drift silently.
-The per-layer LUC-47 measures remain report-only, as in LUC-73.
+The union keeps the LUC-47 floors verbatim. Each used layer is measured with
+region-relative recall, precision, extent, bbox area and cell recall; SSIM is
+printed as evidence but is not a per-layer floor. Blank pages and random
+scribbles must fail the region floors, so the gate cannot pass for every
+possible drawing.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
+import numpy as np
 import pytest
 from multi_pen_gate import (
-    BLANK_OWNERSHIP,
+    DEFAULT_REGION_FLOORS,
     ENFORCED_FLOORS,
-    IDEAL_OWNERSHIP,
+    KNOWN_UNION_FAILURES,
+    UNION_ENFORCED_FLOORS,
+    UNION_FLOORS,
     MultiPenGateReport,
-    black_strokes,
+    blacken,
+    dilate_mask,
     gate_failures,
     measure_reference,
-    ownership_failures,
+    measure_region,
     print_measurement_table,
-    whole_plot_failures,
+    region_floors,
+    region_mask,
+    union_gate_failures,
 )
-from sketch_lines_gate import SEED, all_finite
+from PIL import Image
+from sketch_lines_gate import SEED, placement_crop
 
 from penpath.core.simulation import PenStroke
-
-KNOWN_OWNERSHIP_FAILURES = {("stabilo_88_brown", "recall")}
+from penpath.core.svg_parse import parse_svg_strokes
 
 
 @pytest.fixture(scope="module")
@@ -40,90 +48,179 @@ def multi_pen_report(tmp_path_factory: pytest.TempPathFactory) -> MultiPenGateRe
 def test_multi_pen_gate_reports_every_used_layer(
     multi_pen_report: MultiPenGateReport,
 ) -> None:
-    """Each used palette pen has finite measures; print the evidence tables."""
+    """Each used palette pen has finite measures; print the evidence table."""
     assert multi_pen_report.layers
     assert multi_pen_report.reference == "photo.jpg"
     assert multi_pen_report.palette == "stabilo_88"
+    print_measurement_table([multi_pen_report])
     for layer in multi_pen_report.layers:
         assert layer.stroke_count > 0
-        assert layer.region_pixels > 0
+        assert layer.layer_id.startswith("layer")
         for measures in (layer.algorithm, layer.blank, layer.random, layer.ideal):
-            assert all_finite(measures)
-        for measures in (
-            layer.ownership.algorithm,
-            layer.ownership.blank,
-            layer.ownership.random,
-            layer.ownership.ideal,
-        ):
-            assert 0.0 <= measures.recall <= 1.0
-            assert 0.0 <= measures.outside <= 1.0
-    print_measurement_table([multi_pen_report])
-    for name, value, floor in whole_plot_failures(multi_pen_report):
-        click.echo(f"WHOLE PLOT FAILURE: {name} {value:.4f} < {floor:.4f}")
-    for layer in multi_pen_report.layers:
-        for name, value, floor in gate_failures(layer):
-            click.echo(f"REPORT-ONLY LAYER MISS {layer.pen_name}: {name} {value:.4f} < {floor:.4f}")
-    for pen, name, value, floor in ownership_failures(multi_pen_report):
-        click.echo(f"OWNERSHIP FAILURE {pen}: {name} {value:.4f} vs {floor:.4f}")
+            assert measures.region_pixels > 0
+            assert all(
+                np.isfinite(value)
+                for value in (
+                    measures.ssim,
+                    measures.recall,
+                    measures.precision,
+                    measures.extent_width,
+                    measures.extent_height,
+                    measures.bbox_area,
+                    measures.cell_recall,
+                )
+            )
+        for name, value, floor in gate_failures(layer, layer.algorithm):
+            click.echo(f"GATE FAILURE {layer.pen_name}: {name} {value:.4f} < {floor:.4f}")
 
 
-def test_multi_pen_whole_plot_meets_structural_floors(
-    multi_pen_report: MultiPenGateReport,
-) -> None:
-    """All layers together clear the five transferable LUC-47 floors."""
-    assert multi_pen_report.whole_plot_strokes > 0
-    assert all_finite(multi_pen_report.whole_plot)
-    failures = whole_plot_failures(multi_pen_report)
-    assert not failures, "Multi-pen whole-plot gate not met:\n" + "\n".join(
-        f"{name} {value:.4f} < {floor:.4f}" for name, value, floor in failures
+def test_layer_selection_does_not_mix_pens_that_share_a_color(tmp_path: Path) -> None:
+    """Selecting by layerN keeps pens apart even when their stroke colour matches."""
+    svg = tmp_path / "repeated-colour.svg"
+    svg.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
+        'width="100mm" height="100mm" viewBox="0 0 100 100">'
+        '<g id="layer1" inkscape:groupmode="layer" inkscape:label="pen a" '
+        'stroke="#FF0000" stroke-width="1">'
+        '<path d="M 0 0 L 10 10" fill="none"/></g>'
+        '<g id="layer2" inkscape:groupmode="layer" inkscape:label="pen b" '
+        'stroke="#FF0000" stroke-width="1">'
+        '<path d="M 20 20 L 30 30" fill="none"/></g>'
+        "</svg>",
+        encoding="utf-8",
     )
+    first = parse_svg_strokes(svg, layer="layer1")
+    second = parse_svg_strokes(svg, layer="layer2")
+    assert len(first) == len(second) == 1
+    assert first[0].polyline == [(0.0, 0.0), (10.0, 10.0)]
+    assert second[0].polyline == [(20.0, 20.0), (30.0, 30.0)]
 
 
-def test_multi_pen_ownership_failures_are_only_the_documented_brown_miss(
-    multi_pen_report: MultiPenGateReport,
-) -> None:
-    """Every pen owns its region except brown, whose recall miss is tracked."""
-    failures = ownership_failures(multi_pen_report)
-    actual = {(pen, name) for pen, name, _, _ in failures}
-    assert actual == KNOWN_OWNERSHIP_FAILURES, "Multi-pen ownership gate changed:\n" + "\n".join(
-        f"{pen}: {name} {value:.4f} vs {floor:.4f}" for pen, name, value, floor in failures
-    )
-    layers = {layer.pen_name: layer for layer in multi_pen_report.layers}
-    brown = layers["stabilo_88_brown"].ownership.algorithm
-    assert brown.recall == pytest.approx(0.2287, abs=0.01)
-    assert brown.outside == pytest.approx(0.4356, abs=0.01)
-    assert {layer.pen_name: layer.region_pixels for layer in multi_pen_report.layers} == {
-        "stabilo_88_light_blue": 188847,
-        "stabilo_88_brown": 4550,
-        "stabilo_88_black": 167350,
-    }
+def test_region_mask_thresholds_the_full_channel_at_an_offset_placement() -> None:
+    """A small dark area stays small when the full channel maps into the placement."""
+    plot_size = (40, 40)
+    placement = (5.0, 5.0, 10.0, 10.0)
+    channel = Image.new("L", (20, 20), 255)
+    for row in range(2, 4):
+        for column in range(2, 4):
+            channel.putpixel((column, row), 0)
+    crop = placement_crop(plot_size, placement)
+    region = region_mask(channel, plot_size, placement)
+    rows, columns = np.nonzero(region)
+    assert crop == (19, 19, 40, 40)
+    assert int(region.sum()) == 4
+    assert (
+        int(rows.min()),
+        int(columns.min()),
+        int(rows.max()) + 1,
+        int(columns.max()) + 1,
+    ) == (21, 21, 23, 23)
+    assert not region[: crop[1]].any() and not region[crop[3] :].any()
+    assert not region[:, : crop[0]].any() and not region[:, crop[2] :].any()
+
+
+def test_region_measures_reward_ink_inside_the_region_and_punish_stray_ink() -> None:
+    """Recall and precision are a pair: a blank fails recall, a scribble precision."""
+    placement = (0.0, 0.0, 20.0, 20.0)
+    plot_size = (20, 20)
+    channel = Image.new("L", plot_size, 255)
+    for row in range(5, 15):
+        for column in range(5, 15):
+            channel.putpixel((column, row), 0)
+    assert placement_crop(plot_size, placement) == (0, 0, 20, 20)
+
+    blank = Image.new("RGB", plot_size, "white")
+    blank_measures = measure_region(blank, channel, placement, 0.4)
+    assert blank_measures.recall == 0.0
+
+    inside = Image.new("RGB", plot_size, "white")
+    for row in range(5, 15):
+        for column in range(5, 15):
+            inside.putpixel((column, row), (0, 0, 0))
+    inside_measures = measure_region(inside, channel, placement, 0.4)
+    assert inside_measures.recall == pytest.approx(1.0)
+    assert inside_measures.precision == pytest.approx(1.0)
+    assert inside_measures.cell_recall == pytest.approx(1.0)
+
+    stray = Image.new("RGB", plot_size, "white")
+    for row in range(0, 3):
+        for column in range(0, 20):
+            stray.putpixel((column, row), (0, 0, 0))
+    stray_measures = measure_region(stray, channel, placement, 0.4)
+    assert stray_measures.precision == 0.0
+
+
+def test_dilate_mask_extends_the_region_by_half_a_pen_width() -> None:
+    """A one-pixel dilation makes the tolerance three pixels across."""
+    mask = np.zeros((7, 7), dtype=bool)
+    mask[3, 3] = True
+    dilated = dilate_mask(mask, radius=1)
+    assert int(dilated.sum()) == 9
+    assert bool(dilated[2, 2]) and bool(dilated[4, 4])
+
+
+def test_enforced_region_floors_are_all_asserted(multi_pen_report: MultiPenGateReport) -> None:
+    """Every region measure in the report has an enforced floor."""
+    assert set(ENFORCED_FLOORS) == set(DEFAULT_REGION_FLOORS)
     for layer in multi_pen_report.layers:
-        assert layer.ownership.blank == BLANK_OWNERSHIP
-        assert layer.ownership.ideal == IDEAL_OWNERSHIP
-        assert 0.0 <= layer.ownership.random.recall <= 1.0
-        assert 0.0 <= layer.ownership.random.outside <= 1.0
+        assert set(region_floors(layer.pen_name)) == set(ENFORCED_FLOORS)
+        assert all(value > 0 for value in region_floors(layer.pen_name).values())
 
 
-def test_multi_pen_layers_meet_enforced_report_only_floors(
-    multi_pen_report: MultiPenGateReport,
-) -> None:
-    """Every used layer clears the SSIM and covered-width reporting floors."""
+def test_used_layers_meet_region_floors(multi_pen_report: MultiPenGateReport) -> None:
+    """The drawing of every used pen clears all enforced region floors."""
     failures = [
         f"{layer.pen_name}: {name} {value:.4f} < {floor:.4f}"
         for layer in multi_pen_report.layers
         for name, value, floor in gate_failures(layer)
-        if name in ENFORCED_FLOORS
     ]
-    assert not failures, "Multi-pen per-layer SSIM/width gate not met:\n" + "\n".join(failures)
+    assert not failures, "Multi-pen per-layer gate not met:\n" + "\n".join(failures)
 
 
-def test_black_strokes_selects_only_one_pen_and_recolours_it() -> None:
-    """The per-layer selector keeps one pen's geometry and makes its ink black."""
-    red = PenStroke([(0.0, 0.0), (10.0, 10.0)], 0.4, "#FF0000")
-    blue = PenStroke([(20.0, 20.0), (30.0, 30.0)], 0.4, "#0000FF")
-    selected = black_strokes([red, blue], "#FF0000")
-    assert len(selected) == 1
-    assert selected[0].color == "#000000"
-    assert selected[0].polyline == red.polyline
-    assert selected[0].width_mm == red.width_mm
-    assert [stroke.color for stroke in black_strokes([red, blue], "#0000FF")] == ["#000000"]
+def test_blank_page_fails_region_floors(multi_pen_report: MultiPenGateReport) -> None:
+    """A blank layer fails recall and precision for every pen."""
+    for layer in multi_pen_report.layers:
+        failures = gate_failures(layer, layer.blank)
+        failing = {name for name, _, _ in failures}
+        assert "recall" in failing, layer.pen_name
+        assert "precision" in failing, layer.pen_name
+
+
+def test_random_scribble_fails_region_floors(multi_pen_report: MultiPenGateReport) -> None:
+    """A random scribble fails at least one region floor for every pen."""
+    for layer in multi_pen_report.layers:
+        failures = gate_failures(layer, layer.random)
+        assert failures, f"{layer.pen_name} passes every region floor"
+        failing = {name for name, _, _ in failures}
+        assert failing & {"recall", "precision"}, layer.pen_name
+
+
+def test_union_keeps_the_luc47_floors(multi_pen_report: MultiPenGateReport) -> None:
+    """The union is checked with the shipped floors, with any failure pinned.
+
+    A tone ratio below 2.0 is a real regression of the palette drawing, not a
+    reason to lower the floor. It is recorded here and in docs/TESTING.md so a
+    later fix cannot silently make it worse or hide a new failure.
+    """
+    failures = union_gate_failures(multi_pen_report.union)
+    assert set(UNION_ENFORCED_FLOORS) == set(UNION_FLOORS)
+    unexpected = [
+        (name, value, floor) for name, value, floor in failures if name not in KNOWN_UNION_FAILURES
+    ]
+    assert not unexpected, "New union regression:\n" + "\n".join(
+        f"{name} {value:.4f} < {floor:.4f}" for name, value, floor in unexpected
+    )
+    for name, value, floor in failures:
+        assert value == pytest.approx(KNOWN_UNION_FAILURES[name], abs=0.05)
+        click.echo(f"RECORDED UNION FAILURE {name}: {value:.4f} < {floor:.4f}")
+
+
+def test_blacken_keeps_geometry_but_makes_every_stroke_black() -> None:
+    """Recolouring a selected layer changes only the ink colour."""
+    strokes = [PenStroke([(0.0, 0.0), (10.0, 10.0)], 0.4, "#FF0000")]
+    result = blacken(strokes)
+    assert len(result) == 1
+    assert result[0].color == "#000000"
+    assert result[0].polyline == strokes[0].polyline
+    assert result[0].width_mm == strokes[0].width_mm
