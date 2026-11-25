@@ -28,6 +28,7 @@ from multi_pen_gate import (
     measure_region,
     print_measurement_table,
     region_floors,
+    region_mask,
     union_gate_failures,
 )
 from PIL import Image
@@ -94,6 +95,29 @@ def test_layer_selection_does_not_mix_pens_that_share_a_color(tmp_path: Path) ->
     assert len(first) == len(second) == 1
     assert first[0].polyline == [(0.0, 0.0), (10.0, 10.0)]
     assert second[0].polyline == [(20.0, 20.0), (30.0, 30.0)]
+
+
+def test_region_mask_thresholds_the_full_channel_at_an_offset_placement() -> None:
+    """A small dark area stays small when the full channel maps into the placement."""
+    plot_size = (40, 40)
+    placement = (5.0, 5.0, 10.0, 10.0)
+    channel = Image.new("L", (20, 20), 255)
+    for row in range(2, 4):
+        for column in range(2, 4):
+            channel.putpixel((column, row), 0)
+    crop = placement_crop(plot_size, placement)
+    region = region_mask(channel, plot_size, placement)
+    rows, columns = np.nonzero(region)
+    assert crop == (19, 19, 40, 40)
+    assert int(region.sum()) == 4
+    assert (
+        int(rows.min()),
+        int(columns.min()),
+        int(rows.max()) + 1,
+        int(columns.max()) + 1,
+    ) == (21, 21, 23, 23)
+    assert not region[: crop[1]].any() and not region[crop[3] :].any()
+    assert not region[:, : crop[0]].any() and not region[:, crop[2] :].any()
 
 
 def test_region_measures_reward_ink_inside_the_region_and_punish_stray_ink() -> None:
