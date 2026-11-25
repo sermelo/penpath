@@ -53,6 +53,8 @@ SHAPE_NAMES = (
     "triangle",
 )
 RENDER_SIZE = 400
+PREVIEW_WIDTH = 600
+PREVIEW_PANEL = PREVIEW_WIDTH // 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +193,46 @@ def measure_all(work_dir: Path, seed: int = SEED) -> list[ShapeReport]:
     return [measure_shape(name, work_dir / name, seed) for name in SHAPE_NAMES]
 
 
+def make_preview(
+    original: Image.Image,
+    plot: Image.Image,
+    placement: tuple[float, float, float, float],
+) -> Image.Image:
+    """Return a greyscale side-by-side image: the source left, the plot right."""
+    crop = placement_crop(plot.size, placement)
+    panel_size = (PREVIEW_PANEL, PREVIEW_PANEL)
+    left = original.convert("L").resize(panel_size, Image.Resampling.LANCZOS)
+    right = plot.convert("L").crop(crop).resize(panel_size, Image.Resampling.LANCZOS)
+    preview = Image.new("L", (PREVIEW_WIDTH, PREVIEW_PANEL), "white")
+    preview.paste(left, (0, 0))
+    preview.paste(right, (PREVIEW_PANEL, 0))
+    return preview
+
+
+def write_previews(work_dir: Path, output_dir: Path) -> list[Path]:
+    """Write one 600 px greyscale preview per shape from a ``measure_all`` work dir."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for shape in SHAPE_NAMES:
+        shape_dir = work_dir / shape
+        with Image.open(shape_dir / "shape.png") as opened:
+            original = opened.convert("RGB")
+        svg_path = shape_dir / "plot.svg"
+        placement = get_image_placement(svg_path, original.size)
+        paper_size = get_svg_paper_size(svg_path) or (PAPER.width_mm, PAPER.height_mm)
+        placement_tuple = (placement.x, placement.y, placement.width, placement.height)
+        plot = simulate_plot(
+            parse_svg_strokes(svg_path),
+            paper_size[0],
+            paper_size[1],
+            dpi_px_per_mm=PX_PER_MM,
+        )
+        path = output_dir / f"{shape}.png"
+        make_preview(original, plot, placement_tuple).save(path)
+        paths.append(path)
+    return paths
+
+
 def format_measurement_table(reports: Sequence[ShapeReport]) -> str:
     """Return a plain-text table of all measurements."""
     header = (
@@ -243,6 +285,8 @@ def all_finite(measured: ShapeMeasures) -> bool:
 
 __all__ = [
     "BASIC_DIR",
+    "PREVIEW_PANEL",
+    "PREVIEW_WIDTH",
     "RENDER_SIZE",
     "SEED",
     "SHAPE_NAMES",
@@ -251,6 +295,7 @@ __all__ = [
     "all_finite",
     "finite_values",
     "format_measurement_table",
+    "make_preview",
     "measure_all",
     "measure_shape",
     "measure_svg",
@@ -258,4 +303,5 @@ __all__ = [
     "print_measurement_table",
     "render_fixture",
     "shape_masks",
+    "write_previews",
 ]

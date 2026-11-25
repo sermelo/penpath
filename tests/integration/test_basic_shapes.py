@@ -8,12 +8,16 @@ from types import ModuleType
 
 import pytest
 from basic_shapes_gate import (
+    PREVIEW_PANEL,
+    PREVIEW_WIDTH,
     SHAPE_NAMES,
     ShapeReport,
     all_finite,
     measure_all,
     print_measurement_table,
+    write_previews,
 )
+from PIL import Image
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "images" / "basic"
 GENERATOR_PATH = FIXTURES_DIR / "generate_basic.py"
@@ -65,11 +69,18 @@ def test_basic_fixtures_are_well_formed() -> None:
 
 
 @pytest.fixture(scope="session")
-def gate_reports(tmp_path_factory: pytest.TempPathFactory) -> list[ShapeReport]:
-    """Run the real pipeline once for every basic shape."""
-    reports = measure_all(tmp_path_factory.mktemp("basic-shapes-gate"))
+def gate_data(tmp_path_factory: pytest.TempPathFactory) -> tuple[list[ShapeReport], Path]:
+    """Run the real pipeline once for every basic shape and keep its work directory."""
+    work_dir = tmp_path_factory.mktemp("basic-shapes-gate")
+    reports = measure_all(work_dir)
     print_measurement_table(reports)
-    return reports
+    return reports, work_dir
+
+
+@pytest.fixture(scope="session")
+def gate_reports(gate_data: tuple[list[ShapeReport], Path]) -> list[ShapeReport]:
+    """Measurements from one pipeline run shared by the checks below."""
+    return gate_data[0]
 
 
 def test_basic_shapes_gate_runs(gate_reports: list[ShapeReport]) -> None:
@@ -84,3 +95,18 @@ def test_basic_shapes_gate_runs(gate_reports: list[ShapeReport]) -> None:
         assert report.algorithm.drawing_length_mm > 0
         assert report.algorithm.dark_coverage > 0
         assert report.algorithm.likeness != report.blank.likeness
+
+
+def test_basic_shape_previews_are_greyscale(
+    gate_data: tuple[list[ShapeReport], Path],
+    tmp_path: Path,
+) -> None:
+    """The helper writes one 600 px greyscale preview for each measured shape."""
+    _, work_dir = gate_data
+    output_dir = tmp_path / "previews"
+    paths = write_previews(work_dir, output_dir)
+    assert [path.name for path in paths] == [f"{name}.png" for name in SHAPE_NAMES]
+    for path in paths:
+        with Image.open(path) as image:
+            assert image.mode == "L"
+            assert image.size == (PREVIEW_WIDTH, PREVIEW_PANEL)
