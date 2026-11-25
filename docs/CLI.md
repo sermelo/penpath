@@ -331,22 +331,26 @@ penpath preview DRAWING -o OUTPUT [OPTIONS]
 | `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name) |
 
 For an SVG the page size is read from `width`/`height` or `viewBox`; SVGs without
-one fall back to A4. For G-code the page is the bed of the profile named in the
-header, falling back to A4 when that profile is not available. All messages go
-to stderr, so stdout stays clean.
+one fall back to A4. For G-code the page is the `page=WIDTHxHEIGHT` value in the
+header (the source SVG page in millimetres), falling back to the bed of the
+profile named in the header and then to A4. All messages go to stderr, so stdout
+stays clean.
 
 #### Previewing G-code
 
 A `.gcode` file is read by a small interpreter for `G0`/`G1` moves, `Z` pen
 up/down, `F` feeds and comments; everything else is ignored. **Arcs (`G2`/`G3`)
 are not supported** and fail with a clear error. The header carries the profile
-name and Z values: a segment is drawn when the pen is at or below `z_touch`, or
-`z_down` when no touch height is declared. A file without a header uses its
-lowest Z as "down". The profile undoes the page origin, pen offset and Y
-inversion, so the G-code PNG matches the SVG PNG at the same `--dpi`. Layers use
-the width and colour of their pen from the built-in presets (`stabilo_88_*`,
-`red_fine`, ...); an unknown pen renders black at 0.3 mm because G-code carries
-no colours.
+name, the source page size as `page=WIDTHxHEIGHT` in millimetres (three decimals,
+as the Z fields), and Z values: a segment is drawn when the pen is at or below
+`z_touch`, or `z_down` when no touch height is declared. A file without a header
+uses its lowest Z as "down". The preview flips Y around the header page height
+and undoes the page origin, pen offset and Y inversion with the same shared
+`page_origin_mm()` helper the emitter uses, so the G-code PNG matches the SVG
+PNG at the same `--dpi` even when the page differs from the bed or the profile
+uses `reachable_corner`. Layers use the width and colour of their pen from the
+built-in presets (`stabilo_88_*`, `red_fine`, ...); an unknown pen renders black
+at 0.3 mm because G-code carries no colours.
 
 #### Examples
 
