@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import random
+import time
 
 import pytest
 from shapely import LineString, Point
@@ -173,6 +175,19 @@ class TestSortLines:
         assert len(result) == 1
         assert result[0].is_valid
 
+    def test_sort_lines_tie_break_earliest_line_and_start(self):
+        """Equal distances go to the earliest line, and a start before an end."""
+        tied = [
+            LineString([(1, 0), (9, 0)]),
+            LineString([(9, 0), (1, 0)]),
+        ]
+        result = sort_lines(tied, start_point=Point(0, 0))
+        assert list(result[0].coords) == [(1.0, 0.0), (9.0, 0.0)]
+
+        symmetrical = [LineString([(1, 0), (-1, 0)])]
+        result = sort_lines(symmetrical, start_point=Point(0, 0))
+        assert list(result[0].coords) == [(1.0, 0.0), (-1.0, 0.0)]
+
     def test_sort_lines_complex_shape(self):
         """Test with a more complex arrangement of lines."""
         # Create a spiral-like pattern
@@ -200,6 +215,156 @@ class TestSortLines:
 
         # Should be much less than random order
         assert travel < 500.0
+
+
+def _travel(lines: list[LineString]) -> float:
+    """Total pen-up travel distance of an ordered sequence of lines."""
+    total = 0.0
+    for i in range(len(lines) - 1):
+        end = list(lines[i].coords)[-1]
+        start = next(iter(lines[i + 1].coords))
+        total += math.hypot(start[0] - end[0], start[1] - end[1])
+    return total
+
+
+def _strokes(lines: list[LineString]) -> set[tuple[tuple[float, float], ...]]:
+    """Stroke coordinates with direction removed, for set comparisons."""
+    result = set()
+    for line in lines:
+        coords = tuple((float(x), float(y)) for x, y in line.coords)
+        result.add(min(coords, coords[::-1]))
+    return result
+
+
+def _reference_sort_lines(
+    lines: list[LineString], start_point: Point | None = None
+) -> list[LineString]:
+    """The pre-optimization algorithm, kept as a correctness oracle for tests."""
+
+    def endpoints(line: LineString):
+        coords = list(line.coords)
+        if not coords:
+            return (0.0, 0.0), (0.0, 0.0)
+        return (coords[0][0], coords[0][1]), (coords[-1][0], coords[-1][1])
+
+    def distance(p1, p2) -> float:
+        return math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+
+    remaining = list(lines)
+    ordered: list[LineString] = []
+    if start_point is not None:
+        current = (start_point.x, start_point.y)
+    else:
+        current = endpoints(remaining[0])[0]
+
+    while remaining:
+        best_idx = -1
+        best_dist = float("inf")
+        best_reversed = False
+        for idx, line in enumerate(remaining):
+            start, end = endpoints(line)
+            dist_to_start = distance(current, start)
+            if dist_to_start < best_dist:
+                best_dist, best_idx, best_reversed = dist_to_start, idx, False
+            dist_to_end = distance(current, end)
+            if dist_to_end < best_dist:
+                best_dist, best_idx, best_reversed = dist_to_end, idx, True
+        chosen = remaining.pop(best_idx)
+        if best_reversed:
+            chosen = LineString(list(chosen.coords)[::-1])
+        ordered.append(chosen)
+        current = endpoints(chosen)[1]
+
+    if len(ordered) >= 3:
+        best_distance = _travel(ordered)
+        for _ in range(10):
+            improved = False
+            for i in range(len(ordered)):
+                candidate = ordered[:]
+                candidate[i] = LineString(list(candidate[i].coords)[::-1])
+                candidate_distance = _travel(candidate)
+                if candidate_distance < best_distance:
+                    best_distance, ordered, improved = candidate_distance, candidate, True
+            if not improved:
+                break
+    return ordered
+
+
+class TestSortPerformanceAndEquivalence:
+    """Scale and equivalence checks for the optimized sort."""
+
+    def test_sort_lines_3000_lines_within_generous_ceiling(self):
+        """3000 lines must finish far below the old implementation's cost."""
+        lines = [
+            LineString(
+                [
+                    ((i * 37) % 3000, (i * 91) % 3000),
+                    ((i * 37) % 3000 + 10, (i * 91) % 3000 + 10),
+                ]
+            )
+            for i in range(3000)
+        ]
+
+        started = time.perf_counter()
+        result = sort_lines(lines)
+        elapsed = time.perf_counter() - started
+
+        assert len(result) == 3000
+        assert elapsed < 60.0
+
+    def test_sort_lines_travel_distance_not_worse_than_reference(self):
+        """The optimized result must not travel further than the old algorithm."""
+        rng = random.Random(42)
+        lines = [
+            LineString(
+                [
+                    (rng.uniform(0, 400), rng.uniform(0, 400)),
+                    (rng.uniform(0, 400), rng.uniform(0, 400)),
+                ]
+            )
+            for _ in range(60)
+        ]
+        start = Point(0, 0)
+
+        expected = _reference_sort_lines(lines, start)
+        actual = sort_lines(lines, start)
+
+        assert _travel(actual) <= _travel(expected) + 1e-9
+        assert _strokes(actual) == _strokes(expected) == _strokes(lines)
+
+    def test_sort_lines_exact_order_matches_reference(self):
+        """Optimized order, including each direction, matches the old algorithm."""
+        for seed in (1, 2, 3):
+            rng = random.Random(seed)
+            lines = [
+                LineString(
+                    [
+                        (rng.uniform(0, 200), rng.uniform(0, 200)),
+                        (rng.uniform(0, 200), rng.uniform(0, 200)),
+                    ]
+                )
+                for _ in range(30)
+            ]
+            start = Point(0, 0)
+            actual = [list(line.coords) for line in sort_lines(lines, start)]
+            expected = [list(line.coords) for line in _reference_sort_lines(lines, start)]
+            assert actual == expected
+
+    def test_sort_lines_is_deterministic(self):
+        """Repeated calls on the same input produce identical order and direction."""
+        rng = random.Random(7)
+        lines = [
+            LineString(
+                [
+                    (rng.uniform(0, 100), rng.uniform(0, 100)),
+                    (rng.uniform(0, 100), rng.uniform(0, 100)),
+                ]
+            )
+            for _ in range(40)
+        ]
+        first = [list(line.coords) for line in sort_lines(lines)]
+        second = [list(line.coords) for line in sort_lines(lines)]
+        assert first == second
 
 
 if __name__ == "__main__":
