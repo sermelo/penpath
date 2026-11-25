@@ -7,6 +7,8 @@ from enum import StrEnum
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
+_WIDE_RANGE_MIN_SPAN = 224
+
 
 class GrayscaleMethod(StrEnum):
     """Method for converting to grayscale."""
@@ -32,9 +34,11 @@ def auto_equalize(image: Image.Image) -> Image.Image:
 
     The range is measured with the same BT.601 luminance as :func:`grayscale`.
     One lookup table maps ``[lo, hi]`` to ``[0, 255]`` and is applied to every
-    colour channel; an alpha channel is copied through unchanged. An image
-    that already spans 0-255, and a near-uniform image whose range is narrower
-    than 16 levels, are returned as a byte-identical copy.
+    colour channel; an alpha channel is copied through unchanged. A copy is
+    returned unchanged when the image already spans 0-255, when its range is
+    narrower than 16 levels (blank or near-uniform input), or when it already
+    spans at least 7/8 of 0-255 (224 levels), where the largest possible
+    stretch is 255/224 and a calibrated plot is left undisturbed.
 
     Parameters
     ----------
@@ -68,7 +72,7 @@ def auto_equalize(image: Image.Image) -> Image.Image:
         lo = int(np.floor(luminance.min()))
         hi = int(np.ceil(luminance.max()))
 
-    if (lo == 0 and hi == 255) or hi - lo < 16:
+    if (lo == 0 and hi == 255) or hi - lo < 16 or hi - lo >= _WIDE_RANGE_MIN_SPAN:
         return image.copy()
 
     scale = 255.0 / (hi - lo)

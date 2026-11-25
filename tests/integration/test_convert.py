@@ -109,6 +109,19 @@ def full_range_image(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture
+def wide_range_image(tmp_path: Path) -> Path:
+    """An image spanning 31-255, like sphere.png, already wide enough to skip."""
+    image = Image.new("L", (400, 400), "white")
+    pixels = image.load()
+    for y in range(400):
+        for x in range(400):
+            pixels[x, y] = 31 if 100 < x < 300 and 100 < y < 300 else 31 + int(224 * (x + y) / 798)
+    path = tmp_path / "wide_range.png"
+    image.save(path)
+    return path
+
+
 def _write_equalize_project(tmp_path: Path, image: Path, output: Path, enabled: bool) -> Path:
     """Write a project YAML that explicitly sets image.auto_equalize."""
     path = tmp_path / f"equalize_{str(enabled).lower()}.yaml"
@@ -425,6 +438,18 @@ class TestConvertAutoEqualize:
         disabled = tmp_path / "disabled.svg"
         result_on = _convert_with_flags(runner, full_range_image, enabled)
         result_off = _convert_with_flags(runner, full_range_image, disabled, "--no-auto-equalize")
+        assert result_on.exit_code == 0, result_on.output
+        assert result_off.exit_code == 0, result_off.output
+        assert enabled.read_bytes() == disabled.read_bytes()
+
+    def test_wide_range_image_is_byte_identical(
+        self, runner: CliRunner, wide_range_image: Path, tmp_path: Path
+    ) -> None:
+        """A 31-255 image is a no-op, so the flag cannot change its SVG."""
+        enabled = tmp_path / "enabled.svg"
+        disabled = tmp_path / "disabled.svg"
+        result_on = _convert_with_flags(runner, wide_range_image, enabled)
+        result_off = _convert_with_flags(runner, wide_range_image, disabled, "--no-auto-equalize")
         assert result_on.exit_code == 0, result_on.output
         assert result_off.exit_code == 0, result_off.output
         assert enabled.read_bytes() == disabled.read_bytes()

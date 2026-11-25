@@ -502,6 +502,21 @@ class TestAutoEqualize:
         assert result is not img
         assert list(result.getdata()) == list(img.getdata())
 
+    def test_auto_equalize_wide_range_l_is_byte_identical(self) -> None:
+        """An image spanning 31-255 (7/8 of the range) is left unchanged."""
+        img = Image.new("L", (4, 1))
+        img.putdata([31, 80, 160, 255])
+        result = auto_equalize(img)
+        assert result is not img
+        assert list(result.getdata()) == list(img.getdata())
+
+    def test_auto_equalize_wide_range_rgb_is_byte_identical(self) -> None:
+        """The wide-range no-op applies to RGB luminance as well."""
+        img = Image.new("RGB", (2, 1))
+        img.putdata([(31, 31, 31), (255, 255, 255)])
+        result = auto_equalize(img)
+        assert list(result.getdata()) == list(img.getdata())
+
     def test_auto_equalize_low_contrast_l_stretches_to_full_range(self) -> None:
         """A narrow luminance range is stretched to 0-255."""
         img = Image.new("L", (4, 1))

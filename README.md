@@ -114,7 +114,8 @@ penpath convert input.jpg -o output.svg
 # Apply image filters before drawing
 penpath convert photo.jpg -f grayscale -f "threshold:levels=4,dither=floyd_steinberg"
 
-# Tonal range is normalized automatically; keep the original tones with:
+# Tonal range is normalized automatically; images already spanning at least
+# 7/8 of 0-255 are left alone. Keep the original tones with:
 penpath convert photo.jpg --no-auto-equalize
 
 # Adjust PFM (Sketch Lines) settings

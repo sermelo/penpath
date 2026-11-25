@@ -54,8 +54,9 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 Auto equalization is on by default. After downscaling and before palette
 separation, penpath stretches the working image's luminance range `[lo, hi]`
 to `[0, 255]` with one linear lookup table applied to every colour channel;
-alpha is left untouched. It is a no-op for images that already cover 0-255 and
-for near-uniform images, so a calibrated plot is unchanged. Pass
+alpha is left untouched. It is a no-op for images that already cover 0-255,
+for images that already span at least 7/8 of 0-255 (224 levels), and for
+near-uniform images, so a calibrated plot is unchanged. Pass
 `--no-auto-equalize` to keep the original tones, or set `image.auto_equalize:
 false` in a project file. This is one global pre-separation step, not a `-f`
 filter, so every palette pen uses the same normalization and explicit filters
