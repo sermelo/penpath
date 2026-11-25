@@ -6,6 +6,15 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+from basic_shapes_gate import (
+    SHAPE_NAMES,
+    ShapeReport,
+    all_finite,
+    measure_all,
+    print_measurement_table,
+)
+
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "images" / "basic"
 GENERATOR_PATH = FIXTURES_DIR / "generate_basic.py"
 FIXTURE_NAMES = (
@@ -53,3 +62,25 @@ def test_basic_fixtures_are_well_formed() -> None:
         assert len(pixels) == 64 * 64, name
         assert set(pixels) <= {ord("0"), ord("1")}, name
         assert pixels.count(b"1") == BLACK_PIXELS[name], name
+
+
+@pytest.fixture(scope="session")
+def gate_reports(tmp_path_factory: pytest.TempPathFactory) -> list[ShapeReport]:
+    """Run the real pipeline once for every basic shape."""
+    reports = measure_all(tmp_path_factory.mktemp("basic-shapes-gate"))
+    print_measurement_table(reports)
+    return reports
+
+
+def test_basic_shapes_gate_runs(gate_reports: list[ShapeReport]) -> None:
+    """The real pipeline runs for every shape and all reported numbers are finite."""
+    assert [report.shape for report in gate_reports] == list(SHAPE_NAMES)
+    for report in gate_reports:
+        assert report.placement.width > 0
+        assert report.placement.height > 0
+        for measured in (report.algorithm, report.blank, report.random):
+            assert all_finite(measured)
+        assert report.algorithm.num_strokes >= 1
+        assert report.algorithm.drawing_length_mm > 0
+        assert report.algorithm.dark_coverage > 0
+        assert report.algorithm.likeness != report.blank.likeness
