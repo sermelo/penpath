@@ -88,3 +88,18 @@ def test_runner_stops_when_a_step_fails(
     assert result.returncode == 7
     assert "wall time" not in result.stdout
     assert len(stubbed_tools.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_runner_stops_when_time_binary_is_missing(
+    stubbed_tools: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bad PENPATH_NIGHTLY_TIME override stops before the conversion or suite."""
+    bad_time = tmp_path / "missing-time"
+    monkeypatch.setenv("PENPATH_NIGHTLY_TIME", str(bad_time))
+
+    result = _run_runner(tmp_path)
+
+    assert result.returncode == 127
+    assert str(bad_time) in result.stderr
+    assert "wall time" not in result.stdout
+    assert len(stubbed_tools.read_text(encoding="utf-8").splitlines()) == 2
