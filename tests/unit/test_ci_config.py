@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from pathlib import Path
@@ -152,15 +153,46 @@ def test_nightly_runs_on_schedule_and_by_hand_only() -> None:
     assert "push" not in triggers
 
 
-def test_nightly_runs_full_unit_and_integration_suite() -> None:
-    """One nightly job covers both test directories in a single pytest call."""
-    command = _run_command(_nightly_job(), "Run full suite")
-    assert _pytest_targets(command) == ["tests/unit", "tests/integration"]
+def _nightly_script() -> Path:
+    return _REPO_ROOT / "scripts" / "nightly.sh"
 
 
-def test_nightly_times_one_photo_conversion() -> None:
-    """The nightly run records a wall-clock time for a real photo convert."""
-    command = _run_command(_nightly_job(), "Measure one photo conversion")
-    assert "/usr/bin/time -f 'penpath convert wall time: %e s'" in command
-    assert "penpath convert" in command
-    assert "tests/fixtures/images/reference/photo.jpg" in command
+def _nightly_script_text() -> str:
+    return _nightly_script().read_text(encoding="utf-8")
+
+
+def test_nightly_workflow_calls_the_shared_runner() -> None:
+    """The workflow delegates its workload to the script a user runs locally."""
+    commands = [str(step["run"]) for step in _nightly_job()["steps"] if "run" in step]
+    assert any("bash scripts/nightly.sh" in command for command in commands)
+    for fragment in ("uv sync", "uv pip install", "/usr/bin/time", "uv run pytest"):
+        assert not any(fragment in command for command in commands), fragment
+
+
+def test_nightly_script_runs_full_unit_and_integration_suite() -> None:
+    """One shared runner covers both test directories in a single pytest call."""
+    assert "uv run pytest tests/unit tests/integration -vs" in _nightly_script_text()
+
+
+def test_nightly_script_times_one_photo_conversion() -> None:
+    """The shared runner records a wall-clock time for a real photo convert."""
+    script = _nightly_script_text()
+    assert "-f 'penpath convert wall time: %e s'" in script
+    assert "--pfm-setting seed=42" in script
+    assert "tests/fixtures/images/reference/photo.jpg" in script
+    assert "-o /tmp/nightly-photo.svg" in script
+
+
+def test_nightly_script_syncs_dev_and_vpype_extras() -> None:
+    """The shared runner installs the same extras and test tools as the workflow."""
+    script = _nightly_script_text()
+    assert "uv sync --python 3.14 --extra dev --extra vpype" in script
+    assert "uv pip install pytest pytest-cov" in script
+    assert os.access(_nightly_script(), os.X_OK)
+
+
+def test_nightly_command_is_documented() -> None:
+    """The exact command a user runs appears in the README and testing guide."""
+    for name in ("README.md", "docs/TESTING.md"):
+        text = (_REPO_ROOT / name).read_text(encoding="utf-8")
+        assert "bash scripts/nightly.sh" in text, name

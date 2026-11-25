@@ -44,6 +44,16 @@ cd penpath
 uv sync --extra dev  # or: pip install -e ".[dev]"
 ```
 
+Run the whole nightly workload locally — dependency sync, a timed reference
+photo conversion and the full unit + integration suite — with:
+
+```bash
+bash scripts/nightly.sh
+```
+
+See [docs/TESTING.md](docs/TESTING.md#run-the-nightly-workload-locally) for the
+prerequisites and the exact steps it runs.
+
 ### Optional: `vpype`
 
 For best results (line merging, sorting, optimization), install the `vpype`

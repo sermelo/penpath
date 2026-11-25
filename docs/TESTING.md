@@ -138,6 +138,31 @@ under "Large input performance" below uses a 0.4 mm pen on 190x190 mm paper,
 so it draws at a lower working resolution and took 11.49 s on the same class of
 machine. The nightly workflow repeats this timed conversion on every run.
 
+### Run the nightly workload locally
+
+The workload itself lives in `scripts/nightly.sh`. The nightly workflow calls
+that same script, so the scheduled job and a local run cannot drift apart. From
+a checkout, with uv and the Pillow system libraries from the workflow installed:
+
+```bash
+bash scripts/nightly.sh
+```
+
+This runs exactly what the workflow runs after provisioning Python, the system
+libraries and uv:
+
+1. `uv sync --python 3.14 --extra dev --extra vpype` — the `--python 3.14` pin
+   matches the workflow's `setup-python` step.
+2. `uv pip install pytest pytest-cov`.
+3. One timed conversion with the same seed and settings as the workflow, which
+   prints `penpath convert wall time: <seconds> s` and writes
+   `/tmp/nightly-photo.svg`.
+4. `uv run pytest tests/unit tests/integration -vs`.
+
+The script stops at the first failed command and exits with its status. On a
+system where `/usr/bin/time` is not GNU time (for example macOS), point it at a
+GNU-compatible binary with `PENPATH_NIGHTLY_TIME=gtime bash scripts/nightly.sh`.
+
 ---
 
 ## Test Data
