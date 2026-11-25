@@ -140,6 +140,20 @@ def test_separate_palette_drops_isolated_colour_speckles() -> None:
     assert np.all(np.asarray(separated[1][1]) == 255)
 
 
+def test_separate_palette_keeps_thin_connected_features() -> None:
+    image = Image.new("RGB", (80, 80), "white")
+    for index in range(64):
+        image.putpixel((index, index), (255, 0, 0))
+
+    separated = separate_palette(image, [RED, WHITE])
+
+    expected = np.zeros((80, 80), dtype=bool)
+    expected[np.arange(64), np.arange(64)] = True
+    red_layer = np.asarray(separated[0][1])
+    assert np.all(red_layer[expected] < 255)
+    assert np.all(red_layer[~expected] == 255)
+
+
 @pytest.mark.parametrize("mode", ["RGBA", "L"])
 def test_separate_palette_handles_non_rgb_input(mode: str) -> None:
     image = _three_region_image().convert(mode)
