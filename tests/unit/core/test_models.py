@@ -172,6 +172,16 @@ class TestImageRef:
         img_ref = ImageRef(path=img_path, filters=FilterPipeline(), dpi=300)
         assert img_ref.path == img_path
         assert img_ref.dpi == 300
+        assert img_ref.auto_equalize is True
+
+    def test_image_ref_auto_equalize_can_be_disabled(self, tmp_path):
+        """A project can keep its original tonal range explicitly."""
+        img_path = tmp_path / "test.png"
+        img_path.write_bytes(b"fake png")
+        from penpath.core.image.pipeline import FilterPipeline
+
+        img_ref = ImageRef(path=img_path, filters=FilterPipeline(), dpi=300, auto_equalize=False)
+        assert img_ref.auto_equalize is False
 
     def test_image_ref_missing_file(self):
         """Test that missing file raises error."""

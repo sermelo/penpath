@@ -27,6 +27,69 @@ class DitherMethod(StrEnum):
     ORDERED = "ordered"
 
 
+def auto_equalize(image: Image.Image) -> Image.Image:
+    """Stretch the image's luminance range to 0-255 (linear auto levels).
+
+    The range is measured with the same BT.601 luminance as :func:`grayscale`.
+    One lookup table maps ``[lo, hi]`` to ``[0, 255]`` and is applied to every
+    colour channel; an alpha channel is copied through unchanged. An image
+    that already spans 0-255, and a near-uniform image whose range is narrower
+    than 16 levels, are returned as a byte-identical copy.
+
+    Parameters
+    ----------
+    image : PIL.Image.Image
+        Input image in ``L``, ``LA``, ``RGB`` or ``RGBA`` mode.
+
+    Returns
+    -------
+    PIL.Image.Image
+        A new image in the same mode, with its tonal range normalized.
+
+    Raises
+    ------
+    TypeError
+        If the mode is not ``L``, ``LA``, ``RGB`` or ``RGBA``.
+    """
+    if image.mode not in ("L", "LA", "RGB", "RGBA"):
+        raise TypeError(
+            "auto_equalize supports L, LA, RGB and RGBA images, got "
+            f"'{image.mode}'; convert the image to a supported mode first"
+        )
+
+    arr = np.asarray(image)
+    if image.mode in ("L", "LA"):
+        luminance = arr if image.mode == "L" else arr[:, :, 0]
+        lo = int(luminance.min())
+        hi = int(luminance.max())
+    else:
+        rgb = arr[:, :, :3].astype(np.float32)
+        luminance = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
+        lo = int(np.floor(luminance.min()))
+        hi = int(np.ceil(luminance.max()))
+
+    if (lo == 0 and hi == 255) or hi - lo < 16:
+        return image.copy()
+
+    scale = 255.0 / (hi - lo)
+    table = [round((value - lo) * scale) for value in range(256)]
+    table = [min(255, max(0, value)) for value in table]
+
+    if image.mode == "L":
+        return image.point(table)
+    if image.mode == "LA":
+        lightness, alpha = image.split()
+        return Image.merge("LA", (lightness.point(table), alpha))
+    if image.mode == "RGB":
+        red, green, blue = image.split()
+        return Image.merge("RGB", (red.point(table), green.point(table), blue.point(table)))
+    red, green, blue, alpha = image.split()
+    return Image.merge(
+        "RGBA",
+        (red.point(table), green.point(table), blue.point(table), alpha),
+    )
+
+
 def _grayscale_luminance(rgb: Image.Image) -> Image.Image:
     """Convert RGB to grayscale using ITU-R BT.601 luminance formula."""
     arr = np.array(rgb, dtype=np.float32)

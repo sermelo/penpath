@@ -549,6 +549,24 @@ class TestPaletteProjectFiles:
         assert project.palette == [project.pen]
         assert project.palette_name is None
 
+    def test_project_without_auto_equalize_loads_as_true(self, tmp_path: Path) -> None:
+        """An older YAML without the field gets the new default."""
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        assert "auto_equalize" not in data["image"]
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.image.auto_equalize is True
+
+    def test_project_auto_equalize_false_round_trips(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["image"]["auto_equalize"] = False
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.image.auto_equalize is False
+        save_path = tmp_path / "saved.yaml"
+        save_yaml(project, save_path)
+        assert load_yaml(save_path).image.auto_equalize is False
+
     def test_palette_name_expands_to_ordered_pens(self, tmp_path: Path) -> None:
         data = _yaml_data(tmp_path)
         data["palette"] = "stabilo_88"

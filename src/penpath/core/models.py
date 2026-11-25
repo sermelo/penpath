@@ -140,11 +140,15 @@ class ImageRef(BaseModel):
         Filter pipeline to apply to the image.
     dpi : int
         Target DPI for the image when converting to plot coordinates.
+    auto_equalize : bool
+        Stretch the working image's luminance range to 0-255 once, before
+        palette separation. True by default; old project files load as true.
     """
 
     path: Path
     filters: FilterPipeline
     dpi: int = Field(default=300, ge=72, le=2400)
+    auto_equalize: bool = True
 
     @field_validator("path")
     @classmethod

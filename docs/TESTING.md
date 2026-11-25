@@ -529,6 +529,41 @@ Fewer strokes and a little less SSIM are the expected cost of capping solid
 black. Coverage, ink spread and tone separation all stay above the LUC-47
 floors, so the drawings remain recognisable and plottable.
 
+### Auto equalization on by default (LUC-90, 2026-11-25)
+
+`convert` now stretches the working image's luminance range `[lo, hi]` to
+`[0, 255]` with one linear lookup table before palette separation. Reproduce
+the gate measurements with:
+
+```bash
+uv run pytest tests/integration/test_sketch_lines_gate.py -s
+```
+
+"Before" below is the same harness on the same runner with `convert`'s
+`auto_equalize` monkeypatched to an identity copy; "after" is the shipped
+default. `circle.png`, `gradient.png` and `face.jpg` already cover 0-255 and
+are byte-identical in both runs.
+
+| image | before SSIM | after SSIM | strokes before → after | ink min before → after | tone ratio before → after |
+|-------|------------:|-----------:|-----------------------:|-----------------------:|--------------------------:|
+| `circle.png` | 0.5474 | 0.5474 | 175 → 175 | 0.0009 → 0.0009 | 4442.16 → 4442.16 |
+| `gradient.png` | 0.5405 | 0.5405 | 206 → 206 | 0.0019 → 0.0019 | 41.11 → 41.11 |
+| `sphere.png` | 0.8135 | 0.8198 | 43 → 50 | 0.0005 → **0.0000** | 8114.67 → 5005.35 |
+| `face.jpg` | 0.6383 | 0.6383 | 1149 → 1149 | 0.0155 → 0.0155 | 24.04 → 24.04 |
+| `photo.jpg` | 0.5739 | 0.5740 | 901 → 901 | 0.0197 → 0.0197 | 3.31 → 3.31 |
+
+`photo.jpg`'s brightest luminance is 254, so it barely moves. `sphere.png`
+spans 31-255 and is stretched: SSIM rises, but its sparsest 4x4 ink share
+falls from 0.0005 to 0.0000, below the enforced 0.0003 floor. The gate
+therefore reports **1 failed, 5 passed** with
+`sphere.png: ink per 4x4 cell 0.0000 < 0.0003`; no floor was lowered. The two
+other required gates are unchanged: `test_basic_shapes.py` reports 13 passed
+with every measured value identical (the six PBM shapes already cover 0-255),
+and `test_multi_pen_gate.py` reports 12 passed with the same per-pen values as
+LUC-86, including its pre-existing recorded union tone-ratio failure at
+1.6098. The `sphere.png` regression was reported to the Architect for a
+decision.
+
 ### Multi-pen per-layer gate (LUC-50 part 6, 2026-11-25)
 
 One palette drawing has several pens, each responsible for a colour region.

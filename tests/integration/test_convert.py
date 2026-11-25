@@ -59,10 +59,82 @@ def _convert(runner: CliRunner, image: Path, output: Path) -> Result:
     )
 
 
+def _convert_with_flags(runner: CliRunner, image: Path, output: Path, *flags: str) -> Result:
+    """Run a silent, seeded, direct-export conversion with extra CLI flags."""
+    return runner.invoke(
+        main,
+        [
+            "convert",
+            str(image),
+            "-o",
+            str(output),
+            "-s",
+            "seed=42",
+            "--no-vpype",
+            "--quiet",
+            *flags,
+        ],
+    )
+
+
 def _stroke_geometry(path: Path) -> list[str]:
     """Return the drawn paths of an SVG, ignoring pen name, colour and width."""
     root = ET.parse(path).getroot()
     return [el.get("d", "") for el in root.iter("{http://www.w3.org/2000/svg}path")]
+
+
+@pytest.fixture
+def low_contrast_image(tmp_path: Path) -> Path:
+    """A washed-out image: one dark region over a narrow 60-180 grey ramp."""
+    image = Image.new("L", (400, 400), "white")
+    pixels = image.load()
+    for y in range(400):
+        for x in range(400):
+            pixels[x, y] = 60 if 100 < x < 300 and 100 < y < 300 else 60 + int((x + y) / 800 * 120)
+    path = tmp_path / "low_contrast.png"
+    image.save(path)
+    return path
+
+
+@pytest.fixture
+def full_range_image(tmp_path: Path) -> Path:
+    """An image whose luminance already covers 0-255, with a dark square."""
+    image = Image.new("L", (400, 400), "white")
+    pixels = image.load()
+    for y in range(400):
+        for x in range(400):
+            pixels[x, y] = 0 if 100 < x < 300 and 100 < y < 300 else int(255 * (x + y) / 798)
+    path = tmp_path / "full_range.png"
+    image.save(path)
+    return path
+
+
+def _write_equalize_project(tmp_path: Path, image: Path, output: Path, enabled: bool) -> Path:
+    """Write a project YAML that explicitly sets image.auto_equalize."""
+    path = tmp_path / f"equalize_{str(enabled).lower()}.yaml"
+    path.write_text(
+        f"""version: 1
+image:
+  path: "{image}"
+  filters:
+    steps: []
+  dpi: 300
+  auto_equalize: {str(enabled).lower()}
+paper:
+  name: a4
+  width_mm: 210.0
+  height_mm: 297.0
+pen:
+  name: fine
+  width_mm: 0.3
+pfm:
+  pfm_type: sketch_lines
+  settings:
+    seed: 42
+output_path: "{output}"
+"""
+    )
+    return path
 
 
 class TestConvertSeed:
@@ -314,6 +386,116 @@ class TestConvertSettings:
         assert plain_result.exit_code == 0, plain_result.output
         assert dense_result.exit_code == 0, dense_result.output
         assert _stroke_geometry(plain) != _stroke_geometry(dense)
+
+
+class TestConvertAutoEqualize:
+    """Auto levels are on by default and can be turned off per run or project."""
+
+    def test_default_differs_from_no_auto_equalize_on_low_contrast(
+        self, runner: CliRunner, low_contrast_image: Path, tmp_path: Path
+    ) -> None:
+        """End to end: normalization changes the drawing of a washed-out image."""
+        default = tmp_path / "default.svg"
+        disabled = tmp_path / "disabled.svg"
+        result_on = _convert_with_flags(runner, low_contrast_image, default)
+        result_off = _convert_with_flags(runner, low_contrast_image, disabled, "--no-auto-equalize")
+        assert result_on.exit_code == 0, result_on.output
+        assert result_off.exit_code == 0, result_off.output
+        assert _stroke_geometry(default) != _stroke_geometry(disabled)
+
+    def test_no_project_default_matches_explicit_auto_equalize(
+        self, runner: CliRunner, low_contrast_image: Path, tmp_path: Path
+    ) -> None:
+        """With no project, leaving the flag out is the same as passing it."""
+        default = tmp_path / "default.svg"
+        explicit = tmp_path / "explicit.svg"
+        result_default = _convert_with_flags(runner, low_contrast_image, default)
+        result_explicit = _convert_with_flags(
+            runner, low_contrast_image, explicit, "--auto-equalize"
+        )
+        assert result_default.exit_code == 0, result_default.output
+        assert result_explicit.exit_code == 0, result_explicit.output
+        assert default.read_bytes() == explicit.read_bytes()
+
+    def test_full_range_image_is_byte_identical(
+        self, runner: CliRunner, full_range_image: Path, tmp_path: Path
+    ) -> None:
+        """A full-range image is a no-op, so the flag cannot change its SVG."""
+        enabled = tmp_path / "enabled.svg"
+        disabled = tmp_path / "disabled.svg"
+        result_on = _convert_with_flags(runner, full_range_image, enabled)
+        result_off = _convert_with_flags(runner, full_range_image, disabled, "--no-auto-equalize")
+        assert result_on.exit_code == 0, result_on.output
+        assert result_off.exit_code == 0, result_off.output
+        assert enabled.read_bytes() == disabled.read_bytes()
+
+    def test_project_yaml_false_is_respected(
+        self, runner: CliRunner, low_contrast_image: Path, tmp_path: Path
+    ) -> None:
+        """A saved `auto_equalize: false` keeps the original tones."""
+        output_off = tmp_path / "project_off.svg"
+        output_on = tmp_path / "project_on.svg"
+        project_off = _write_equalize_project(
+            tmp_path, low_contrast_image, output_off, enabled=False
+        )
+        project_on = _write_equalize_project(tmp_path, low_contrast_image, output_on, enabled=True)
+        result_off = runner.invoke(
+            main,
+            ["convert", str(low_contrast_image), "-p", str(project_off), "--no-vpype", "--quiet"],
+        )
+        result_on = runner.invoke(
+            main,
+            ["convert", str(low_contrast_image), "-p", str(project_on), "--no-vpype", "--quiet"],
+        )
+        assert result_off.exit_code == 0, result_off.output
+        assert result_on.exit_code == 0, result_on.output
+        assert output_off.exists() and output_on.exists()
+        assert _stroke_geometry(output_off) != _stroke_geometry(output_on)
+
+    def test_cli_flag_overrides_project_yaml(
+        self, runner: CliRunner, low_contrast_image: Path, tmp_path: Path
+    ) -> None:
+        """`--auto-equalize` wins over a project that disabled the feature."""
+        output_off = tmp_path / "yaml_off.svg"
+        output_override = tmp_path / "override.svg"
+        output_on = tmp_path / "yaml_on.svg"
+        project_off = _write_equalize_project(
+            tmp_path, low_contrast_image, output_off, enabled=False
+        )
+        project_on = _write_equalize_project(tmp_path, low_contrast_image, output_on, enabled=True)
+        result_off = runner.invoke(
+            main,
+            ["convert", str(low_contrast_image), "-p", str(project_off), "--no-vpype", "--quiet"],
+        )
+        result_override = runner.invoke(
+            main,
+            [
+                "convert",
+                str(low_contrast_image),
+                "-p",
+                str(project_off),
+                "--auto-equalize",
+                "-o",
+                str(output_override),
+                "--no-vpype",
+                "--quiet",
+            ],
+        )
+        result_on = runner.invoke(
+            main,
+            ["convert", str(low_contrast_image), "-p", str(project_on), "--no-vpype", "--quiet"],
+        )
+        assert result_off.exit_code == 0, result_off.output
+        assert result_override.exit_code == 0, result_override.output
+        assert result_on.exit_code == 0, result_on.output
+        assert _stroke_geometry(output_off) != _stroke_geometry(output_override)
+        assert output_override.read_bytes() == output_on.read_bytes()
+
+    def test_help_documents_both_flags(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["convert", "--help"])
+        assert result.exit_code == 0, result.output
+        assert "--auto-equalize" in result.output
+        assert "--no-auto-equalize" in result.output
 
 
 class TestConvertPalette:
