@@ -145,7 +145,7 @@ class TestWorkingResolutionReporting:
 
 
 class TestWorkingImageAndSettings:
-    def test_pfm_receives_the_downscaled_image_and_scaled_settings(
+    def test_pfm_receives_the_downscaled_image_with_working_pixel_settings(
         self,
         runner: CliRunner,
         large_image: Path,
@@ -158,9 +158,9 @@ class TestWorkingImageAndSettings:
         assert len(pfm_capture) == 1
         image_size, settings = pfm_capture[0]
         assert image_size == (64, 48)
-        assert settings.min_length == pytest.approx(1.0)
-        assert settings.max_length == pytest.approx(12.8)
-        assert settings.sample_step == pytest.approx(3.2)
+        assert settings.min_length == pytest.approx(2.0)
+        assert settings.max_length == pytest.approx(40.0)
+        assert settings.sample_step == pytest.approx(10.0)
 
     def test_no_downscale_keeps_the_source_pixels(
         self,

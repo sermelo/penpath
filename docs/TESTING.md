@@ -335,6 +335,29 @@ Simulated-plot previews for every image, before and after, are committed under
 | `face.jpg` | [before](../images/luc-47/face_before.png) | [after](../images/luc-47/face_after.png) |
 | `photo.jpg` | [before](../images/luc-47/photo_before.png) | [after](../images/luc-47/photo_after.png) |
 
+### Gate with downscale enabled (LUC-48 part 3, 2026-11-25)
+
+`penpath convert` now downscales inputs above the working resolution, so the
+same harness was run again through the default path with downscale enabled
+(vpype 1.15, seed 42). "LUC-54" is the measurement above, before downscale
+landed; "LUC-57" is the new measurement. Both clear the enforced floors.
+
+| image | LUC-54 SSIM | LUC-57 SSIM | floor | strokes (LUC-54 → LUC-57) |
+|-------|------------:|------------:|------:|---------------------------:|
+| `circle.png` | 0.5474 | 0.5474 | 0.53 | 175 → 175 |
+| `gradient.png` | 0.5401 | 0.5405 | 0.46 | 206 → 206 |
+| `sphere.png` | 0.8135 | 0.8135 | 0.79 | 43 → 43 |
+| `face.jpg` | 0.6481 | 0.6383 | 0.57 | 1163 → 1149 |
+| `photo.jpg` | 0.5099 | 0.5744 | 0.18 | 1533 → 901 |
+
+`uv run pytest tests/integration/test_sketch_lines_gate.py` reports
+`2 passed`; all covered width, height, bbox, ink-spread and tone floors also
+pass. The face and photo changed because they are the only references larger
+than the working resolution and are therefore downscaled. Interpreting the
+pixel settings in working-image pixels keeps their ink independent of the
+source size; with the old source-ratio scaling, `face.jpg` drew for over 40 min
+before the gate could finish.
+
 ### Machine Cost (LUC-27)
 
 Machine cost measures how much work the plotter does, independently of how the
@@ -394,6 +417,56 @@ to stdout and prints its human tables to stderr, so it is safe to pipe. Use
 | vpype pipeline | 2s |
 | SVG write | 200ms |
 | **Total** | **<7s** |
+
+### Large input performance (LUC-48 part 3)
+
+The budget case is a 12 MP photo (4080x3072 px) converted for 190x190 mm paper
+with a 0.4 mm pen: under about **30 s on the VPS**. Reproduce it with:
+
+```bash
+uv run python tests/benchmarks/benchmark_convert.py
+uv run python tests/benchmarks/benchmark_convert.py --budget 120
+uv run python tests/benchmarks/benchmark_convert.py --image photo.jpg --output plot.svg
+```
+
+The script is run by path, not through pytest. It builds a deterministic
+4080x3072 greyscale image when `--image` is not given, drives `penpath convert`
+through the real CLI entry point with `--quiet`, and prints one line per stage,
+the wall-clock total and the budget. Exit 0 means the total is within the
+budget; exit 1 means it exceeded the budget or the conversion failed.
+
+Measured on the VPS (Ubuntu 24.04, aarch64, Python 3.14, vpype 1.15):
+
+| Stage | Time (s) |
+|-------|---------:|
+| Loading image | 0.15 |
+| Downscaling image | 0.23 |
+| Applying filters | 0.00 |
+| Generating lines (PFM) | 3.89 |
+| Optimizing geometry | 5.44 |
+| Exporting SVG | 1.78 |
+| **Total (wall clock)** | **11.49** |
+| Budget | 30.00 |
+
+A repeat on the shared VPS while other jobs ran took 13.09 s; an earlier run
+with five concurrent jobs took 21.32 s. All three are inside the 30 s budget.
+
+`tests/integration/test_performance.py` converts a 1200x900 image with the same
+paper and pen and asserts a generous **120 s CI bound** so a slow shared runner
+cannot make CI flaky; the whole test module ran in 15 s on the VPS. The 30 s
+figure remains the VPS budget, enforced by the benchmark script above. The
+smaller image proves the same point because the working resolution does not
+depend on the input size: only load and downscale grow with source pixels.
+
+This is fast now because the working resolution is fixed by paper and pen
+(`paper_longest_side_mm / pen_width_mm`, clamped to 256-1024 px): a 190 mm sheet
+and a 0.4 mm pen draw at 475 px on the longest side whether the source is 4 MP
+or 12 MP. The PFM receives its pixel settings in working-image pixels, so each
+stroke covers the same fraction of the canvas and the amount of ink does not
+depend on the source size. Before that correction, scaling the settings by the
+source ratio (0.116 for 12 MP) shrank the maximum stroke to about 5 px, hit the
+10,000-stroke cap, and took 59 s in the PFM plus over 2 min in geometry
+optimization; the 30 s budget was missed.
 
 ### CLI Exit Codes
 | Code | Meaning |

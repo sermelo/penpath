@@ -123,11 +123,12 @@ penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 
 Large photos are downscaled before drawing so they finish in seconds. Penpath
 uses one pixel per pen width on the longest side of the paper
-(`paper_longest_side_mm / pen_width_mm`, clamped to 256–1024 px), never enlarges
-the source, and scales the pixel-valued Sketch Lines settings with it. The
-chosen size is printed on stderr and recorded in the SVG metadata; the image
-rectangle on the page is unchanged. Override it with `--max-resolution` or keep
-all source pixels with `--no-downscale`:
+(`paper_longest_side_mm / pen_width_mm`, clamped to 256–1024 px) and never
+enlarges the source. Pixel-valued Sketch Lines settings (`min_length`,
+`max_length`, `sample_step`) are interpreted in working-image pixels and are
+not scaled. The chosen size is printed on stderr and recorded in the SVG
+metadata; the image rectangle on the page is unchanged. Override it with
+`--max-resolution` or keep all source pixels with `--no-downscale`:
 
 ```bash
 penpath convert photo.jpg --paper 190x190 --pen 0.4

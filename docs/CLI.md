@@ -73,8 +73,8 @@ working_px = paper_longest_side_mm / pen_width_mm
 The derived value is clamped to **256–1024 px**. The source is never enlarged
 and its aspect ratio is kept: with a 190x190 mm paper and a 0.4 mm pen, a
 4080x3072 photo is drawn at 475x358 px. The pixel-valued Sketch Lines settings
-(`min_length`, `max_length`, `sample_step`) are scaled by the same factor and
-clamped to their allowed ranges, so the strokes keep their physical size.
+(`min_length`, `max_length`, `sample_step`) are interpreted in working-image
+pixels and are not scaled.
 
 `--max-resolution PX` replaces the derived value without clamping (and still
 never enlarges); `--no-downscale` draws at the source resolution. The chosen
