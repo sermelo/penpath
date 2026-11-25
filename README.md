@@ -82,6 +82,7 @@ writes the final SVG: vpype contributes geometry only.
 | `penpath convert` | Photo → SVG (main command) |
 | `penpath preview` | Simulate an SVG and save a preview image |
 | `penpath evaluate` | Score an SVG's likeness to the original image and its machine cost |
+| `penpath gcode` | Turn a reviewed SVG into machine G-code with a machine profile |
 | `penpath info` | List presets and machine profiles, show image details, inspect config |
 | `penpath config` | Manage user configuration (~/.config/penpath/config.toml) |
 
@@ -117,6 +118,10 @@ penpath preview plot.svg -o preview.png --dpi 10
 # Evaluate likeness and machine cost (JSON for scripts)
 penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
+
+# Turn the reviewed SVG into G-code for a machine profile (stdout stays empty)
+penpath gcode plot.svg --profile generic -o plot.gcode
+penpath gcode plot.svg --profile generic --dry-run > plot.gcode
 ```
 
 ### Working resolution
