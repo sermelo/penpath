@@ -55,11 +55,11 @@ pip install "penpath[vpype]"
 
 Installing vpype directly with `pip install vpype` works too; the `test` extra
 also pulls it in. Without vpype, penpath prints
-`vpype not found, falling back to direct SVG export (install it with: pip install "penpath[vpype]")`
-and writes the SVG directly. Penpath's own simplify → merge → sort still runs,
-but vpype's extra `linemerge → linesimplify → reloop → linesort` pass and its SVG
-writer do not, so the output is less optimized. Use `--no-vpype` to skip vpype
-on purpose.
+`vpype not found, falling back to direct SVG export (install it with: pip install "penpath[vpype]")`.
+Penpath's own simplify → merge → sort still runs, but vpype's extra
+`linemerge → linesimplify → reloop → linesort` pass does not, so the output is
+less optimized. Use `--no-vpype` to skip vpype on purpose. Either way penpath
+writes the final SVG: vpype contributes geometry only.
 
 ---
 
@@ -337,6 +337,20 @@ instead of `pen:`. Palette order is drawing order. Until colour separation
 lands, the whole image is drawn with the first palette pen, so the SVG keeps a
 single pen layer.
 
+### SVG layout and `vpype read`
+
+Every SVG penpath writes uses millimetres: for A4 the root is
+`width="210mm" height="297mm" viewBox="0 0 210 297"`, and each used pen gets one
+Inkscape layer with `id="layerN"` (N in pen order) and the pen name as
+`inkscape:label`. Strokes have `fill="none"`, a hex `stroke` and a millimetre
+`stroke-width`; the background is a plain `<rect>`, not a layer.
+
+Do not feed a penpath SVG back to `vpype read`. vpype takes the layer number
+from the digits in `inkscape:label`, so `stabilo_88_red` and
+`stabilo_88_green` both read as layer 88 and merge. Read the file with an XML
+parser and use the `<g>` groups with their numeric `layerN` ids instead; the
+G-code step does this.
+
 ### Papers
 
 | Name | Size (mm) | Margins (mm) |
@@ -425,11 +439,12 @@ Input Image
 ┌─────────────────────────────────────┐
 │  vpype Pipeline (optional)          │
 │  linemerge → linesimplify → reloop  │
-│  → linesort → write (per-pen layers)│
+│  → linesort (geometry only)         │
 └─────────────────────────────────────┘
-    │
-    ▼
-Output SVG (layers per pen, viewBox from paper)
+     │
+     ▼
+Output SVG (mm, one layer per used pen, written by penpath)
+
 ```
 
 ---

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -93,65 +92,22 @@ class TestSvgPlacementIntegration:
             for point in stroke.polyline
         )
 
-    def test_vpype_reads_svg_with_placement_metadata(self, tmp_path: Path) -> None:
-        """vpype still reads an SVG that carries penpath placement metadata."""
-        pytest.importorskip("vpype")
-        vpype_path = shutil.which("vpype")
-        if vpype_path is None:
-            pytest.skip("vpype executable not found")
-
+    def test_penpath_svg_placement_is_readable_without_vpype(self, tmp_path: Path) -> None:
+        """The final SVG records its placement for an XML parser, not vpype read."""
         svg_path = tmp_path / "placed.svg"
+        placement = fit_image_placement((100, 50), 100, 100)
         export_svg(
             [LineString([(0, 0), (100, 50)])],
             Paper(name="square", width_mm=100, height_mm=100),
             [Pen(name="fine", width_mm=0.3)],
             svg_path,
             image_size_px=(100, 50),
-            image_placement=fit_image_placement((100, 50), 100, 100),
+            image_placement=placement,
         )
 
-        result = subprocess.run(
-            [vpype_path, "read", str(svg_path), "stat"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        assert result.returncode == 0, result.stderr
-        assert "Stats" in result.stdout
-
-    def test_vpype_reads_svg_with_injected_metadata(self, tmp_path: Path) -> None:
-        """Metadata added to vpype's own output does not break vpype."""
-        pytest.importorskip("vpype")
-        vpype_path = shutil.which("vpype")
-        if vpype_path is None:
-            pytest.skip("vpype executable not found")
-
-        from penpath.core.output.svg import add_placement_metadata
-        from penpath.core.output.vpype import run_vpype
-
-        svg_path = tmp_path / "vpype_placed.svg"
-        svg_path.write_bytes(
-            run_vpype(
-                [LineString([(0, 0), (100, 50)])],
-                Paper(name="square", width_mm=100, height_mm=100),
-                [Pen(name="fine", width_mm=0.3)],
-                vpype_path,
-            )
-        )
-        add_placement_metadata(svg_path, (5.0, 5.0, 90.0, 45.0))
-
-        assert get_image_placement(svg_path, (100, 50)) == pytest.approx((5.0, 5.0, 90.0, 45.0))
-
-        result = subprocess.run(
-            [vpype_path, "read", str(svg_path), "stat"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        assert result.returncode == 0, result.stderr
-        assert "Stats" in result.stdout
+        assert get_image_placement(svg_path, (100, 50)) == pytest.approx(placement)
+        assert 'id="layer1"' in svg_path.read_text()
+        assert 'inkscape:label="fine"' in svg_path.read_text()
 
     def test_convert_with_vpype_writes_placement_metadata(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

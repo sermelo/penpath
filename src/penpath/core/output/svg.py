@@ -1,4 +1,4 @@
-"""Direct SVG export fallback using svgwrite."""
+"""SVG export in millimetres with one Inkscape layer per pen."""
 
 from __future__ import annotations
 
@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 import svgwrite  # type: ignore[import-untyped]
+from PIL import ImageColor
 from shapely import LineString
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
     from penpath.core.image.resolution import WorkingResolution
     from penpath.core.models import Paper, Pen
@@ -50,16 +51,25 @@ class ImagePlacement(NamedTuple):
     height: float
 
 
-def _mm_to_svg_units(mm: float) -> float:
-    """Convert millimetres to SVG user units (1/96 inch)."""
-    return mm * SVG_DPI / MM_PER_INCH
-
-
 def _as_placement(
     placement: ImagePlacement | tuple[float, float, float, float],
 ) -> ImagePlacement:
     """Normalise a placement argument to an ImagePlacement."""
     return ImagePlacement(*placement)
+
+
+def _format_mm(value: float) -> str:
+    """Format a millimetre value without redundant trailing zeros."""
+    return f"{value:g}"
+
+
+def _stroke_hex(pen: Pen) -> str:
+    """Return the pen colour as a #RRGGBB stroke, whatever its source format."""
+    try:
+        rgb = ImageColor.getrgb(pen.color)
+    except ValueError as e:
+        raise ValueError(f"Pen colour {pen.color!r} is not a recognised colour") from e
+    return "#{:02X}{:02X}{:02X}".format(*rgb[:3])
 
 
 def fit_image_placement(
@@ -124,14 +134,13 @@ def _scale_geometries_to_placement(
     placement: ImagePlacement,
     image_size_px: tuple[int, int],
 ) -> list[LineString]:
-    """Map image pixel coordinates onto the placed image rectangle."""
+    """Map image pixel coordinates onto the placed image rectangle, in millimetres."""
     image_width_px, image_height_px = image_size_px
     if image_width_px <= 0 or image_height_px <= 0:
         raise ValueError("Image size must have positive width and height")
 
     scale_x = placement.width / image_width_px
     scale_y = placement.height / image_height_px
-    mm_to_units = SVG_DPI / MM_PER_INCH
 
     transformed: list[LineString] = []
     for line in geometries:
@@ -140,20 +149,9 @@ def _scale_geometries_to_placement(
         coords = list(line.coords)
         if len(coords) < 2:
             continue
-        new_coords = [
-            (
-                (placement.x + x * scale_x) * mm_to_units,
-                (placement.y + y * scale_y) * mm_to_units,
-            )
-            for x, y in coords
-        ]
+        new_coords = [(placement.x + x * scale_x, placement.y + y * scale_y) for x, y in coords]
         transformed.append(LineString(new_coords))
     return transformed
-
-
-def _pen_layer_label(pen: Pen) -> str:
-    """Return the Inkscape layer label penpath uses for a pen."""
-    return f"Pen: {pen.name}"
 
 
 def _resolution_metadata(resolution: WorkingResolution | None) -> dict[str, str]:
@@ -194,9 +192,8 @@ def add_placement_metadata(
 ) -> None:
     """Insert or replace penpath image-placement metadata in an existing SVG.
 
-    This is used for SVGs written by external tools such as vpype, where the
-    export function is not under penpath's control. The rest of the SVG is
-    left untouched so other tools keep reading it unchanged.
+    This is a helper for SVGs written by other tools; penpath's own writer
+    includes the metadata when it writes the file.
 
     Parameters
     ----------
@@ -241,38 +238,13 @@ def _scale_and_translate_geometries(
     paper: Paper,
     image_dpi: int = 300,
 ) -> list[LineString]:
-    """Scale geometries from image coordinates (pixels at image_dpi)
-    to paper coordinates (SVG units).
-
-    The geometries are scaled to fit within the paper's drawable area (with margins),
-    centered on the page.
-
-    Parameters
-    ----------
-    geometries : Iterable[LineString]
-        Input line geometries in image pixel coordinates.
-    paper : Paper
-        Paper configuration with size, margins, and DPI.
-    image_dpi : int, optional
-        DPI of the source image coordinates. Defaults to 300.
-
-    Returns
-    -------
-    list[LineString]
-        Transformed geometries in SVG user units (1/96 inch), positioned on the page.
-    """
+    """Scale geometries from image pixels into paper millimetres, centred on the page."""
     if not geometries:
         return []
 
-    # Paper drawable area in mm
     drawable_width_mm = paper.drawable_width_mm
     drawable_height_mm = paper.drawable_height_mm
 
-    # Convert drawable area to SVG units
-    drawable_width_svg = _mm_to_svg_units(drawable_width_mm)
-    drawable_height_svg = _mm_to_svg_units(drawable_height_mm)
-
-    # Find bounds of all geometries in image pixels
     all_coords: list[tuple[float, ...]] = []
     for line in geometries:
         if not line.is_empty:
@@ -292,37 +264,20 @@ def _scale_and_translate_geometries(
     if geom_width_px == 0 or geom_height_px == 0:
         return []
 
-    # Convert geometry bounds to mm at image_dpi
     geom_width_mm = geom_width_px * MM_PER_INCH / image_dpi
     geom_height_mm = geom_height_px * MM_PER_INCH / image_dpi
 
-    # Calculate scale to fit in drawable area
-    scale_x = drawable_width_mm / geom_width_mm
-    scale_y = drawable_height_mm / geom_height_mm
-    scale = min(scale_x, scale_y)
+    scale = min(drawable_width_mm / geom_width_mm, drawable_height_mm / geom_height_mm)
+    pixel_to_mm = scale * MM_PER_INCH / image_dpi
 
-    # Scale factor from image pixels to SVG units
-    # 1 image pixel = (scale * MM_PER_INCH / image_dpi) mm = (scale * SVG_DPI / image_dpi) SVG units
-    pixel_to_svg = scale * SVG_DPI / image_dpi
+    margin_mm = paper.margin_mm
+    scaled_geom_width_mm = geom_width_px * pixel_to_mm
+    scaled_geom_height_mm = geom_height_px * pixel_to_mm
 
-    # Calculate translation to center on paper
-    # Paper origin (0,0) in SVG is top-left with margins
-    margin_svg_x = _mm_to_svg_units(paper.margin_mm)
-    margin_svg_y = _mm_to_svg_units(paper.margin_mm)
+    translate_x = margin_mm + (drawable_width_mm - scaled_geom_width_mm) / 2 - min_x * pixel_to_mm
+    translate_y = margin_mm + (drawable_height_mm - scaled_geom_height_mm) / 2 - min_y * pixel_to_mm
 
-    # Center the scaled geometry in the drawable area
-    scaled_geom_width_svg = geom_width_px * pixel_to_svg
-    scaled_geom_height_svg = geom_height_px * pixel_to_svg
-
-    translate_x = (
-        margin_svg_x + (drawable_width_svg - scaled_geom_width_svg) / 2 - min_x * pixel_to_svg
-    )
-    translate_y = (
-        margin_svg_y + (drawable_height_svg - scaled_geom_height_svg) / 2 - min_y * pixel_to_svg
-    )
-
-    # Transform all geometries
-    transformed = []
+    transformed: list[LineString] = []
     for line in geometries:
         if line.is_empty:
             continue
@@ -330,11 +285,106 @@ def _scale_and_translate_geometries(
         if len(coords) < 2:
             continue
         new_coords = [
-            (x * pixel_to_svg + translate_x, y * pixel_to_svg + translate_y) for x, y in coords
+            (x * pixel_to_mm + translate_x, y * pixel_to_mm + translate_y) for x, y in coords
         ]
         transformed.append(LineString(new_coords))
 
     return transformed
+
+
+def write_penpath_svg(
+    strokes_by_pen: Sequence[Sequence[LineString]],
+    paper: Paper,
+    pens: Sequence[Pen],
+    output_path: str | Path,
+    image_placement: ImagePlacement | tuple[float, float, float, float] | None = None,
+    resolution: WorkingResolution | None = None,
+) -> None:
+    """Write penpath's SVG layout from geometry already in paper millimetres.
+
+    Both export paths end here: the direct export scales its image geometry
+    first, and the vpype path reads the optimised geometry back in millimetres.
+    The page uses millimetres throughout; every used pen gets one Inkscape
+    layer named ``layerN`` and labelled with the pen name, in drawing order.
+    The background is a plain rect, not a layer.
+
+    Parameters
+    ----------
+    strokes_by_pen : Sequence[Sequence[LineString]]
+        One list of line geometries per pen, in pen order, in paper
+        millimetres. Empty lists create no layer.
+    paper : Paper
+        Paper configuration (size and background colour).
+    pens : Sequence[Pen]
+        Pens in drawing order, one entry per item of ``strokes_by_pen``.
+    output_path : str | Path
+        Output SVG file path.
+    image_placement : ImagePlacement | tuple, optional
+        Rectangle (x, y, width, height in mm) written as placement metadata.
+    resolution : WorkingResolution | None, optional
+        Working resolution to record as image/source size attributes.
+    """
+    if not pens:
+        raise ValueError("At least one pen must be provided")
+    if len(strokes_by_pen) != len(pens):
+        raise ValueError("strokes_by_pen must have one entry per pen")
+
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    width = _format_mm(paper.width_mm)
+    height = _format_mm(paper.height_mm)
+    dwg = svgwrite.Drawing(
+        str(path),
+        size=(f"{width}mm", f"{height}mm"),
+        viewBox=f"0 0 {width} {height}",
+        profile="full",
+        debug=False,
+    )
+    dwg.attribs["xmlns:inkscape"] = "http://www.inkscape.org/namespaces/inkscape"
+
+    dwg.add(
+        dwg.rect(
+            insert=(0, 0),
+            size=(paper.width_mm, paper.height_mm),
+            fill=paper.background_color,
+        )
+    )
+    if image_placement is not None:
+        dwg.set_metadata(_placement_metadata_element(_as_placement(image_placement), resolution))
+
+    layer_number = 0
+    for pen, lines in zip(pens, strokes_by_pen, strict=True):
+        valid_lines = [line for line in lines if not line.is_empty and len(list(line.coords)) >= 2]
+        if not valid_lines:
+            continue
+
+        layer_number += 1
+        layer = dwg.g(
+            id=f"layer{layer_number}",
+            **{"inkscape:groupmode": "layer", "inkscape:label": pen.name},
+        )
+        stroke_color = _stroke_hex(pen)
+        stroke_width = _format_mm(pen.width_mm)
+
+        for line in valid_lines:
+            coords = list(line.coords)
+            path_element = dwg.path(
+                fill="none",
+                stroke=stroke_color,
+                stroke_width=stroke_width,
+                stroke_opacity=pen.opacity,
+                stroke_linecap="round",
+                stroke_linejoin="round",
+            )
+            path_element.push(f"M {coords[0][0]:.3f} {coords[0][1]:.3f}")
+            for x, y in coords[1:]:
+                path_element.push(f"L {x:.3f} {y:.3f}")
+            layer.add(path_element)
+
+        dwg.add(layer)
+
+    dwg.save()
 
 
 def export_svg(
@@ -347,33 +397,27 @@ def export_svg(
     image_size_px: tuple[int, int] | None = None,
     resolution: WorkingResolution | None = None,
 ) -> None:
-    """Export geometries to SVG using svgwrite.
+    """Export geometries to a penpath SVG in millimetres.
 
-    Creates an SVG with:
-    - ViewBox from paper size at 96 DPI (standard SVG)
-    - Background layer with paper color
-    - One layer per pen with inkscape:groupmode="layer"
-    - Stroke width from pen width_mm, stroke color from pen color
-    - Optional image-placement metadata describing where the source image sits
+    Creates an SVG with the paper size as width/height and viewBox in
+    millimetres, a background rect, and one Inkscape layer per used pen.
+    Until colour separation lands, all geometries go to the first pen.
 
     Parameters
     ----------
     geometries : list[LineString]
         Line geometries in image pixel coordinates (at image_dpi).
     paper : Paper
-        Paper configuration (size, margins, background color, DPI).
+        Paper configuration (size, margins, background colour).
     pens : list[Pen]
-        Pen configurations. Each pen gets its own layer.
-        In MVP, all geometries go to the first pen's layer.
+        Pens in drawing order. Only pens with geometry get a layer.
     output_path : str | Path
         Output SVG file path.
     image_dpi : int, optional
         DPI of the input image coordinates. Defaults to 300.
     image_placement : ImagePlacement | tuple, optional
-        Rectangle (x, y, width, height in mm) where the source image was
-        placed. When given, geometries are mapped into this rectangle and
-        the rectangle is written as SVG metadata. ``image_size_px`` must
-        also be provided.
+        Rectangle (x, y, width, height in mm) where the source image sits.
+        ``image_size_px`` must also be provided.
     image_size_px : tuple[int, int], optional
         Size of the image the geometries belong to, in pixels. Required when
         ``image_placement`` is provided.
@@ -394,91 +438,21 @@ def export_svg(
     if image_placement is not None and image_size_px is None:
         raise ValueError("image_size_px is required when image_placement is provided")
 
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Paper size in SVG units (96 DPI)
-    svg_width = _mm_to_svg_units(paper.width_mm)
-    svg_height = _mm_to_svg_units(paper.height_mm)
-
-    # Create SVG drawing
-    dwg = svgwrite.Drawing(
-        str(output_path),
-        size=(f"{paper.width_mm}mm", f"{paper.height_mm}mm"),
-        viewBox=f"0 0 {svg_width} {svg_height}",
-        profile="full",
-        debug=False,
-    )
-
-    # Add Inkscape namespace for layer support
-    dwg.attribs["xmlns:inkscape"] = "http://www.inkscape.org/namespaces/inkscape"
-
-    # Background layer
-    bg_attrs = {"inkscape:groupmode": "layer", "inkscape:label": "Background"}
-    bg_layer = dwg.g(id="background", **bg_attrs)
-    bg_rect = dwg.rect(
-        insert=(0, 0),
-        size=(svg_width, svg_height),
-        fill=paper.background_color,
-    )
-    bg_layer.add(bg_rect)
-    dwg.add(bg_layer)
-
-    # Transform geometries to paper coordinates. When the image placement is
-    # known, image pixels map directly onto that rectangle so the metadata
-    # describes exactly where the drawing sits on the page.
     if image_placement is not None and image_size_px is not None:
-        placement_value = _as_placement(image_placement)
-        transformed_geometries = _scale_geometries_to_placement(
-            valid_geometries, placement_value, image_size_px
+        transformed = _scale_geometries_to_placement(
+            valid_geometries, _as_placement(image_placement), image_size_px
         )
-        dwg.set_metadata(_placement_metadata_element(placement_value, resolution))
     else:
-        transformed_geometries = _scale_and_translate_geometries(valid_geometries, paper, image_dpi)
+        transformed = _scale_and_translate_geometries(valid_geometries, paper, image_dpi)
 
-    # Create one layer per pen
-    for i, pen in enumerate(pens):
-        layer_id = f"pen-{pen.name}"
-        layer_label = _pen_layer_label(pen)
-
-        pen_layer = dwg.g(
-            id=layer_id,
-            **{"inkscape:groupmode": "layer", "inkscape:label": layer_label},
-        )
-
-        # Only first pen gets geometries (MVP: single pen)
-        layer_geometries = transformed_geometries if i == 0 else []
-
-        # Stroke properties
-        stroke_width_svg = _mm_to_svg_units(pen.width_mm)
-        stroke_color = pen.color
-        stroke_opacity = pen.opacity
-
-        for line in layer_geometries:
-            coords = list(line.coords)
-            if len(coords) < 2:
-                continue
-
-            path = dwg.path(
-                fill="none",
-                stroke=stroke_color,
-                stroke_width=stroke_width_svg,
-                stroke_opacity=stroke_opacity,
-                stroke_linecap="round",
-                stroke_linejoin="round",
-            )
-
-            # Build path data
-            path.push(f"M {coords[0][0]:.3f} {coords[0][1]:.3f}")
-            for x, y in coords[1:]:
-                path.push(f"L {x:.3f} {y:.3f}")
-
-            pen_layer.add(path)
-
-        dwg.add(pen_layer)
-
-    # Save SVG
-    dwg.save()
+    write_penpath_svg(
+        [transformed, *([[]] * (len(pens) - 1))],
+        paper,
+        pens,
+        output_path,
+        image_placement,
+        resolution,
+    )
 
 
 __all__ = [
@@ -487,4 +461,5 @@ __all__ = [
     "add_placement_metadata",
     "export_svg",
     "fit_image_placement",
+    "write_penpath_svg",
 ]

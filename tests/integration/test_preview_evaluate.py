@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import shutil
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 from PIL import Image, ImageDraw
-from shapely import LineString
 
 from penpath.cli.main import main
 from penpath.core import (
@@ -19,8 +16,6 @@ from penpath.core import (
     parse_svg_strokes,
     simulate_plot,
 )
-from penpath.core.models import Paper, Pen
-from penpath.core.output.vpype import run_vpype
 
 
 def _svg(with_metadata: bool = True) -> str:
@@ -370,37 +365,30 @@ class TestEvaluate:
         assert "No pen strokes found in SVG" in result.output
         assert result.stdout.strip() == ""
 
-    def test_evaluate_counts_all_ink_in_vpype_output(
+    def test_evaluate_counts_all_ink_in_millimetre_svg(
         self, runner: CliRunner, reference: Path, tmp_path: Path
     ) -> None:
-        """Every polygon in real vpype SVG output is counted as drawn ink."""
-        vpype_path = shutil.which("vpype")
-        if vpype_path is None:
-            pytest.skip("vpype executable not found")
-
-        rectangle = LineString([(100, 100), (200, 100), (200, 200), (100, 200), (100, 100)])
-        svg_bytes = run_vpype(
-            [rectangle],
-            Paper(name="A4", width_mm=210, height_mm=297, dpi=300),
-            [Pen(name="fine", width_mm=0.3, color="#000000")],
-            vpype_path=vpype_path,
+        """A millimetre viewBox yields millimetre lengths for a closed stroke."""
+        svg_path = tmp_path / "mm_plot.svg"
+        svg_path.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
+            'width="210mm" height="297mm" viewBox="0 0 210 297">'
+            '<g id="layer1" inkscape:groupmode="layer" inkscape:label="fine">'
+            '<path d="M 10 10 L 110 10 L 110 110 L 10 110 Z" '
+            'fill="none" stroke="#000000" stroke-width="0.3"/>'
+            "</g></svg>",
+            encoding="utf-8",
         )
-        svg_path = tmp_path / "vpype_plot.svg"
-        svg_path.write_bytes(svg_bytes)
-        root = ET.fromstring(svg_bytes)
-        geometry = [
-            element
-            for element in root.iter()
-            if element.tag.rsplit("}", 1)[-1].lower() in ("polygon", "polyline", "line", "path")
-        ]
-        assert any(element.tag.rsplit("}", 1)[-1].lower() == "polygon" for element in geometry)
 
         result = runner.invoke(main, ["evaluate", str(reference), str(svg_path), "--json"])
 
         assert result.exit_code == 0, result.output
+        strokes = parse_svg_strokes(svg_path)
+        assert len(strokes) == 1
         cost = json.loads(result.stdout)["machine_cost"]["total"]
-        assert cost["num_strokes"] == len(geometry)
-        assert cost["drawing_length_mm"] == pytest.approx(400 * 25.4 / 96, abs=0.1)
+        assert cost["num_strokes"] == 1
+        assert cost["drawing_length_mm"] == pytest.approx(400.0, abs=0.1)
 
     def test_evaluate_json_writes_only_json_to_stdout(
         self, runner: CliRunner, drawing: Path, reference: Path

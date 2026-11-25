@@ -154,6 +154,21 @@ class TestParseSvgStrokes:
         assert stroke.polyline[0] == pytest.approx((10.0, 20.0), abs=0.01)
         assert stroke.polyline[-1] == pytest.approx((90.0, 60.0), abs=0.01)
 
+    def test_penpath_mm_viewbox_gives_mm_paper_and_strokes(self, tmp_path: Path) -> None:
+        """The parser derives a 1 mm/unit scale from the new root layout."""
+        svg_path = tmp_path / "a4.svg"
+        export_svg(
+            [LineString([(0, 0), (10, 10)])],
+            Paper(name="a4", width_mm=210, height_mm=297),
+            [Pen(name="fine", width_mm=0.4, color="#000000")],
+            svg_path,
+        )
+
+        assert get_svg_paper_size(svg_path) == pytest.approx((210.0, 297.0))
+        strokes = parse_svg_strokes(svg_path)
+        assert len(strokes) == 1
+        assert strokes[0].width_mm == pytest.approx(0.4)
+
     def test_parse_svg_strokes_ignores_background(self, tmp_path: Path) -> None:
         """The paper background rect is not a pen stroke."""
         svg_path = tmp_path / "placed.svg"
