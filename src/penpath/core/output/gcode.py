@@ -77,6 +77,18 @@ def _page_origin(
     return (drawable[1][0] - page_size_mm[0], drawable[0][1])
 
 
+def page_origin_mm(
+    profile: MachineProfile,
+    page_size_mm: Coordinate,
+) -> Coordinate:
+    """Return the pen-space page origin for a profile and source page size.
+
+    Both the emitter and the preview use this helper, so ``reachable_corner``
+    placement inverts with the same drawable-corner origin the emitter used.
+    """
+    return _page_origin(profile, page_size_mm, _drawable_area(profile))
+
+
 def _profile_values(profile: MachineProfile) -> dict[str, str]:
     """Return the scalars available to placeholders in verbatim code blocks."""
     pen = profile.pen
@@ -106,9 +118,13 @@ def _block(text: str, values: dict[str, str]) -> list[str]:
     return [line.format_map(values) for line in text.strip("\n").splitlines()]
 
 
-def _header(profile: MachineProfile) -> str:
-    """Build the header comment that carries the Z semantics for the preview."""
-    fields = [f"profile={profile.name}", f"z_up={_format_mm(profile.pen.z_up)}"]
+def _header(profile: MachineProfile, page_size_mm: Coordinate) -> str:
+    """Build the header comment carrying the page size and Z semantics."""
+    fields = [
+        f"profile={profile.name}",
+        f"page={_format_mm(page_size_mm[0])}x{_format_mm(page_size_mm[1])}",
+        f"z_up={_format_mm(profile.pen.z_up)}",
+    ]
     if profile.pen.z_touch is not None:
         fields.append(f"z_touch={_format_mm(profile.pen.z_touch)}")
     fields.append(f"z_down={_format_mm(profile.pen.z_down)}")
@@ -252,7 +268,7 @@ def build_gcode(
     used_layers = [layer for layer in layers if any(len(line) >= 2 for line in layer.polylines)]
     layer_count = len(used_layers)
     drawable = _drawable_area(profile)
-    origin = _page_origin(profile, page_size_mm, drawable)
+    origin = page_origin_mm(profile, page_size_mm)
     line_values = _profile_values(profile)
     common_values = line_values | {
         "pen": "",
@@ -263,7 +279,7 @@ def build_gcode(
     }
     prefix = profile.gcode.comment_prefix
 
-    lines = [_header(profile)]
+    lines = [_header(profile, page_size_mm)]
     lines.extend(_block(profile.gcode.start, common_values))
     pen_is_down = True
     for index, layer in enumerate(used_layers, start=1):
@@ -304,4 +320,5 @@ __all__ = [
     "GcodeLayer",
     "PointOutsideBedError",
     "build_gcode",
+    "page_origin_mm",
 ]

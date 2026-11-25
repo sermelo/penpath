@@ -4,6 +4,12 @@ from penpath.core.drawing import (
     PIXEL_SETTING_FIELDS,
     scale_pixel_settings,
 )
+from penpath.core.gcode_preview import (
+    GcodeHeader,
+    GcodePreviewError,
+    gcode_to_strokes,
+    parse_gcode_header,
+)
 from penpath.core.geometry import (
     DEFAULT_PAPER_DPI,
     merge_lines,
@@ -57,6 +63,7 @@ from penpath.core.output import (
     GcodeLayer,
     PointOutsideBedError,
     build_gcode,
+    page_origin_mm,
 )
 from penpath.core.profiles import (
     PROFILE_FILE_VERSION,
@@ -117,7 +124,9 @@ __all__ = [
     "FilterPipeline",
     "FilterStep",
     "GcodeError",
+    "GcodeHeader",
     "GcodeLayer",
+    "GcodePreviewError",
     "GcodeProfile",
     "GrayscaleMethod",
     "ImageLoadError",
@@ -155,6 +164,7 @@ __all__ = [
     "contrast",
     "gamma",
     "gaussian_blur",
+    "gcode_to_strokes",
     "get_filter",
     "get_image_placement",
     "get_svg_paper_size",
@@ -170,6 +180,8 @@ __all__ = [
     "load_yaml",
     "merge_lines",
     "mm_to_pixels",
+    "page_origin_mm",
+    "parse_gcode_header",
     "parse_svg_layers",
     "parse_svg_strokes",
     "pixels_to_mm",
