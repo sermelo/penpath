@@ -20,6 +20,7 @@ from penpath.core.image.pipeline import (
     get_filter,
     list_filters,
 )
+from penpath.core.image.separate import separate_palette
 
 __all__ = [
     "DitherMethod",
@@ -39,5 +40,6 @@ __all__ = [
     "list_filters",
     "load_image",
     "posterize",
+    "separate_palette",
     "threshold",
 ]
