@@ -12,6 +12,7 @@ from penpath.core.profiles import (
     ProfileParseError,
     UnknownProfileError,
     get_user_profiles_path,
+    list_profile_sources,
     list_profiles,
     load_profile,
 )
@@ -224,3 +225,21 @@ def test_load_profile_defaults_to_user_file_and_overrides_builtin(
 
     profile = load_profile("generic")
     assert profile.description == "My own generic machine"
+
+
+def test_list_profile_sources_marks_builtin_and_user_names(tmp_path: Path) -> None:
+    """Each profile is reported once, with the source that load_profile would use."""
+    path = _write_profiles(
+        tmp_path / "profiles.yaml",
+        "generic:\n  description: Mine\n" + _MINIMAL_PROFILE + "shop_plotter:\n" + _MINIMAL_PROFILE,
+    )
+
+    assert list_profile_sources(path) == {
+        "generic": "user",
+        "shop_plotter": "user",
+    }
+
+
+def test_list_profile_sources_without_user_file_marks_builtin(tmp_path: Path) -> None:
+    """A missing user file still lists built-ins as built-in."""
+    assert list_profile_sources(tmp_path / "no-profiles.yaml") == {"generic": "built-in"}

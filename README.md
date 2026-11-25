@@ -82,7 +82,7 @@ writes the final SVG: vpype contributes geometry only.
 | `penpath convert` | Photo → SVG (main command) |
 | `penpath preview` | Simulate an SVG and save a preview image |
 | `penpath evaluate` | Score an SVG's likeness to the original image and its machine cost |
-| `penpath info` | List presets, show image details, inspect config |
+| `penpath info` | List presets and machine profiles, show image details, inspect config |
 | `penpath config` | Manage user configuration (~/.config/penpath/config.toml) |
 
 See [docs/CLI.md](docs/CLI.md) for complete reference.
@@ -423,6 +423,12 @@ penpath config init      # Create default config
 penpath config edit      # Open in $EDITOR
 penpath config set default_paper a3
 ```
+
+### Machine profiles
+
+Machine profiles hold bed, feed and pen values for a plotter. List the built-in
+and your own machines with `penpath info profiles`; the file format and an
+example are in [docs/CLI.md](docs/CLI.md#machine-profile-format).
 
 ---
 

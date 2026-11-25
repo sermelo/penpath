@@ -292,6 +292,19 @@ def list_profiles(profiles_path: Path | None = None) -> list[str]:
     return sorted(set(_builtin_profiles()) | user_names)
 
 
+def list_profile_sources(profiles_path: Path | None = None) -> dict[str, str]:
+    """Map each available profile name to its source, ``"built-in"`` or ``"user"``.
+
+    A user profile overrides a built-in of the same name and is reported as
+    ``"user"``, matching what :func:`load_profile` would load.
+    """
+    path = profiles_path if profiles_path is not None else get_user_profiles_path()
+    user_names = {key for key in _load_user_profiles(path) if isinstance(key, str)}
+    sources = dict.fromkeys(_builtin_profiles(), "built-in")
+    sources.update((name, "user") for name in user_names)
+    return dict(sorted(sources.items()))
+
+
 def load_profile(name: str, profiles_path: Path | None = None) -> MachineProfile:
     """Load and validate a built-in or user machine profile.
 
@@ -347,6 +360,7 @@ __all__ = [
     "ProfileParseError",
     "UnknownProfileError",
     "get_user_profiles_path",
+    "list_profile_sources",
     "list_profiles",
     "load_profile",
 ]
