@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import random
 from itertools import pairwise
@@ -20,6 +21,7 @@ class TestSketchLinesSettings:
     def test_default_settings(self):
         settings = SketchLinesSettings()
         assert settings.line_density == 0.75
+        assert settings.max_fill == 80.0
         assert settings.min_length == 2.0
         assert settings.max_length == 40.0
         assert settings.angle_range == (-72.0, -52.0)
@@ -89,6 +91,14 @@ class TestSketchLinesSettings:
             SketchLinesSettings(line_density=0.0)
         with pytest.raises(ValueError):
             SketchLinesSettings(line_density=11.0)
+
+    def test_max_fill_bounds(self):
+        with pytest.raises(ValueError):
+            SketchLinesSettings(max_fill=0.0)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(max_fill=101.0)
+        assert SketchLinesSettings(max_fill=1.0).max_fill == 1.0
+        assert SketchLinesSettings(max_fill=100.0).max_fill == 100.0
 
     def test_min_max_length_bounds(self):
         with pytest.raises(ValueError):
@@ -432,6 +442,70 @@ class TestSketchLinesAlgorithm:
         assert len(lines) >= 3
         assert max(x for x, _ in starts) - min(x for x, _ in starts) > 100
 
+    @staticmethod
+    def _stroke_signature(lines: list[LineString]) -> str:
+        return "|".join(",".join(f"{x:.6f}:{y:.6f}" for x, y in line.coords) for line in lines)
+
+    def test_full_range_reproduces_the_pre_max_fill_drawing(self):
+        """max_fill=100 is a no-op: the same seed draws the pre-LUC-89 strokes."""
+        dark = sketch_lines(
+            self._create_test_image(),
+            SketchLinesSettings(seed=42, line_density=0.5, max_fill=100.0),
+        )
+        gradient = sketch_lines(
+            self._create_gradient_image(),
+            SketchLinesSettings(seed=42, line_density=1.0, max_fill=100.0),
+        )
+        assert (
+            hashlib.sha256(self._stroke_signature(dark).encode()).hexdigest()
+            == "bc55a512864d2f57af00d904bc475ce94327b58733180be2c9e732cd053d001c"
+        )
+        assert (
+            hashlib.sha256(self._stroke_signature(gradient).encode()).hexdigest()
+            == "4978c40eb46fb421b514d54139675b7fbb6ad5a233da2dd34031851d6766aafa"
+        )
+
+    def test_lower_max_fill_treats_every_tone_below_the_black_point_as_black(self):
+        """Two images differing only below the black point draw identically."""
+
+        def square(tone: int) -> Image.Image:
+            image = Image.new("L", (100, 100), 255)
+            pixels = image.load()
+            for y in range(30, 70):
+                for x in range(30, 70):
+                    pixels[x, y] = tone
+            return image
+
+        capped = [
+            list(line.coords) for line in sketch_lines(square(0), SketchLinesSettings(seed=42))
+        ]
+        clamped = [
+            list(line.coords) for line in sketch_lines(square(20), SketchLinesSettings(seed=42))
+        ]
+        full = [
+            list(line.coords)
+            for line in sketch_lines(square(0), SketchLinesSettings(seed=42, max_fill=100.0))
+        ]
+        legacy = [
+            list(line.coords)
+            for line in sketch_lines(square(20), SketchLinesSettings(seed=42, max_fill=100.0))
+        ]
+        assert len(capped) > 0
+        assert capped == clamped
+        assert full != legacy
+
+    def test_lower_max_fill_reduces_ink_on_a_solid_black_canvas(self):
+        """A capped black point needs fewer strokes to cover a fully black image."""
+        black = Image.new("L", (100, 100), 0)
+        lengths = [
+            sum(
+                line.length
+                for line in sketch_lines(black, SketchLinesSettings(seed=42, max_fill=mf))
+            )
+            for mf in (60.0, 80.0, 100.0)
+        ]
+        assert lengths[0] < lengths[1] < lengths[2]
+
 
 class TestBresenhamLine:
     """Tests for internal Bresenham line function."""
@@ -700,7 +774,7 @@ class TestSparseCanvas:
         lines = sketch_lines(image, SketchLinesSettings(seed=42))
         points = {(int(x), int(y)) for line in lines for x, y in line.coords}
 
-        assert len(lines) == 5
+        assert len(lines) == 7
         assert len(points & region) >= 25
 
 

@@ -381,7 +381,9 @@ photo), bbox area 0.559 / 0.828 / 0.557 / 0.998 / 0.998, minimum 4x4 ink share
 0.0009 / 0.0019 / 0.0005 / 0.0158 / 0.0212, tone ratio 4442 / 41.1 / 8115 /
 27.7 / 2.87, and stroke counts 175 / 206 / 43 / 1163 / 1533. The random-lines
 row is report-only: the harness draws as many strokes as the algorithm
-produced, so that row moves with the stroke count.
+produced, so that row moves with the stroke count. LUC-89 raised the gradient
+floor from 0.46 to 0.47: with the new default its measurement is 0.5275, so
+`measured - 0.05` is 0.4775. The other four floors are unchanged.
 
 ### Final shipped-defaults measurement (LUC-54, 2026-11-25)
 
@@ -452,6 +454,80 @@ than the working resolution and are therefore downscaled. Interpreting the
 pixel settings in working-image pixels keeps their ink independent of the
 source size; with the old source-ratio scaling, `face.jpg` drew for over 40 min
 before the gate could finish.
+
+### Max fill calibration (LUC-89, 2026-11-25)
+
+`SketchLinesSettings.max_fill` caps ink coverage at a percentage below 100 by
+lifting every luminance darker than `255 * (1 - max_fill / 100)` to that black
+point before any average or stroke is taken. The calibration harness generates
+three 400x400 images in code — a solid black square on white (`dark_figure`), a
+light grey disc on white (`light_figure`, tone 190), and a left-to-right black
+to white ramp (`gradient`) — then runs the real `penpath convert` and simulator
+path with seed 42 for each value. Ink density is the share of simulated ink
+pixels inside a source region; the ramp's three bands are its left, middle and
+right thirds.
+
+Reproduce the table with:
+
+```bash
+uv run pytest tests/integration/test_max_fill.py -s
+```
+
+| figure | max_fill | dark ink | light ink | band 1 | band 2 | band 3 | length mm | strokes | SSIM |
+|--------|---------:|---------:|----------:|-------:|-------:|-------:|----------:|--------:|-----:|
+| `dark_figure` | 60 | 0.3103 | 0.0000 | 0.3103 | n/a | n/a | 13326.9 | 34 | 0.7316 |
+| `dark_figure` | 70 | 0.3618 | 0.0000 | 0.3618 | n/a | n/a | 16248.8 | 48 | 0.7363 |
+| `dark_figure` | **80** | 0.4099 | 0.0000 | 0.4099 | n/a | n/a | 19128.7 | 55 | 0.7398 |
+| `dark_figure` | 90 | 0.4604 | 0.0000 | 0.4604 | n/a | n/a | 22546.2 | 88 | 0.7436 |
+| `dark_figure` | 100 | 0.5084 | 0.0000 | 0.5084 | n/a | n/a | 26078.6 | 100 | 0.7461 |
+| `light_figure` | 60 | 0.1549 | 0.0000 | 0.1549 | n/a | n/a | 4954.2 | 4 | 0.9020 |
+| `light_figure` | 70 | 0.1549 | 0.0000 | 0.1549 | n/a | n/a | 4954.2 | 4 | 0.9020 |
+| `light_figure` | **80** | 0.1549 | 0.0000 | 0.1549 | n/a | n/a | 4954.2 | 4 | 0.9020 |
+| `light_figure` | 90 | 0.1549 | 0.0000 | 0.1549 | n/a | n/a | 4954.2 | 4 | 0.9020 |
+| `light_figure` | 100 | 0.1549 | 0.0000 | 0.1549 | n/a | n/a | 4954.2 | 4 | 0.9020 |
+| `gradient` | 60 | 0.3384 | 0.0573 | 0.3384 | 0.2787 | 0.0573 | 38471.2 | 101 | 0.5308 |
+| `gradient` | 70 | 0.3994 | 0.0441 | 0.3994 | 0.2690 | 0.0441 | 41827.3 | 109 | 0.5336 |
+| `gradient` | **80** | 0.4352 | 0.0401 | 0.4352 | 0.2723 | 0.0401 | 44679.6 | 111 | 0.5449 |
+| `gradient` | 90 | 0.4554 | 0.0396 | 0.4554 | 0.2712 | 0.0396 | 46680.6 | 124 | 0.5488 |
+| `gradient` | 100 | 0.4681 | 0.0400 | 0.4681 | 0.2620 | 0.0400 | 47196.3 | 133 | 0.5416 |
+
+The shipped default is **80**. Against full range it cuts the solid square's
+ink density from 0.5084 to 0.4099 (19%) and its pen-down length from 26078.6 to
+19128.7 mm (27%), while the light figure's 0.1549 ink density is unchanged
+because tone 190 is above every black point in the sweep. The gradient keeps
+its tone ordering (0.4352 > 0.2723 > 0.0401) and loses 5% of its length; SSIM
+falls by 0.006 on the dark figure and rises by 0.003 on the gradient. Lower
+values buy little: 60 gives only 0.3103 dark ink but the worst dark-figure
+likeness (0.7316), and 100 is what the cap exists to avoid. `max_fill=100` is
+the opt-in full range and is never the default.
+
+### Sketch Lines likeness gate with the max_fill default (LUC-89, 2026-11-25)
+
+The same harness as the LUC-48 measurement above was rerun with the shipped
+`max_fill=80` (vpype 1.15, seed 42, default export path). Every enforced floor
+still passes; the gradient SSIM floor was re-derived as `measured - 0.05 =
+0.4775`, rounded down to 0.47, because 0.46 was now more than 0.05 below the
+measurement.
+
+| image | before SSIM (LUC-48) | after SSIM | floor | strokes before → after |
+|-------|---------------------:|-----------:|------:|------------------------:|
+| `circle.png` | 0.5474 | 0.5381 | 0.53 | 175 → 110 |
+| `gradient.png` | 0.5405 | 0.5275 | 0.47 | 206 → 185 |
+| `sphere.png` | 0.8135 | 0.8011 | 0.79 | 43 → 46 |
+| `face.jpg` | 0.6383 | 0.6109 | 0.57 | 1149 → 917 |
+| `photo.jpg` | 0.5740 | 0.5292 | 0.18 | 901 → 731 |
+
+| image | covered W / H before → after | bbox before → after | ink min before → after | tone ratio before → after |
+|-------|------------------------------|--------------------|------------------------|--------------------------|
+| `circle.png` | 0.747 / 0.747 → 0.748 / 0.748 | 0.559 → 0.559 | 0.0009 → 0.0010 | 4442 → 3847 |
+| `gradient.png` | 0.830 / 0.997 → 0.817 / 0.997 | 0.828 → 0.815 | 0.0019 → 0.0008 | 41.1 → 36.7 |
+| `sphere.png` | 0.745 / 0.747 → 0.748 / 0.748 | 0.557 → 0.559 | 0.0005 → 0.0004 | 8115 → 5151 |
+| `face.jpg` | 0.999 / 0.999 → 0.999 / 0.999 | 0.998 → 0.998 | 0.0155 → 0.0175 | 24.0 → 15.7 |
+| `photo.jpg` | 0.999 / 0.998 → 0.999 / 0.998 | 0.997 → 0.997 | 0.0197 → 0.0238 | 3.31 → 2.93 |
+
+Fewer strokes and a little less SSIM are the expected cost of capping solid
+black. Coverage, ink spread and tone separation all stay above the LUC-47
+floors, so the drawings remain recognisable and plottable.
 
 ### Multi-pen per-layer gate (LUC-50 part 6, 2026-11-25)
 
@@ -926,50 +1002,60 @@ Reproduce the table with:
 uv run pytest tests/integration/test_basic_shapes.py -vs
 ```
 
-### Measured numbers (2026-11-25, `main` at `9d1ba25`)
+### Measured numbers (2026-11-25, shipped `max_fill=80`)
 
 | shape | mode | likeness | ink_outside | dark_coverage | tone_ratio | length mm | strokes | lifts |
 |-------|------|---------:|------------:|--------------:|-----------:|----------:|--------:|------:|
-| `black_square` | algorithm | 0.8471 | 0.011 | 0.502 | 39798.00 | 15624.5 | 62 | 61 |
+| `black_square` | algorithm | 0.8407 | 0.010 | 0.404 | 31987.00 | 11371.2 | 38 | 37 |
 | `black_square` | blank | 0.8082 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
-| `black_square` | random | 0.4934 | 0.728 | 0.073 | 1.17 | 6428.1 | 62 | 61 |
-| `white_square` | algorithm | 0.1667 | 0.002 | 0.512 | 1.18 | 89579.3 | 343 | 342 |
+| `black_square` | random | 0.5813 | 0.710 | 0.050 | 1.21 | 4063.3 | 38 | 37 |
+| `white_square` | algorithm | 0.1621 | 0.002 | 0.415 | 1.18 | 66188.4 | 216 | 215 |
 | `white_square` | blank | 0.1298 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
-| `white_square` | random | 0.0270 | 0.271 | 0.162 | 0.85 | 33016.1 | 343 | 342 |
-| `black_disc` | algorithm | 0.6077 | 0.003 | 0.509 | 10925.30 | 40439.6 | 158 | 157 |
+| `white_square` | random | 0.0320 | 0.273 | 0.110 | 0.85 | 21477.9 | 216 | 215 |
+| `black_disc` | algorithm | 0.5977 | 0.002 | 0.413 | 11178.08 | 29710.5 | 95 | 94 |
 | `black_disc` | blank | 0.5464 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
-| `black_disc` | random | 0.2695 | 0.379 | 0.155 | 2.68 | 15643.0 | 158 | 157 |
-| `horizontal_line` | algorithm | 0.9787 | 0.000 | 0.448 | 5653.00 | 2092.3 | 8 | 7 |
+| `black_disc` | random | 0.3266 | 0.394 | 0.098 | 2.50 | 9951.2 | 95 | 94 |
+| `horizontal_line` | algorithm | 0.9721 | 0.000 | 0.350 | 4416.00 | 1454.9 | 6 | 5 |
 | `horizontal_line` | blank | 0.9404 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
-| `horizontal_line` | random | 0.8500 | 0.959 | 0.010 | 1.02 | 917.3 | 8 | 7 |
-| `checkerboard` | algorithm | 0.5602 | 0.019 | 0.509 | 1582.20 | 52795.9 | 236 | 235 |
+| `horizontal_line` | random | 0.8721 | 0.947 | 0.010 | 1.04 | 721.7 | 6 | 5 |
+| `checkerboard` | algorithm | 0.5190 | 0.020 | 0.415 | 1271.99 | 38916.2 | 148 | 147 |
 | `checkerboard` | blank | 0.2650 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
-| `checkerboard` | random | 0.1094 | 0.501 | 0.139 | 1.01 | 23372.4 | 236 | 235 |
-| `triangle` | algorithm | 0.5736 | 0.004 | 0.510 | 4571.43 | 44826.0 | 170 | 169 |
+| `checkerboard` | random | 0.1224 | 0.501 | 0.092 | 1.01 | 14929.3 | 148 | 147 |
+| `triangle` | algorithm | 0.5656 | 0.004 | 0.414 | 6516.84 | 33081.8 | 109 | 108 |
 | `triangle` | blank | 0.5175 | 1.000 | 0.000 | 1.00 | 0.0 | 0 | 0 |
-| `triangle` | random | 0.2184 | 0.475 | 0.125 | 1.50 | 16582.9 | 170 | 169 |
+| `triangle` | random | 0.2612 | 0.492 | 0.083 | 1.39 | 11251.5 | 109 | 108 |
 
-The last digits of `tone_ratio` and `drawing_length_mm` move in the fourth
-decimal between runs because the mm SVG layout rounds coordinates; the caps
-below have a factor of two of headroom for that reason.
+LUC-89's `max_fill=80` default clamps the fixtures' pure black to luminance 51,
+so every shape draws fewer strokes and inks less of its dark region. Before →
+after on the algorithm rows: likeness 0.8471 → 0.8407 (black square), 0.5602 →
+0.5190 (checkerboard), 0.5736 → 0.5656 (triangle); dark coverage 0.502 → 0.404,
+0.509 → 0.415 and 0.510 → 0.414 for those same three; pen-down length 15624.5 →
+11371.2 mm on the black square and 89579.3 → 66188.4 mm on the white square.
+The blank and random baselines do not change. The floors below were re-derived
+from these numbers with the same rules; the unchanged `tone_ratio` and
+`ink_outside` bounds still reject every baseline. The last digits of
+`tone_ratio` and `drawing_length_mm` move in the fourth decimal between runs
+because the mm SVG layout rounds coordinates; the caps have a factor of two of
+headroom for that reason.
 
-### Enforced gate (LUC-78, 2026-11-25)
+### Enforced gate (LUC-78, re-derived for LUC-89 on 2026-11-25)
 
 `test_basic_shapes.py` asserts every cell below for the algorithm's drawing,
 one test per shape, plus `num_strokes >= 1` for every shape. Two more tests
 prove the gate is meaningful: the blank page fails `dark_coverage` for every
 shape, and the random scribble fails `ink_outside` for every shape; both also
 fail the `likeness` floor. Without them a threshold could pass for every
-possible drawing.
+possible drawing. These numbers are mirrored by `SHAPE_THRESHOLDS` in
+`tests/integration/basic_shapes_gate.py`, the one place to change them.
 
 | shape | likeness >= | ink_outside <= | dark_coverage >= | tone_ratio >= | drawing_length_mm <= | num_strokes <= | num_lifts <= |
 |-------|------------:|---------------:|-----------------:|--------------:|---------------------:|---------------:|---------------:|
-| `black_square` | 0.82 | 0.10 | 0.45 | 2.0 | 32000 | 125 | 125 |
-| `white_square` | 0.14 | 0.12 | 0.46 | 1.05 | 180000 | 690 | 690 |
-| `black_disc` | 0.58 | 0.10 | 0.45 | 2.0 | 81000 | 320 | 320 |
-| `horizontal_line` | 0.96 | 0.25 | 0.39 | 2.0 | 4200 | 16 | 16 |
-| `checkerboard` | 0.54 | 0.20 | 0.45 | 2.0 | 106000 | 475 | 475 |
-| `triangle` | 0.55 | 0.10 | 0.46 | 2.0 | 90000 | 340 | 340 |
+| `black_square` | 0.82 | 0.10 | 0.35 | 2.0 | 23000 | 80 | 80 |
+| `white_square` | 0.14 | 0.12 | 0.36 | 1.05 | 135000 | 440 | 440 |
+| `black_disc` | 0.57 | 0.10 | 0.36 | 2.0 | 60000 | 200 | 200 |
+| `horizontal_line` | 0.96 | 0.25 | 0.30 | 2.0 | 3000 | 12 | 12 |
+| `checkerboard` | 0.49 | 0.20 | 0.36 | 2.0 | 78000 | 300 | 300 |
+| `triangle` | 0.54 | 0.10 | 0.36 | 2.0 | 67000 | 220 | 220 |
 
 And for every shape: `num_strokes >= 1`.
 
@@ -977,29 +1063,31 @@ How each number was chosen:
 
 - **likeness**: `max(higher of blank and random + 0.02, measured - 0.02)`,
   rounded down to two decimals. For example `black_square`: blank 0.8082 +
-  0.02 = 0.8282, measured 0.8471 - 0.02 = 0.8271, floor 0.82. `horizontal_line`:
-  blank 0.9404 + 0.02 = 0.9604, measured 0.9787 - 0.02 = 0.9587, floor 0.96.
-  Every blank page and every random scribble fails this floor.
+  0.02 = 0.8282, measured 0.8407 - 0.02 = 0.8207, floor 0.82.
+  `checkerboard`: measured 0.5190 - 0.02 = 0.4990 dominates its blank 0.2650
+  and random 0.1224 baselines, floor 0.49. `horizontal_line`: blank 0.9404 +
+  0.02 = 0.9604, measured 0.9721 - 0.02 = 0.9521, floor 0.96. Every blank page
+  and every random scribble fails this floor.
 - **ink_outside**: caps unchanged from the original decision (0.10, 0.12, 0.10,
-  0.25, 0.20, 0.10 in table order). The algorithm inks at most 0.019 outside a
-  shape; a blank page reports 1.0 and a random scribble at least 0.271, so
+  0.25, 0.20, 0.10 in table order). The algorithm inks at most 0.020 outside a
+  shape; a blank page reports 1.0 and a random scribble at least 0.273, so
   these caps are what reject both baselines.
 - **dark_coverage**: `max(higher baseline + 0.05, measured - 0.05)`, rounded
   down to two decimals. The measured value minus 0.05 dominates for every
-  shape (e.g. `white_square` 0.512 - 0.05 = 0.462, floor 0.46;
-  `horizontal_line` 0.448 - 0.05 = 0.398, floor 0.39). A blank page inks
-  nothing (0.0) and fails every shape.
+  shape (e.g. `white_square` 0.4148 - 0.05 = 0.3648, floor 0.36;
+  `horizontal_line` 0.3502 - 0.05 = 0.3002, floor 0.30). A blank page inks
+  nothing (0.0) and a random scribble at most 0.110, so both fail every shape.
 - **tone_ratio**: floors unchanged from the original decision (2.0, except
   1.05 for `white_square`). The algorithm clears them with room; the random
-  scribble reaches 2.68 on `black_disc`, the one baseline that passes a tone
+  scribble reaches 2.50 on `black_disc`, the one baseline that passes a tone
   floor, but that scribble fails both the likeness floor and the ink-outside
   cap.
 - **machine cost**: per-shape caps at twice the measured value, rounded to a
-  round number — `black_square` 15624.5 mm → 32000, 62 strokes → 125, 61 lifts
-  → 125; `white_square` 89579.3 → 180000, 343 → 690, 342 → 690; `black_disc`
-  40439.6 → 81000, 158 → 320, 157 → 320; `horizontal_line` 2092.3 → 4200, 8 →
-  16, 7 → 16; `checkerboard` 52795.9 → 106000, 236 → 475, 235 → 475;
-  `triangle` 44826.0 → 90000, 170 → 340, 169 → 340. The old global rule
+  round number — `black_square` 11371.2 mm → 23000, 38 strokes → 80, 37 lifts
+  → 80; `white_square` 66188.4 → 135000, 216 → 440, 215 → 440; `black_disc`
+  29710.5 → 60000, 95 → 200, 94 → 200; `horizontal_line` 1454.9 → 3000, 6 →
+  12, 5 → 12; `checkerboard` 38916.2 → 78000, 148 → 300, 147 → 300;
+  `triangle` 33081.8 → 67000, 109 → 220, 108 → 220. The old global rule
   "`num_lifts <= 5` for every shape" is **withdrawn**: it described the
   pre-LUC-53 algorithm, not the shape.
 
@@ -1030,34 +1118,34 @@ Plus the withdrawn global rule `num_lifts <= 5` for every shape. The old
 `white_square` likeness floor of 0.04 was a smoke check: the old algorithm
 inked only 20% of the dark region, scored 0.073 against the blank page's 0.130,
 and put 5% of its ink outside the square. Those thresholds are **not** used by
-the current gate and the current algorithm fails several of them (black square
-likeness 0.8471 < 0.87, coverage 0.502 < 0.70 and 61 lifts > 5; horizontal line
-coverage 0.448 < 0.70 and 7 lifts > 5).
+the current gate and the current algorithm fails several of them (with the
+LUC-89 default, black square likeness 0.8407 < 0.87, coverage 0.404 < 0.70 and
+37 lifts > 5; horizontal line coverage 0.350 < 0.70).
 
 ### Open limitations of the LUC-53 algorithm
 
 1. **SSIM has almost no headroom on a mostly-white image.** A blank page already
    scores 0.8082 on `black_square`, 0.9404 on `horizontal_line`, 0.5175 on
-   `triangle` and 0.5464 on `black_disc`; the algorithm beats it by only 0.037
-   to 0.061. The likeness floor is a smoke check that rejects a blank page and
+    `triangle` and 0.5464 on `black_disc`; the algorithm beats it by only 0.032
+    to 0.051. The likeness floor is a smoke check that rejects a blank page and
    a scribble; the real guards are `ink_outside`, `dark_coverage` and
    `tone_ratio`.
 2. **The tone measure degenerates on `white_square`.** 85% of that fixture's
    pixels are black, so the lightest quarter is black as well and the ratio is
    `1 / 0.85` by construction. Today's 1.18 is exactly what the ideal plot
    scores too, so the 1.05 floor is a smoke check on that shape.
-3. **Machine cost went up for simple shapes.** A solid black square now needs
-   62 strokes and 61 pen lifts (the pre-LUC-53 algorithm drew it in 4 strokes),
-   and the white square 343 strokes and 342 lifts. The ink stays inside the
-   shape, but the plot is many separate paths.
-4. **The plot is lighter than the source.** The algorithm inks about half of the
-   dark region on every shape (0.45 to 0.51) against 0.984 for the pre-LUC-53
-   black square, and the black square's likeness fell from 0.9339 to 0.8471.
+3. **Machine cost went up for simple shapes.** With the LUC-89 default a solid
+   black square needs 38 strokes and 37 pen lifts (the pre-LUC-53 algorithm
+   drew it in 4 strokes), and the white square 216 strokes and 215 lifts. The
+   ink stays inside the shape, but the plot is many separate paths.
+4. **The plot is lighter than the source.** The algorithm inks about 0.35 to
+   0.42 of the dark region on every shape against 0.984 for the pre-LUC-53
+   black square, and the black square's likeness fell from 0.9339 to 0.8407.
 
 Points 3 and 4 are candidate work for a later task. They are recorded here, not
 fixed here. The flaw described in the first version of this task *is fixed*:
-`white_square` is no longer lighter than the original. It now inks 51% of the
-dark region (was 20%) and scores 0.1667, above the blank page's 0.1298, so the
+`white_square` is no longer lighter than the original. It now inks 41% of the
+dark region (was 20%) and scores 0.1621, above the blank page's 0.1298, so the
 0.14 likeness floor is a real floor again.
 
 ### Previews

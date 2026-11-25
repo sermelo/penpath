@@ -4,7 +4,8 @@ The reference images and harness belong to part 1 (LUC-52); this module only
 turns the yardstick into assertions and changes no measurement. The SSIM
 floors below are the LUC-47 re-derivation: ``max(blank, random) + 0.05``,
 never below ``measured - 0.05``, with ``random + 0.05`` where the drawing
-cannot beat the trivial baselines. The withdrawn part 1 floors (0.75, 0.80,
+cannot beat the trivial baselines. The gradient floor was re-derived after
+LUC-89 changed the shipped default. The withdrawn part 1 floors (0.75, 0.80,
 0.88, 0.70, 0.75) measured a raster stipple, not a pen plot, and remain in
 docs/TESTING.md as the record. The five non-SSIM floors are part 1's and are
 unchanged.
@@ -24,7 +25,7 @@ from sketch_lines_gate import (
 
 SSIM_THRESHOLDS: dict[str, float] = {
     "circle.png": 0.53,
-    "gradient.png": 0.46,
+    "gradient.png": 0.47,
     "sphere.png": 0.79,
     "face.jpg": 0.57,
     "photo.jpg": 0.18,

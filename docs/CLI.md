@@ -195,6 +195,7 @@ with a message naming the setting.
 | Key | Type | Range | Default | Effect |
 |-----|------|-------|---------|--------|
 | `line_density` | float | 0.01–10.0 | `0.75` | Ink-density multiplier in the luminance-progress stop rule; higher draws more ink. |
+| `max_fill` | float | 1–100 % | `80.0` | Maximum ink coverage. Tones darker than `255 * (1 - max_fill / 100)` are treated as black; `100` keeps the full range, and the lower default keeps solid black areas plottable. |
 | `min_length` | float | 1–1000 px | `2.0` | Shortest segment the ray search may end at (pixels). Must be ≤ `max_length`. |
 | `max_length` | float | 1–5000 px | `40.0` | Longest segment the ray search may take (pixels). Must be ≥ `min_length`. |
 | `angle_range` | tuple | −360–360° each | `-72,-52` | Band of degrees for each random ray's start angle; the reference uses −72..−52. Min ≤ max. |
@@ -218,7 +219,10 @@ with a message naming the setting.
 The cross-field limits above are validated, so `min_length=100 -s
 max_length=50` fails with a clear error rather than drawing nothing.
 
-**Example**: `-s line_density=0.5 -s shading_enabled=true -s seed=42`
+**Example**: `-s line_density=0.5 -s max_fill=90 -s shading_enabled=true -s seed=42`
+
+To draw the image's full tonal range, including near-solid black, opt into
+`-s max_fill=100`; 100 is never the default.
 
 **Breaking change**: `line_density` now scales the luminance-progress stop
 rule instead of counting lines per millimetre, and `min_length` and
@@ -573,6 +577,7 @@ pfm:
   name: sketch_lines
   settings:
     line_density: 0.3
+    max_fill: 80.0
     min_length: 2.0
     max_length: 40.0
     angle_range: [0.0, 360.0]
