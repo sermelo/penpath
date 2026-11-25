@@ -27,7 +27,7 @@
 
 ### 1. Unit Tests (`tests/unit/`)
 - **Scope**: Single function/class, no I/O, no external deps
-- **Speed**: <10ms each, full suite <5s
+- **Speed**: measured 15.61 s for the full suite on `ubuntu-latest` (see "Measured suite speed" below)
 - **Coverage Target**: ≥90% core logic
 - **Fixtures**: Synthetic data (arrays, simple geometries), `tmp_path` for file ops
 
@@ -48,7 +48,7 @@
 
 ### 2. Integration Tests (`tests/integration/`)
 - **Scope**: Multi-stage pipeline, real file I/O, vpype subprocess
-- **Speed**: <30s each, full suite <2min
+- **Speed**: measured 23.48 s for the likeness gate and 170.31 s for the other integration tests on `ubuntu-latest` (see "Measured suite speed" below)
 - **Coverage Target**: ≥80% CLI commands, full pipeline paths
 - **Fixtures**: Real test images (`tests/fixtures/images/`), golden SVGs (`tests/fixtures/golden/`)
 
@@ -100,6 +100,43 @@ exact file per built-in profile.
   up/down state machine and the draw feed in one byte-for-byte check. Unit
   tests in `tests/unit/core/output/test_gcode.py` cover the same rules with
   synthetic profiles, including the out-of-bed error.
+
+### Measured suite speed (2026-11-25)
+
+These are measurements of the current suite, not budgets. The suite numbers
+come from GitHub Actions
+[run 45639769529](https://github.com/sermelo/penpath/actions/runs/45639769529)
+(the LUC-81 merge on `main`) on GitHub-hosted `ubuntu-latest`, Python 3.14 and
+vpype 1.15. The times are the `pytest` summary lines, so checkout, dependency
+installation and apt setup are excluded.
+
+| Suite | Command | Result | Test time |
+|-------|---------|--------|----------:|
+| Unit | `uv run pytest tests/unit -vs --cov=penpath --cov-fail-under=75 --cov-report=term-missing` | 609 passed | 15.61 s |
+| Integration gate alone | `uv run pytest tests/integration/test_sketch_lines_gate.py tests/integration/test_gate_measures.py -vs` | 12 passed | 23.48 s |
+| Integration, rest | `uv run pytest tests/integration --ignore=tests/integration/test_sketch_lines_gate.py --ignore=tests/integration/test_gate_measures.py -vs` | 99 passed | 170.31 s (2:50) |
+| Integration total | gate + rest | 111 passed | 193.79 s (3:14) of test time |
+
+The two integration jobs run in parallel in CI, so the integration stage took
+about 2:50 of wall-clock time there. A full `uv run pytest` on a VPS (Ubuntu
+24.04, aarch64, Python 3.14.10, vpype 1.15) ran 799 tests in 398.74 s (6:38);
+an earlier run of 796 tests on the same machine took 632.43 s (10:32), so the
+wall time moves with runner load. A slow full suite is why
+[`.github/workflows/nightly.yml`](../.github/workflows/nightly.yml) runs it on a
+schedule and on demand instead of as a pull-request check.
+
+One `penpath convert` of a photo was timed on that same VPS with:
+
+```bash
+/usr/bin/time -f 'penpath convert wall time: %e s' \
+  uv run penpath convert tests/fixtures/images/reference/photo.jpg \
+    -o /tmp/nightly-photo.svg --pfm-setting seed=42 --quiet
+```
+
+It took **56.00 s** with the default A4 paper and 0.3 mm pen. The 12 MP case
+under "Large input performance" below uses a 0.4 mm pen on 190x190 mm paper,
+so it draws at a lower working resolution and took 11.49 s on the same class of
+machine. The nightly workflow repeats this timed conversion on every run.
 
 ---
 

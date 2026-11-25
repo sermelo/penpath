@@ -125,3 +125,42 @@ def test_ci_splits_likeness_gate_from_rest_of_integration() -> None:
     assert "integration-rest" not in _needs(gate)
 
     assert "tests/unit" in _run_command(jobs["test"], "Run unit tests with coverage")
+
+
+def _nightly_workflow() -> dict[str, object]:
+    workflow = yaml.safe_load((_WORKFLOWS_DIR / "nightly.yml").read_text(encoding="utf-8"))
+    assert isinstance(workflow, dict)
+    return workflow
+
+
+def _nightly_job() -> dict[str, object]:
+    jobs = _nightly_workflow()["jobs"]
+    assert isinstance(jobs, dict)
+    assert len(jobs) == 1
+    job = next(iter(jobs.values()))
+    assert isinstance(job, dict)
+    return job
+
+
+def test_nightly_runs_on_schedule_and_by_hand_only() -> None:
+    """A timer and workflow_dispatch start it; a pull request never does."""
+    triggers = _nightly_workflow()[True]
+    assert isinstance(triggers, dict)
+    assert "schedule" in triggers
+    assert "workflow_dispatch" in triggers
+    assert "pull_request" not in triggers
+    assert "push" not in triggers
+
+
+def test_nightly_runs_full_unit_and_integration_suite() -> None:
+    """One nightly job covers both test directories in a single pytest call."""
+    command = _run_command(_nightly_job(), "Run full suite")
+    assert _pytest_targets(command) == ["tests/unit", "tests/integration"]
+
+
+def test_nightly_times_one_photo_conversion() -> None:
+    """The nightly run records a wall-clock time for a real photo convert."""
+    command = _run_command(_nightly_job(), "Measure one photo conversion")
+    assert "/usr/bin/time -f 'penpath convert wall time: %e s'" in command
+    assert "penpath convert" in command
+    assert "tests/fixtures/images/reference/photo.jpg" in command
