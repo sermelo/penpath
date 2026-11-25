@@ -175,6 +175,19 @@ class TestSortLines:
         assert len(result) == 1
         assert result[0].is_valid
 
+    def test_sort_lines_tie_break_earliest_line_and_start(self):
+        """Equal distances go to the earliest line, and a start before an end."""
+        tied = [
+            LineString([(1, 0), (9, 0)]),
+            LineString([(9, 0), (1, 0)]),
+        ]
+        result = sort_lines(tied, start_point=Point(0, 0))
+        assert list(result[0].coords) == [(1.0, 0.0), (9.0, 0.0)]
+
+        symmetrical = [LineString([(1, 0), (-1, 0)])]
+        result = sort_lines(symmetrical, start_point=Point(0, 0))
+        assert list(result[0].coords) == [(1.0, 0.0), (-1.0, 0.0)]
+
     def test_sort_lines_complex_shape(self):
         """Test with a more complex arrangement of lines."""
         # Create a spiral-like pattern
@@ -318,6 +331,40 @@ class TestSortPerformanceAndEquivalence:
 
         assert _travel(actual) <= _travel(expected) + 1e-9
         assert _strokes(actual) == _strokes(expected) == _strokes(lines)
+
+    def test_sort_lines_exact_order_matches_reference(self):
+        """Optimized order, including each direction, matches the old algorithm."""
+        for seed in (1, 2, 3):
+            rng = random.Random(seed)
+            lines = [
+                LineString(
+                    [
+                        (rng.uniform(0, 200), rng.uniform(0, 200)),
+                        (rng.uniform(0, 200), rng.uniform(0, 200)),
+                    ]
+                )
+                for _ in range(30)
+            ]
+            start = Point(0, 0)
+            actual = [list(line.coords) for line in sort_lines(lines, start)]
+            expected = [list(line.coords) for line in _reference_sort_lines(lines, start)]
+            assert actual == expected
+
+    def test_sort_lines_is_deterministic(self):
+        """Repeated calls on the same input produce identical order and direction."""
+        rng = random.Random(7)
+        lines = [
+            LineString(
+                [
+                    (rng.uniform(0, 100), rng.uniform(0, 100)),
+                    (rng.uniform(0, 100), rng.uniform(0, 100)),
+                ]
+            )
+            for _ in range(40)
+        ]
+        first = [list(line.coords) for line in sort_lines(lines)]
+        second = [list(line.coords) for line in sort_lines(lines)]
+        assert first == second
 
 
 if __name__ == "__main__":
