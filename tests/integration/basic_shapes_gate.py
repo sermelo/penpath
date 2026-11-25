@@ -95,12 +95,12 @@ class ShapeThresholds:
 
 
 SHAPE_THRESHOLDS: dict[str, ShapeThresholds] = {
-    "black_square": ShapeThresholds(0.82, 0.10, 0.45, 2.0, 32000, 125, 125),
-    "white_square": ShapeThresholds(0.14, 0.12, 0.46, 1.05, 180000, 690, 690),
-    "black_disc": ShapeThresholds(0.58, 0.10, 0.45, 2.0, 81000, 320, 320),
-    "horizontal_line": ShapeThresholds(0.96, 0.25, 0.39, 2.0, 4200, 16, 16),
-    "checkerboard": ShapeThresholds(0.54, 0.20, 0.45, 2.0, 106000, 475, 475),
-    "triangle": ShapeThresholds(0.55, 0.10, 0.46, 2.0, 90000, 340, 340),
+    "black_square": ShapeThresholds(0.82, 0.10, 0.35, 2.0, 23000, 80, 80),
+    "white_square": ShapeThresholds(0.14, 0.12, 0.36, 1.05, 135000, 440, 440),
+    "black_disc": ShapeThresholds(0.57, 0.10, 0.36, 2.0, 60000, 200, 200),
+    "horizontal_line": ShapeThresholds(0.96, 0.25, 0.30, 2.0, 3000, 12, 12),
+    "checkerboard": ShapeThresholds(0.49, 0.20, 0.36, 2.0, 78000, 300, 300),
+    "triangle": ShapeThresholds(0.54, 0.10, 0.36, 2.0, 67000, 220, 220),
 }
 NUM_STROKES_MIN = 1
 

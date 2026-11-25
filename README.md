@@ -115,7 +115,10 @@ penpath convert input.jpg -o output.svg
 penpath convert photo.jpg -f grayscale -f "threshold:levels=4,dither=floyd_steinberg"
 
 # Adjust PFM (Sketch Lines) settings
-penpath convert photo.jpg -s line_density=0.5 -s shading_enabled=true -s seed=42
+penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
+
+# Opt into the full tonal range (solid black areas included)
+penpath convert photo.jpg -s max_fill=100 -o full-range.svg
 
 # Choose pen and paper
 penpath convert photo.jpg --pen fineliner_03 --paper a4
@@ -216,6 +219,7 @@ pfm:
   name: sketch_lines
   settings:
     line_density: 0.3
+    max_fill: 80.0
     min_length: 2.0
     max_length: 40.0
     angle_range: [0.0, 360.0]

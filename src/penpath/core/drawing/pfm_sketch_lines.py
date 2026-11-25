@@ -38,6 +38,11 @@ class SketchLinesSettings(BaseModel):
     ----------
     line_density : float
         Overall ink density multiplier (0.01 - 10.0). Higher = more ink.
+    max_fill : float
+        Maximum ink coverage as a percentage (1 - 100). Any source tone
+        darker than ``255 * (1 - max_fill / 100)`` is treated as black. 100
+        keeps the full range; the shipped default is lower so solid black
+        areas stay plottable.
     min_length : float
         Minimum line length in image pixels (1 - 1000). Reference default 2.
     max_length : float
@@ -91,6 +96,7 @@ class SketchLinesSettings(BaseModel):
     """
 
     line_density: float = Field(default=0.75, ge=0.01, le=10.0)
+    max_fill: float = Field(default=80.0, ge=1.0, le=100.0)
     min_length: float = Field(default=2.0, ge=1.0, le=1000.0)
     max_length: float = Field(default=40.0, ge=1.0, le=5000.0)
     angle_range: tuple[float, float] = Field(default=(-72.0, -52.0))
@@ -416,6 +422,9 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     rng = random.Random(settings.seed)
     gray = image.convert("L") if image.mode != "L" else image
     working = np.asarray(gray, dtype=np.float64).copy()
+    black_point = _WHITE * (1.0 - settings.max_fill / 100.0)
+    if black_point > 0.0:
+        np.maximum(working, black_point, out=working)
     h, w = working.shape
     if h == 0 or w == 0:
         return []
