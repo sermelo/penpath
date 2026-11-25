@@ -451,13 +451,15 @@ pixel settings in working-image pixels keeps their ink independent of the
 source size; with the old source-ratio scaling, `face.jpg` drew for over 40 min
 before the gate could finish.
 
-### Multi-pen per-layer gate (LUC-50 part 5, 2026-11-25)
+### Multi-pen gate (LUC-50 part 5, re-derived in LUC-84, 2026-11-25)
 
-One palette drawing has several pens, each responsible for a different colour
-region. The LUC-47 measures are therefore taken **once per used layer**, with
-that pen's own colour channel as the reference instead of the whole photo.
+A palette plot has several pens, each responsible for a colour region. It is
+measured three ways: the whole plot against the full photo, each used layer
+against its own source channel, and each used layer's ownership of its assigned
+region on the working image the CLI drew on. The single-pen LUC-47 gate and its
+floors are unchanged; this is a separate gate for a different kind of drawing.
 
-Reproduce the table with:
+Reproduce every number below with:
 
 ```bash
 uv run pytest tests/integration/test_multi_pen_gate.py -s
@@ -466,39 +468,72 @@ uv run pytest tests/integration/test_multi_pen_gate.py -s
 The harness (`tests/integration/multi_pen_gate.py`) runs the real CLI on
 `tests/fixtures/images/reference/photo.jpg` with `--palette stabilo_88` and
 `-s seed=42`, on A4 with a 10 mm margin and vpype 1.15 on the default export
-path; the derived working image is 742x494 px. It splits the photo with
-`separate_palette` — one full-size `L` channel per pen, holding that pen's
-luminance on its own pixels and white elsewhere — exactly as `convert` does.
-For each pen that produced strokes it selects that layer's strokes by colour,
-**recolours them black** so the gate's `< 128` ink threshold applies to every
-pen regardless of its physical colour, simulates the plot, and reuses the
-LUC-47 helpers unchanged: `measure_plot` (`compute_likeness`,
-`coverage_fractions`, `ink_spread`, `tone_metrics`) plus the blank, random and
-ideal baselines. All layers share the one placement rectangle recorded in the
-SVG. `region px` below counts ink-cutoff-dark pixels in that pen's own channel
-inside the placement crop; no layer is measured on a channel that has none.
+path. The 1280x853 source becomes a 742x494 working image (one pixel per
+0.4 mm pen, as in `convert`); the recorded placement is 190x126.62 mm at
+(10, 85.19) mm. Strokes are selected by colour and **recoloured black** so the
+`< 128` ink threshold applies to every pen. The whole plot combines all
+layers; per-layer likeness uses each pen's full-size source channel; ownership
+uses channels separated on the working image, the pixels the PFM actually saw.
 
-Tolerances are the LUC-47 floors for `photo.jpg`, unchanged:
+- **Whole plot**: all strokes together, recoloured black, measured against the
+  full photo with the transferable LUC-47 structural floors. Tone is excluded:
+  colour carries hue, so a black simulation of coloured ink is not a fair tone
+  proxy. It is printed for information only.
+- **Per-layer likeness**: the LUC-47 helpers (`measure_plot`: `compute_likeness`,
+  `coverage_fractions`, `ink_spread`, `tone_metrics`) applied once per used pen
+  against that pen's own source channel, with blank, random and ideal
+  baselines. These numbers stay report-only, as in LUC-73.
+- **Ownership** (new in LUC-84): on the working image, a pen's region is the
+  set of pixels assigned to it by `separate_palette` (channel value `< 255`).
+  `region px` counts those pixels. **Recall** is the share of the region's dark
+  pixels (channel `< 128`) covered by that layer's simulated ink; **outside**
+  is the share of the layer's plotted ink that falls outside the region. Both
+  masks are resampled to the simulated plot's placement crop with nearest
+  neighbour, so ink and region occupy the same pixel grid. A blank page scores
+  recall 0 and outside 1 (the basic-shapes convention); the ideal channel is
+  the region itself, so it scores recall 1 and outside 0.
 
-| Measure | Floor |
-|---------|------:|
-| SSIM | 0.18 |
-| Covered width | 0.60 |
-| Covered height | 0.60 |
-| Bounding-box area | 0.40 |
-| Ink per 4x4 cell | 0.0003 |
-| Dark/light tone ratio | 2.0 |
+#### Enforced floors
 
-#### Measured per-layer numbers
+| Check | Floor |
+|-------|------:|
+| Whole-plot SSIM | 0.18 |
+| Whole-plot covered width | 0.60 |
+| Whole-plot covered height | 0.60 |
+| Whole-plot bbox area | 0.40 |
+| Whole-plot ink per 4x4 cell | 0.0003 |
+| Ownership recall, per used pen | 0.45 |
+| Ownership outside, per used pen | 0.50 |
+
+`test_multi_pen_gate.py` asserts every floor, with the one documented brown
+recall miss below pinned as the expected exception. It also asserts that the
+per-layer SSIM and covered-width numbers stay reportable.
+
+#### Measured whole-plot numbers
+
+| measure | value | floor | result |
+|---------|------:|------:|--------|
+| SSIM | 0.3183 | 0.18 | pass |
+| covered W | 0.9987 | 0.60 | pass |
+| covered H | 0.9980 | 0.60 | pass |
+| bbox area | 0.9966 | 0.40 | pass |
+| ink per 4x4 cell (min) | 0.0427 | 0.0003 | pass |
+| tone ratio (excluded) | 1.61 | — | not checked |
+
+The plot has 462 strokes. Its tone ratio is below LUC-47's 2.0 tone floor,
+which is why tone is excluded here rather than lowered or applied unfairly to
+coloured ink.
+
+#### Measured per-layer likeness (report-only)
 
 | layer | strokes | region px | SSIM | cov W | cov H | bbox | ink min | ink max | tone |
 |-------|--------:|----------:|-----:|------:|------:|-----:|--------:|--------:|-----:|
-| `stabilo_88_light_blue` | 73 | 2817 | 0.5537 | 0.996 | 0.998 | 0.994 | 0.0000 | 0.1259 | 133.91 |
-| `stabilo_88_brown` | 5 | 4298 | 0.9499 | 0.891 | 0.368 | 0.328 | 0.0000 | 0.3290 | 6.70 |
-| `stabilo_88_black` | 384 | 159274 | 0.7523 | 0.999 | 0.998 | 0.997 | 0.0000 | 0.1370 | 152.42 |
+| `stabilo_88_light_blue` | 73 | 188847 | 0.5537 | 0.996 | 0.998 | 0.994 | 0.0000 | 0.1259 | 133.91 |
+| `stabilo_88_brown` | 5 | 4550 | 0.9499 | 0.891 | 0.368 | 0.328 | 0.0000 | 0.3290 | 6.70 |
+| `stabilo_88_black` | 384 | 167350 | 0.7523 | 0.999 | 0.998 | 0.997 | 0.0000 | 0.1370 | 152.42 |
 
-Only these three of the twelve palette pens produced strokes. Baselines for
-the same layers:
+Only these three of the twelve palette pens produced strokes. Their likeness
+baselines are unchanged by LUC-84:
 
 | layer | blank SSIM | random SSIM | ideal SSIM | ideal ink min |
 |-------|-----------:|------------:|-----------:|--------------:|
@@ -506,38 +541,59 @@ the same layers:
 | `stabilo_88_brown` | 0.9281 | 0.8145 | 0.9972 | 0.0000 |
 | `stabilo_88_black` | 0.5420 | 0.0855 | 0.9955 | 0.0000 |
 
-#### Result: five floor checks fail across the layers
+The old `region px` values (2817 / 4298 / 159274) came from applying a
+page-sized crop built from `plot.size` to a source-sized channel: the crop
+sampled the wrong corner of the source. Counting assigned pixels on the
+working image gives the values above. The whole-placement LUC-47 floors still
+miss for five cells (light blue and black ink per cell, brown covered height
+0.3684, bbox 0.3282 and ink per cell); those values remain reported, not
+lowered, and they are not the ownership gate.
 
-`test_multi_pen_gate.py` asserts the SSIM and covered-width floors (every layer
-clears both) and prints the rest. The following floors do **not** pass; they
-are reported here with their numbers rather than lowered:
+#### Measured ownership
 
-| layer | measure | value | floor |
-|-------|---------|------:|------:|
-| `stabilo_88_light_blue` | ink per 4x4 cell | 0.0000 | 0.0003 |
-| `stabilo_88_brown` | covered height | 0.3684 | 0.6000 |
-| `stabilo_88_brown` | bbox area | 0.3282 | 0.4000 |
-| `stabilo_88_brown` | ink per 4x4 cell | 0.0000 | 0.0003 |
-| `stabilo_88_black` | ink per 4x4 cell | 0.0000 | 0.0003 |
+| layer | region px | recall | outside | result |
+|-------|----------:|-------:|--------:|--------|
+| `stabilo_88_light_blue` | 188847 | 0.5993 | 0.0261 | pass |
+| `stabilo_88_brown` | 4550 | 0.2287 | 0.4356 | recall below 0.45 |
+| `stabilo_88_black` | 167350 | 0.9406 | 0.0379 | pass |
 
-Two observations from the baselines explain the misses, and are recorded as
-limitations of this per-layer yardstick, not fixed here:
+Ownership baselines for the same layers:
 
-1. A pen's channel is mostly white, so the blank page already scores 0.7872 on
-   light blue and 0.9281 on brown. SSIM above 0.18 does not by itself prove a
-   likeness for those layers; the light-blue algorithm (0.5537) even scores
-   below its blank page. Coverage and ink spread have to carry the check.
-2. The 4x4 ink floor is measured over the whole placement. A pen that owns a
-   local colour region cannot put ink in all sixteen cells: even the ideal
-   tone-mapped channel fails it for brown (0.0000) and black (0.0000), and
-   only just clears it for light blue (0.0007). Brown's five strokes also
-   cover 0.368 of the placement height against a 0.60 floor. Applying the
-   full-image floors verbatim to a single colour region is therefore not a
-   valid pass/fail test for every pen.
+| layer | blank recall / outside | random recall / outside | ideal recall / outside |
+|-------|-----------------------:|------------------------:|-----------------------:|
+| `stabilo_88_light_blue` | 0.0000 / 1.0000 | 0.0344 / 0.5204 | 1.0000 / 0.0000 |
+| `stabilo_88_brown` | 0.0000 / 1.0000 | 0.0019 / 0.9974 | 1.0000 / 0.0000 |
+| `stabilo_88_black` | 0.0000 / 1.0000 | 0.4229 / 0.5117 | 1.0000 / 0.0000 |
 
-The multi-pen gate result was reported to sergio for a decision on how the
-per-layer yardstick should treat local colour regions. Thresholds, the drawing
-algorithm and the palette were **not** changed here.
+#### How the ownership floors were derived
+
+As with LUC-47's non-SSIM floors, each floor has to be reachable by the ideal
+and better than the trivial baselines:
+
+- The **ideal** ownership plot is the pen's own channel: its dark pixels are
+  exactly the ink that should be laid down, so recall 1.0 and outside 0.0 are
+  attainable by construction.
+- The **blank** page inks nothing: recall 0.0 and outside 1.0 by the
+  basic-shapes convention.
+- The seeded **random** strokes (as many per layer as the real layer has)
+  reach at most 0.4229 recall and at least 0.5117 outside ink, both on black.
+- The recall floor is the next 0.05 step above the best random baseline:
+  `0.4229 -> 0.45`, far below the ideal 1.0.
+- The outside cap is the next 0.05 step below the best (lowest) random
+  baseline: `0.5117 -> 0.50`, far above the ideal 0.0.
+
+These floors come from the ownership baselines, not from LUC-47's
+whole-placement floors, and no floor was lowered to make a measured value pass.
+
+#### Result
+
+The whole-plot structural gate passes. Brown fails the ownership recall floor
+(0.2287 < 0.45) while its outside share passes (0.4356 < 0.50); the test pins
+that single failure with the measured value so any regression or fix changes
+the gate. Improving brown's colour separation is LUC-85, not this task.
+The per-layer likeness numbers still show why the whole-placement floors are
+not applied to a local colour region: LUC-73's five misses are kept above as
+reported evidence, not enforced and not silently relaxed.
 
 ### Machine Cost (LUC-27)
 
