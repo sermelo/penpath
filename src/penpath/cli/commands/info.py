@@ -14,6 +14,8 @@ from penpath.cli.config import load_config
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.image.load import load_image
 from penpath.core.image.pipeline import list_filters
+from penpath.core.image.resolution import plan_working_resolution
+from penpath.core.models import Paper
 from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper, list_papers
 from penpath.presets.pens import get_pen, list_pens
@@ -268,12 +270,31 @@ def info_filters(fmt: str) -> None:
 @info_group.command(name="image")
 @click.argument("image_path", type=click.Path(exists=True, path_type=Path))
 @click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
-def info_image(image_path: Path, fmt: str) -> None:
-    """Show image details (size, mode, EXIF, DPI)."""
+@click.option(
+    "--config", "-c", "config_path", type=click.Path(path_type=Path), help="Config file path"
+)
+def info_image(image_path: Path, fmt: str, config_path: Path | None) -> None:
+    """Show image details and the working resolution it would be drawn at."""
     try:
         image = load_image(image_path)
     except Exception as e:
         raise click.ClickException(f"Failed to load image: {e}") from e
+
+    config = load_config(config_path)
+    paper_preset = config.papers.get(config.default_paper)
+    if paper_preset is not None:
+        paper = Paper(
+            name=paper_preset.name,
+            width_mm=paper_preset.width,
+            height_mm=paper_preset.height,
+        )
+    else:
+        builtin = get_paper(config.default_paper)
+        paper = Paper(name=builtin.name, width_mm=builtin.width, height_mm=builtin.height)
+    pen_preset = config.pens.get(config.default_pen)
+    pen_width_mm = pen_preset.width if pen_preset is not None else get_pen(config.default_pen).width
+    resolution = plan_working_resolution(image.size, paper, pen_width_mm)
+    working_width, working_height = resolution.target_size_px
 
     # Get EXIF data
     exif_data = {}
@@ -291,6 +312,14 @@ def info_image(image_path: Path, fmt: str) -> None:
         "mode": image.mode,
         "size": {"width": image.width, "height": image.height},
         "dpi": image.info.get("dpi", (72, 72)),
+        "working_resolution": {
+            "width": working_width,
+            "height": working_height,
+            "working_px": resolution.working_px,
+            "scale": round(resolution.scale, 6),
+            "paper": config.default_paper,
+            "pen_width_mm": pen_width_mm,
+        },
         "exif": exif_data if exif_data else "No EXIF data",
     }
 

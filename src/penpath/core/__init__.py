@@ -1,5 +1,9 @@
 """Core penpath functionality."""
 
+from penpath.core.drawing import (
+    PIXEL_SETTING_FIELDS,
+    scale_pixel_settings,
+)
 from penpath.core.geometry import (
     DEFAULT_PAPER_DPI,
     merge_lines,
@@ -9,12 +13,16 @@ from penpath.core.geometry import (
     simplify_line,
 )
 from penpath.core.image import (
+    MAX_WORKING_LONGEST_PX,
+    MIN_WORKING_LONGEST_PX,
     DitherMethod,
     FilterPipeline,
     FilterStep,
     GrayscaleMethod,
     ImageLoadError,
     UnsupportedFormatError,
+    WorkingResolution,
+    apply_working_resolution,
     box_blur,
     brightness,
     contrast,
@@ -25,6 +33,7 @@ from penpath.core.image import (
     invert,
     list_filters,
     load_image,
+    plan_working_resolution,
     posterize,
     separate_palette,
     threshold,
@@ -88,6 +97,9 @@ Project.model_rebuild()
 
 __all__ = [
     "DEFAULT_PAPER_DPI",
+    "MAX_WORKING_LONGEST_PX",
+    "MIN_WORKING_LONGEST_PX",
+    "PIXEL_SETTING_FIELDS",
     "PROFILE_FILE_VERSION",
     "PROJECT_FILE_VERSION",
     "BedProfile",
@@ -121,6 +133,8 @@ __all__ = [
     "SketchLinesPFM",
     "UnknownProfileError",
     "UnsupportedFormatError",
+    "WorkingResolution",
+    "apply_working_resolution",
     "box_blur",
     "brightness",
     "compute_likeness",
@@ -143,9 +157,11 @@ __all__ = [
     "mm_to_pixels",
     "parse_svg_strokes",
     "pixels_to_mm",
+    "plan_working_resolution",
     "posterize",
     "prepare_for_comparison",
     "save_yaml",
+    "scale_pixel_settings",
     "separate_palette",
     "simplify",
     "simplify_line",

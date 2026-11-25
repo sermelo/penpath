@@ -47,6 +47,8 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 |--------|-------|---------|-------------|
 | `--filter NAME` | `-f` | — | Apply filter (repeatable: `-f grayscale -f threshold`). See **Filters** below. |
 | `--no-auto-orient` | — | `false` | Disable EXIF auto-orientation |
+| `--max-resolution PX` | — | derived | Longest side of the working image in pixels. Overrides the derived value (no clamp) and never enlarges. |
+| `--no-downscale` | — | `false` | Keep the source pixels; do not downscale before drawing |
 
 #### Drawing Options
 
@@ -57,6 +59,33 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--pen NAME` | — | `default` | Pen preset name or `width,color,type` (e.g., `0.3,#000000,fineliner`) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
 | `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,margins]` (e.g., `a4`, `210x297,10`) |
+
+#### Working Resolution
+
+Large photos are downscaled before drawing so a 12 MP phone photo finishes in
+seconds instead of hours. The working resolution is the longest side of the
+image the drawing algorithm works on:
+
+```
+working_px = paper_longest_side_mm / pen_width_mm
+```
+
+The derived value is clamped to **256–1024 px**. The source is never enlarged
+and its aspect ratio is kept: with a 190x190 mm paper and a 0.4 mm pen, a
+4080x3072 photo is drawn at 475x358 px. The pixel-valued Sketch Lines settings
+(`min_length`, `max_length`, `sample_step`) are scaled by the same factor and
+clamped to their allowed ranges, so the strokes keep their physical size.
+
+`--max-resolution PX` replaces the derived value without clamping (and still
+never enlarges); `--no-downscale` draws at the source resolution. The chosen
+resolution is printed to stderr before drawing:
+
+```
+Working resolution: 475x358 px (source 4080x3072 px, scale 0.116)
+```
+
+`penpath info image` shows the resolution penpath would plan for an image,
+using the paper and pen from the config defaults.
 
 A palette's order is the drawing order. Until colour separation lands, the
 whole image is still drawn with **one** pen — the first pen of the palette — so
@@ -98,13 +127,19 @@ The SVG records where the source image was placed on the page, in millimetres:
 
 ```xml
 <metadata>
-  <penpath:image-placement x="10.0000" y="20.0000" width="190.0000" height="160.0000"/>
+  <penpath:image-placement x="10.0000" y="20.0000" width="190.0000" height="160.0000"
+      image-width="475" image-height="358" source-width="4080" source-height="3072"/>
 </metadata>
 ```
 
+`image-width`/`image-height` are the working size the drawing was made at;
+`source-width`/`source-height` are the source image size. The placement
+rectangle itself is always derived from the source image, so it does not move
+when downscaling.
+
 `penpath.core.svg_parse.get_image_placement(svg_path, image_size_px)` reads this
-rectangle; for SVGs without it, the image is fitted to the page keeping its
-aspect ratio and centered. `penpath.core.svg_parse.parse_svg_strokes(svg_path)`
+rectangle and ignores the size attributes; for SVGs without it, the image is
+fitted to the page keeping its aspect ratio and centered. `penpath.core.svg_parse.parse_svg_strokes(svg_path)`
 returns the plotted strokes as `PenStroke` objects in millimetres.
 
 #### PFM Settings (Sketch Lines)
@@ -208,6 +243,10 @@ penpath convert photo.jpg --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E"
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
+
+# Cap the working image at 800 px on its longest side, or keep source pixels
+penpath convert photo.jpg --max-resolution 800
+penpath convert photo.jpg --no-downscale
 ```
 
 ---
@@ -317,7 +356,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `papers` | List built-in paper presets |
 | `pfms` | List available PFMs (MVP: only `sketch_lines`) |
 | `filters` | List available filters with parameters |
-| `image PATH` | Show image info (size, mode, EXIF, DPI) |
+| `image PATH` | Show image info (size, mode, EXIF, DPI, planned working resolution) |
 | `config` | Show resolved config (config + project + defaults) |
 
 #### Options
@@ -325,6 +364,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--format json\|yaml\|table` | Output format (default: table) |
+| `--config PATH` (`-c`) | Config file path; sets the default paper and pen used for the planned working resolution |
 
 #### Examples
 
@@ -336,6 +376,7 @@ penpath info papers --format yaml
 penpath info pfms
 penpath info filters
 penpath info image photo.jpg
+penpath info image photo.jpg --format json
 penpath info config --project project.yaml
 ```
 

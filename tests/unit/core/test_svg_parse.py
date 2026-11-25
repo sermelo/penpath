@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from shapely import LineString
 
+from penpath.core.image.resolution import WorkingResolution
 from penpath.core.models import Paper, Pen
 from penpath.core.output.svg import ImagePlacement, export_svg, fit_image_placement
 from penpath.core.simulation import compute_machine_cost
@@ -85,6 +86,30 @@ class TestGetImagePlacement:
         )
 
         assert get_image_placement(svg_path, (100, 50)) == ImagePlacement(5, 10, 30, 20)
+
+    def test_get_image_placement_ignores_resolution_attributes(self, tmp_path: Path) -> None:
+        """The new image/source size attributes do not disturb placement reads."""
+        placement = ImagePlacement(12.5, 7.25, 80.0, 40.0)
+        resolution = WorkingResolution(
+            source_size_px=(4080, 3072),
+            target_size_px=(475, 358),
+            scale=0.116,
+            working_px=475,
+            paper_side_mm=190.0,
+            pen_width_mm=0.4,
+        )
+        svg_path = tmp_path / "downscaled.svg"
+        export_svg(
+            [LineString([(0, 0), (100, 50)])],
+            _paper(),
+            [_pen()],
+            svg_path,
+            image_size_px=(475, 358),
+            image_placement=placement,
+            resolution=resolution,
+        )
+
+        assert get_image_placement(svg_path, (4080, 3072)) == pytest.approx(placement)
 
     def test_get_image_placement_malformed_metadata_falls_back(self, tmp_path: Path) -> None:
         """A broken placement element is ignored in favour of the page fit."""

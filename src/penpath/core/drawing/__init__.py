@@ -8,13 +8,16 @@ from penpath.core.drawing.registry import (
     list_pfms,
     register_pfm,
 )
+from penpath.core.drawing.settings import PIXEL_SETTING_FIELDS, scale_pixel_settings
 
 __all__ = [
+    "PIXEL_SETTING_FIELDS",
     "PFMRegistry",
     "SketchLinesSettings",
     "get_pfm",
     "get_registry",
     "list_pfms",
     "register_pfm",
+    "scale_pixel_settings",
     "sketch_lines",
 ]

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import click
 from pydantic import ValidationError
@@ -22,9 +23,11 @@ from rich.progress import (
 from penpath.cli.config import Config, load_config
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
+from penpath.core.drawing.settings import scale_pixel_settings
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
+from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
 from penpath.core.models import ImageRef, Palette, Paper, Pen, Project, SketchLinesPFM
 from penpath.core.output.svg import add_placement_metadata, export_svg, fit_image_placement
 from penpath.core.output.vpype import run_vpype
@@ -350,32 +353,52 @@ def _run_convert_pipeline(
     vpype_path: str,
     progress: Progress,
     task_id: TaskID,
+    max_resolution_px: int | None = None,
+    no_downscale: bool = False,
 ) -> list[LineString]:
     """Run the full conversion pipeline and return optimized lines."""
     # Until colour separation lands, the whole image uses the first palette pen.
     pen = project.palette[0]
 
-    # Step 1: Load image
+    # Step 1: Load image and plan the working resolution. Placement is derived
+    # from the source size so the drawing rectangle does not move when the
+    # working image is downscaled.
     progress.update(task_id, description="Loading image...", advance=10)
     image = load_image(project.image.path)
-    image_size_px = image.size
+    source_size_px = image.size
     image_placement = fit_image_placement(
-        image_size_px=image_size_px,
+        image_size_px=source_size_px,
         area_width_mm=project.paper.drawable_width_mm,
         area_height_mm=project.paper.drawable_height_mm,
         image_dpi=project.image.dpi,
         offset_x_mm=project.paper.margin_mm,
         offset_y_mm=project.paper.margin_mm,
     )
+    resolution = plan_working_resolution(
+        source_size_px,
+        project.paper,
+        pen.width_mm,
+        max_longest_px=max_resolution_px,
+    )
+    if no_downscale:
+        resolution = replace(resolution, target_size_px=source_size_px, scale=1.0)
+    working_width, working_height = resolution.target_size_px
+    console.print(
+        f"Working resolution: {working_width}x{working_height} px "
+        f"(source {source_size_px[0]}x{source_size_px[1]} px, scale {resolution.scale:.3f})"
+    )
+    working_image = apply_working_resolution(image, resolution)
+    working_size_px = working_image.size
 
     # Step 2: Apply filters
     progress.update(task_id, description="Applying filters...", advance=15)
-    filtered_image = project.image.filters.apply(image)
+    filtered_image = project.image.filters.apply(working_image)
 
-    # Step 3: Run PFM (Sketch Lines)
+    # Step 3: Run PFM (Sketch Lines) with settings scaled to the working image
     progress.update(task_id, description="Generating lines (PFM)...", advance=25)
     pfm_fn, _ = get_pfm(project.pfm.pfm_type)
-    pfm_settings = project.pfm.to_typed_settings()
+    typed_settings = cast(SketchLinesSettings, project.pfm.to_typed_settings())
+    pfm_settings = scale_pixel_settings(typed_settings, resolution.scale)
     lines = pfm_fn(filtered_image, pfm_settings)
 
     if not lines:
@@ -402,10 +425,10 @@ def _run_convert_pipeline(
                 [pen],
                 vpype_path,
                 image_placement,
-                image_size_px,
+                working_size_px,
             )
             project.output_path.write_bytes(svg_bytes)
-            add_placement_metadata(project.output_path, image_placement)
+            add_placement_metadata(project.output_path, image_placement, resolution)
         except FileNotFoundError:
             console.print(
                 "vpype not found, falling back to direct SVG export "
@@ -420,7 +443,8 @@ def _run_convert_pipeline(
                 project.output_path,
                 project.image.dpi,
                 image_placement,
-                image_size_px,
+                working_size_px,
+                resolution,
             )
     else:
         export_svg(
@@ -430,7 +454,8 @@ def _run_convert_pipeline(
             project.output_path,
             project.image.dpi,
             image_placement,
-            image_size_px,
+            working_size_px,
+            resolution,
         )
 
     progress.update(task_id, description="Done!", advance=10)
@@ -482,6 +507,18 @@ def _run_convert_pipeline(
 )
 @click.option("--dpi", type=int, default=300, help="Image DPI for coordinate scaling")
 @click.option(
+    "--max-resolution",
+    "max_resolution_px",
+    type=int,
+    default=None,
+    help="Longest side of the working image in pixels (overrides the derived value)",
+)
+@click.option(
+    "--no-downscale",
+    is_flag=True,
+    help="Keep the source pixels (do not downscale before drawing)",
+)
+@click.option(
     "--config", "-c", "config_path", type=click.Path(path_type=Path), help="Config file path"
 )
 @click.pass_context
@@ -502,6 +539,8 @@ def convert_cmd(
     vpype_path: str,
     layer_per_pen: bool,
     dpi: int,
+    max_resolution_px: int | None,
+    no_downscale: bool,
     config_path: Path | None,
 ) -> None:
     """Convert a raster image to a plottable SVG using the Sketch Lines algorithm.
@@ -509,6 +548,11 @@ def convert_cmd(
     INPUT_PATH: Path to input image (PNG, JPG, TIFF, BMP)
     OUTPUT_PATH: Output SVG path (default: <input>_plot.svg beside input)
     """
+    if max_resolution_px is not None and max_resolution_px <= 0:
+        raise click.BadParameter(
+            "must be a positive number of pixels", param_hint="--max-resolution"
+        )
+
     if pen_spec is not None and palette_spec is not None:
         raise click.UsageError(
             "Options --pen and --palette are mutually exclusive: use one or the other."
@@ -589,7 +633,15 @@ def convert_cmd(
     ) as progress:
         task_id = progress.add_task("Starting...", total=100)
         try:
-            _run_convert_pipeline(project, not no_vpype, vpype_path, progress, task_id)
+            _run_convert_pipeline(
+                project,
+                not no_vpype,
+                vpype_path,
+                progress,
+                task_id,
+                max_resolution_px=max_resolution_px,
+                no_downscale=no_downscale,
+            )
         except ImageLoadError as e:
             raise click.ClickException(f"Image load error: {e}") from e
         except Exception as e:

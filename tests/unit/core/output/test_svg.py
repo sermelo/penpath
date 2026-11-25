@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from shapely import LineString
 
+from penpath.core.image.resolution import WorkingResolution
 from penpath.core.models import Paper, Pen
 from penpath.core.output.svg import (
     PENPATH_NAMESPACE,
@@ -380,6 +381,82 @@ class TestPlacementMetadata:
         assert placement.height == pytest.approx(40.0)
         assert placement.x == pytest.approx(0.0)
         assert placement.y == pytest.approx(20.0)
+
+
+class TestResolutionMetadata:
+    """Both SVG writers record the working and source image sizes."""
+
+    @staticmethod
+    def _resolution() -> WorkingResolution:
+        return WorkingResolution(
+            source_size_px=(4080, 3072),
+            target_size_px=(475, 358),
+            scale=0.116,
+            working_px=475,
+            paper_side_mm=190.0,
+            pen_width_mm=0.4,
+        )
+
+    @staticmethod
+    def _expected_attributes() -> dict[str, str]:
+        return {
+            "x": "10.0000",
+            "y": "20.0000",
+            "width": "190.0000",
+            "height": "100.0000",
+            "image-width": "475",
+            "image-height": "358",
+            "source-width": "4080",
+            "source-height": "3072",
+        }
+
+    def test_export_svg_writes_resolution_attributes(self, tmp_path: Path) -> None:
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pen = Pen(name="fine", width_mm=0.3)
+        placement = ImagePlacement(10.0, 20.0, 190.0, 100.0)
+        output_path = tmp_path / "downscaled.svg"
+
+        export_svg(
+            [LineString([(0, 0), (100, 100)])],
+            paper,
+            [pen],
+            output_path,
+            image_placement=placement,
+            image_size_px=(475, 358),
+            resolution=self._resolution(),
+        )
+
+        metadata = (
+            ET.parse(output_path).getroot().find(f".//{{{PENPATH_NAMESPACE}}}image-placement")
+        )
+        assert metadata is not None
+        assert metadata.attrib == self._expected_attributes()
+
+    def test_add_placement_metadata_writes_resolution_attributes(self, tmp_path: Path) -> None:
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pen = Pen(name="fine", width_mm=0.3)
+        placement = ImagePlacement(10.0, 20.0, 190.0, 100.0)
+        output_path = tmp_path / "vpype.svg"
+        export_svg([LineString([(0, 0), (100, 100)])], paper, [pen], output_path)
+
+        add_placement_metadata(output_path, placement, self._resolution())
+
+        metadata = (
+            ET.parse(output_path).getroot().find(f".//{{{PENPATH_NAMESPACE}}}image-placement")
+        )
+        assert metadata is not None
+        assert metadata.attrib == self._expected_attributes()
+
+    def test_add_placement_metadata_stays_idempotent_with_resolution(self, tmp_path: Path) -> None:
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pen = Pen(name="fine", width_mm=0.3)
+        output_path = tmp_path / "vpype.svg"
+        export_svg([LineString([(0, 0), (100, 100)])], paper, [pen], output_path)
+
+        add_placement_metadata(output_path, (10.0, 20.0, 190.0, 100.0), self._resolution())
+        add_placement_metadata(output_path, (10.0, 20.0, 190.0, 100.0), self._resolution())
+
+        assert output_path.read_text().count("image-placement") == 1
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from shapely import LineString
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from penpath.core.image.resolution import WorkingResolution
     from penpath.core.models import Paper, Pen
 
 
@@ -155,7 +156,24 @@ def _pen_layer_label(pen: Pen) -> str:
     return f"Pen: {pen.name}"
 
 
-def _placement_metadata_element(placement: ImagePlacement) -> ET.Element:
+def _resolution_metadata(resolution: WorkingResolution | None) -> dict[str, str]:
+    """Return the image/source size attributes describing a working resolution."""
+    if resolution is None:
+        return {}
+    image_width, image_height = resolution.target_size_px
+    source_width, source_height = resolution.source_size_px
+    return {
+        "image-width": str(image_width),
+        "image-height": str(image_height),
+        "source-width": str(source_width),
+        "source-height": str(source_height),
+    }
+
+
+def _placement_metadata_element(
+    placement: ImagePlacement,
+    resolution: WorkingResolution | None = None,
+) -> ET.Element:
     """Build the <penpath:image-placement> element for an SVG metadata block."""
     return ET.Element(
         f"{{{PENPATH_NAMESPACE}}}image-placement",
@@ -164,6 +182,7 @@ def _placement_metadata_element(placement: ImagePlacement) -> ET.Element:
             "y": f"{placement.y:.4f}",
             "width": f"{placement.width:.4f}",
             "height": f"{placement.height:.4f}",
+            **_resolution_metadata(resolution),
         },
     )
 
@@ -171,6 +190,7 @@ def _placement_metadata_element(placement: ImagePlacement) -> ET.Element:
 def add_placement_metadata(
     svg_path: str | Path,
     placement: ImagePlacement | tuple[float, float, float, float],
+    resolution: WorkingResolution | None = None,
 ) -> None:
     """Insert or replace penpath image-placement metadata in an existing SVG.
 
@@ -184,16 +204,23 @@ def add_placement_metadata(
         Path to the SVG file to update in place.
     placement : ImagePlacement | tuple[float, float, float, float]
         Image rectangle in paper millimetres: (x, y, width, height).
+    resolution : WorkingResolution | None, optional
+        Working resolution to record as image/source size attributes. When
+        omitted, the metadata keeps only the placement rectangle.
     """
     path = Path(svg_path)
     placement_value = _as_placement(placement)
+    resolution_attrs = "".join(
+        f' {key}="{value}"' for key, value in _resolution_metadata(resolution).items()
+    )
     metadata_xml = (
         f'<metadata xmlns:penpath="{PENPATH_NAMESPACE}">'
         f"<penpath:image-placement "
         f'x="{placement_value.x:.4f}" '
         f'y="{placement_value.y:.4f}" '
         f'width="{placement_value.width:.4f}" '
-        f'height="{placement_value.height:.4f}"/>'
+        f'height="{placement_value.height:.4f}"'
+        f"{resolution_attrs}/>"
         "</metadata>"
     )
 
@@ -318,6 +345,7 @@ def export_svg(
     image_dpi: int = 300,
     image_placement: ImagePlacement | tuple[float, float, float, float] | None = None,
     image_size_px: tuple[int, int] | None = None,
+    resolution: WorkingResolution | None = None,
 ) -> None:
     """Export geometries to SVG using svgwrite.
 
@@ -347,8 +375,11 @@ def export_svg(
         the rectangle is written as SVG metadata. ``image_size_px`` must
         also be provided.
     image_size_px : tuple[int, int], optional
-        Original image size (width, height) in pixels. Required when
+        Size of the image the geometries belong to, in pixels. Required when
         ``image_placement`` is provided.
+    resolution : WorkingResolution | None, optional
+        Working resolution to record as image/source size attributes. When
+        omitted, the metadata keeps only the placement rectangle.
     """
     if not pens:
         raise ValueError("At least one pen must be provided")
@@ -401,7 +432,7 @@ def export_svg(
         transformed_geometries = _scale_geometries_to_placement(
             valid_geometries, placement_value, image_size_px
         )
-        dwg.set_metadata(_placement_metadata_element(placement_value))
+        dwg.set_metadata(_placement_metadata_element(placement_value, resolution))
     else:
         transformed_geometries = _scale_and_translate_geometries(valid_geometries, paper, image_dpi)
 
