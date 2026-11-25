@@ -52,6 +52,12 @@ from penpath.core.models import (
     Project,
     SketchLinesPFM,
 )
+from penpath.core.output import (
+    GcodeError,
+    GcodeLayer,
+    PointOutsideBedError,
+    build_gcode,
+)
 from penpath.core.profiles import (
     PROFILE_FILE_VERSION,
     BedProfile,
@@ -108,6 +114,8 @@ __all__ = [
     "FeedProfile",
     "FilterPipeline",
     "FilterStep",
+    "GcodeError",
+    "GcodeLayer",
     "GcodeProfile",
     "GrayscaleMethod",
     "ImageLoadError",
@@ -125,6 +133,7 @@ __all__ = [
     "PenChangeStep",
     "PenProfile",
     "PenStroke",
+    "PointOutsideBedError",
     "ProfileError",
     "ProfileFileError",
     "ProfileParseError",
@@ -138,6 +147,7 @@ __all__ = [
     "apply_working_resolution",
     "box_blur",
     "brightness",
+    "build_gcode",
     "compute_likeness",
     "compute_machine_cost",
     "contrast",

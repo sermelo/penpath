@@ -70,6 +70,37 @@
 - **Update**: `pytest --update-golden` (CI fails if golden files drift)
 - **Scope**: One per major pipeline configuration (basic, high-density, multi-pen, etc.)
 
+#### Golden G-code files (LUC-51 part 3)
+
+The G-code emitter has its own golden files because its output is text: one
+exact file per built-in profile.
+
+- **Location**: `tests/fixtures/golden/gcode/<profile>.gcode` for expected text;
+  `tests/fixtures/svg/gcode/<name>.svg` for the input drawings. `simple.svg`
+  holds one layer with two known polylines.
+- **Format**: the produced text is compared byte for byte (UTF-8, LF line
+  endings, one trailing newline). The test
+  `tests/integration/test_gcode_golden.py` loads the built-in profile through
+  `load_profile`, parses the fixture SVG with `parse_svg_strokes`, runs
+  `build_gcode` and compares the bytes.
+- **Regenerate only with an explicit flag or env var**, never by hand:
+
+  ```bash
+  uv run pytest tests/integration/test_gcode_golden.py --update-golden
+  PENPATH_UPDATE_GOLDEN=1 uv run pytest tests/integration/test_gcode_golden.py
+  ```
+
+  The flag writes the golden file from the emitter's real output. Review the
+  diff before committing it: a golden only changes when the intended G-code
+  shape changes (a D6/D7 decision, or a deliberate edit to the built-in
+  profile). A changed profile value must be made in the profile YAML, not in
+  the golden. CI runs without the flag and fails on any drift.
+- **Coverage**: the golden pins the header, verbatim start/end blocks, layer
+  comments, coordinate mapping (Y flip, pen offset, placement), the pen
+  up/down state machine and the draw feed in one byte-for-byte check. Unit
+  tests in `tests/unit/core/output/test_gcode.py` cover the same rules with
+  synthetic profiles, including the out-of-bed error.
+
 ---
 
 ## Test Data
