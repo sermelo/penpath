@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+from itertools import pairwise
 
 import numpy as np
 import pytest
@@ -18,16 +19,35 @@ class TestSketchLinesSettings:
 
     def test_default_settings(self):
         settings = SketchLinesSettings()
-        assert settings.line_density == 1.0
-        assert settings.min_length == 10.0
-        assert settings.max_length == 100.0
-        assert settings.angle_range == (0.0, 360.0)
-        assert settings.shading_enabled is True
-        assert settings.squiggle_enabled is True
+        assert settings.line_density == 0.75
+        assert settings.min_length == 2.0
+        assert settings.max_length == 40.0
+        assert settings.angle_range == (-72.0, -52.0)
+        assert settings.shading_enabled is False
+        assert settings.squiggle_enabled is False
         assert settings.erase_enabled is True
         assert settings.seed is None
-        assert settings.search_angle_step == 5.0
+        assert settings.search_angle_step == 18.0
         assert settings.sample_step == 10.0
+        assert settings.erase_min == 35.0
+        assert settings.erase_max == 80.0
+        assert settings.tone == 0.5
+        assert settings.erase_radius_min == 1.0
+        assert settings.erase_radius_max == 1.0
+        assert settings.squiggle_max_deviation == 0.25
+        assert settings.squiggle_min_length == 50
+        assert settings.squiggle_max_length == 500
+        assert settings.max_strokes is None
+
+    def test_erase_bounds_and_squiggle_lengths_validated(self):
+        with pytest.raises(ValueError):
+            SketchLinesSettings(erase_min=200.0, erase_max=100.0)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(squiggle_min_length=600, squiggle_max_length=500)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(tone=1.5)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(erase_radius_min=5.0, erase_radius_max=2.0)
 
     def test_custom_settings(self):
         settings = SketchLinesSettings(
@@ -59,9 +79,10 @@ class TestSketchLinesSettings:
 
     def test_angle_range_validation_bounds(self):
         with pytest.raises(ValueError):
-            SketchLinesSettings(angle_range=(-10.0, 90.0))
+            SketchLinesSettings(angle_range=(-400.0, -52.0))
         with pytest.raises(ValueError):
-            SketchLinesSettings(angle_range=(90.0, 370.0))
+            SketchLinesSettings(angle_range=(-72.0, 370.0))
+        assert SketchLinesSettings(angle_range=(-72.0, -52.0)).angle_range == (-72.0, -52.0)
 
     def test_line_density_bounds(self):
         with pytest.raises(ValueError):
@@ -371,6 +392,46 @@ class TestSketchLinesAlgorithm:
                 assert 0 <= x < img.width, f"x={x} out of bounds [0, {img.width})"
                 assert 0 <= y < img.height, f"y={y} out of bounds [0, {img.height})"
 
+    def test_no_strokes_link_across_the_page(self):
+        """A new squiggle must not be joined to the previous one with a travel line."""
+        img = Image.new("L", (200, 200), 255)
+        pixels = img.load()
+        for y in range(20, 60):
+            for x in range(20, 60):
+                pixels[x, y] = 0
+        for y in range(140, 180):
+            for x in range(140, 180):
+                pixels[x, y] = 0
+
+        lines = sketch_lines(img, SketchLinesSettings(seed=42, squiggle_enabled=False))
+        assert lines
+        for line in lines:
+            coords = list(line.coords)
+            for (x0, y0), (x1, y1) in pairwise(coords):
+                assert math.hypot(x1 - x0, y1 - y0) <= 100.0
+
+    def test_erase_disabled_stops_at_hard_cap_and_is_denser(self):
+        """Without erasing the image cannot lighten, so only the stroke cap stops it."""
+        img = self._create_test_image()
+        dark = sketch_lines(
+            img,
+            SketchLinesSettings(seed=42, erase_enabled=False, max_strokes=25),
+        )
+        erased = sketch_lines(
+            img,
+            SketchLinesSettings(seed=42, erase_enabled=True, max_strokes=25),
+        )
+        assert len(dark) == 25
+        assert sum(line.length for line in dark) > sum(line.length for line in erased)
+
+    def test_gradient_starts_spread_across_the_image(self):
+        """Erasing moves the next stroke away from the darkest corner."""
+        img = self._create_gradient_image(200, 200)
+        lines = sketch_lines(img, SketchLinesSettings(seed=42))
+        starts = [line.coords[0] for line in lines]
+        assert len(lines) >= 3
+        assert max(x for x, _ in starts) - min(x for x, _ in starts) > 100
+
 
 class TestBresenhamLine:
     """Tests for internal Bresenham line function."""
@@ -414,7 +475,7 @@ class TestBresenhamLine:
 
 
 class TestSampleLineLuminance:
-    """Tests for internal line luminance sampling."""
+    """Tests for the running-mean luminance endpoint rule."""
 
     def _sample_line_luminance(
         self,
@@ -429,33 +490,31 @@ class TestSampleLineLuminance:
 
         return _sample_line_luminance(luminance, x0, y0, x1, y1, min_length)
 
-    def test_uniform_luminance(self):
-        luminance = np.full((100, 100), 128.0, dtype=np.float32)
+    def test_endpoint_is_darkest_window(self):
+        luminance = np.full((100, 100), 200.0, dtype=np.float64)
+        luminance[10, 20:26] = 10.0
+        avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 60, 10, 2)
+        assert 20 <= ex <= 25
+        assert ey == 10
+        assert avg < 200.0
+
+    def test_uniform_luminance_stops_at_first_valid_prefix(self):
+        luminance = np.full((100, 100), 128.0, dtype=np.float64)
         avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 50, 10, 5)
         assert abs(avg - 128.0) < 0.1
-        assert ex == 50
+        assert ex == 15
         assert ey == 10
 
-    def test_dark_line(self):
-        luminance = np.full((100, 100), 200.0, dtype=np.float32)
-        luminance[10, 10:51] = 50.0  # Dark horizontal line
-        avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 50, 10, 5)
-        assert avg < 100.0
-        assert ex == 50
-        assert ey == 10
-
-    def test_too_short_line(self):
-        luminance = np.full((100, 100), 128.0, dtype=np.float32)
+    def test_too_short_line_uses_last_valid_pixel(self):
+        luminance = np.full((100, 100), 128.0, dtype=np.float64)
         avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 12, 10, 5)
-        assert avg == 255.0  # Too short, returns max luminance
-        assert ex == 10
-        assert ey == 10
+        assert abs(avg - 128.0) < 0.1
+        assert (ex, ey) == (12, 10)
 
-    def test_out_of_bounds(self):
-        luminance = np.full((100, 100), 128.0, dtype=np.float32)
+    def test_out_of_bounds_stops_at_edge(self):
+        luminance = np.full((100, 100), 128.0, dtype=np.float64)
         _avg, ex, _ey = self._sample_line_luminance(luminance, 10, 10, 150, 10, 5)
-        # Should stop at boundary
-        assert ex < 100
+        assert 0 <= ex < 100
 
 
 class TestFindDarkestPixel:
@@ -497,11 +556,10 @@ class TestFindDarkestLine:
         y0: int,
         min_length: int,
         max_length: int,
-        start_angle: float,
-        angle_step: float,
-        num_tests: int,
         shading: bool,
-        rng: random.Random,
+        start_angle: float,
+        num_tests: int,
+        shading_angle: float,
     ) -> tuple[float, int, int]:
         from penpath.core.drawing.pfm_sketch_lines import _find_darkest_line
 
@@ -511,29 +569,26 @@ class TestFindDarkestLine:
             y0,
             min_length,
             max_length,
-            start_angle,
-            angle_step,
-            num_tests,
             shading,
-            rng,
+            start_angle,
+            num_tests,
+            shading_angle,
         )
 
     def test_finds_dark_direction(self):
-        luminance = np.full((100, 100), 200.0, dtype=np.float32)
-        # Dark line going right from center
-        luminance[50, 50:80] = 50.0
-        rng = random.Random(42)
-        avg, ex, _ey = self._find_darkest_line(luminance, 50, 50, 5, 30, 0.0, 45.0, 8, False, rng)
+        luminance = np.full((100, 100), 200.0, dtype=np.float64)
+        luminance[50, 50:80] = 10.0
+        avg, ex, ey = self._find_darkest_line(luminance, 50, 50, 2, 30, False, 0.0, 8, 180.0)
         assert avg < 150.0
-        assert ex > 50  # Should go right
+        assert ex > 50
+        assert ey == 50
 
-    def test_shading_mode_two_directions(self):
-        luminance = np.full((100, 100), 128.0, dtype=np.float32)
-        rng = random.Random(42)
-        _avg, ex, ey = self._find_darkest_line(luminance, 50, 50, 5, 30, 90.0, 45.0, 8, True, rng)
-        # In shading mode, only tests 2 directions (90 and 270)
+    def test_shading_mode_only_tests_two_opposite_directions(self):
+        luminance = np.full((100, 100), 128.0, dtype=np.float64)
+        _avg, ex, ey = self._find_darkest_line(luminance, 50, 50, 2, 30, True, 90.0, 8, 180.0)
         assert 0 <= ex < 100
         assert 0 <= ey < 100
+        assert abs(ex - 50) <= 1
 
 
 class TestAddSquiggle:
@@ -580,41 +635,51 @@ class TestAddSquiggle:
             assert abs(x) <= 5.0  # Within max_deviation
 
 
-class TestShouldErase:
-    """Tests for erase probability."""
+class TestErase:
+    """Tests for the reference erase model."""
 
-    def _should_erase(
-        self,
-        luminance: np.ndarray,
-        x: int,
-        y: int,
-        erase_min: float,
-        erase_max: float,
-        tone: float,
-        rng: random.Random,
-    ) -> bool:
-        from penpath.core.drawing.pfm_sketch_lines import _should_erase
+    def test_dark_pixel_erases_less_than_light_pixel(self):
+        from penpath.core.drawing.pfm_sketch_lines import _erase_amount
 
-        return _should_erase(luminance, x, y, erase_min, erase_max, tone, rng)
+        dark = _erase_amount(0.0, 50.0, 125.0, 0.5)
+        light = _erase_amount(255.0, 50.0, 125.0, 0.5)
+        assert dark == 50
+        assert light == 125
+        assert dark < light
 
-    def test_dark_pixel_less_likely_erase(self):
-        luminance = np.full((100, 100), 50.0, dtype=np.float32)  # Dark
-        rng = random.Random(42)
-        # Dark pixels should be less likely to erase (lower erase threshold)
-        erase_count = sum(
-            1 for _ in range(1000) if self._should_erase(luminance, 50, 50, 1.0, 255.0, 0.5, rng)
-        )
-        # With dark pixel (lum=50/255=0.196), threshold should be low
-        assert erase_count < 200  # Less than 20% erase rate
+    def test_drawing_lightens_the_working_image_toward_white(self):
+        from penpath.core.drawing.pfm_sketch_lines import _apply_erase
 
-    def test_light_pixel_more_likely_erase(self):
-        luminance = np.full((100, 100), 200.0, dtype=np.float32)  # Light
-        rng = random.Random(42)
-        erase_count = sum(
-            1 for _ in range(1000) if self._should_erase(luminance, 50, 50, 1.0, 255.0, 0.5, rng)
-        )
-        # With light pixel (lum=200/255=0.784), threshold should be higher
-        assert erase_count > 500  # More than 50% erase rate
+        working = np.zeros((20, 20), dtype=np.float64)
+        _apply_erase(working, 2, 10, 8, 10, 35.0, 80.0, 0.5, 1.0, 1.0)
+        assert working[10, 2] == 35.0
+        assert working[10, 8] == 35.0
+        assert working[10, 5] == 35.0
+        assert working[9, 5] == 35.0
+        assert working[10, 0] == 0.0
+
+        _apply_erase(working, 2, 10, 8, 10, 35.0, 80.0, 0.5, 1.0, 1.0)
+        assert working[10, 5] > 35.0
+        for _ in range(30):
+            _apply_erase(working, 2, 10, 8, 10, 35.0, 80.0, 0.5, 1.0, 1.0)
+        assert working[10, 5] == 255.0
+
+    def test_erase_brush_radius_covers_a_disk(self):
+        from penpath.core.drawing.pfm_sketch_lines import _apply_erase
+
+        working = np.zeros((20, 20), dtype=np.float64)
+        _apply_erase(working, 10, 10, 10, 10, 50.0, 125.0, 0.5, 2.0, 2.0)
+        assert working[10, 10] == 50.0
+        assert working[10, 12] == 50.0
+        assert working[8, 10] == 50.0
+        assert working[7, 10] == 0.0
+
+    def test_tone_blends_cubic_and_linear_progress(self):
+        from penpath.core.drawing.pfm_sketch_lines import _erase_amount
+
+        mid = 255.0 / 2
+        expected = int(50 + (0.5 * mid**3 / 255**3 + 0.5 * mid / 255) * 75)
+        assert _erase_amount(mid, 50.0, 125.0, 0.5) == expected
 
 
 if __name__ == "__main__":

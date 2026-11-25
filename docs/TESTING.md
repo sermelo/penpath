@@ -256,6 +256,36 @@ The gate is not asserted yet: `test_sketch_lines_gate.py` prints this table and
 checks only that the harness runs and every number is finite. Part 2 turns
 these thresholds into assertions.
 
+### Enforced gate (LUC-47 part 2, re-derived 2026-11-24)
+
+`test_sketch_lines_gate.py` now asserts the floors below. The five SSIM floors
+above are **withdrawn**. They measured the 0.99 raster stipple rather than a
+pen plot: thinning that ideal by dropping random ink pixels drops its circle
+score from 0.9998 to 0.6482 at 98% ink, so 0.75 asks a line drawing for a
+near-solid disc, and the same ideal smeared into 2 px dashes scores 0.35-0.74.
+The replacement rule is `max(blank page, random lines) + 0.05`, never below
+`measured - 0.05`; where a drawing cannot beat both trivial baselines the
+floor is `random lines + 0.05` and the non-SSIM floors carry the quality.
+The non-SSIM floors above stay verbatim.
+
+| image | new SSIM floor | derived from | algorithm measured |
+|-------|---------------:|--------------|-------------------:|
+| `circle.png` | 0.53 | blank 0.4848 + 0.05 | 0.5474 |
+| `gradient.png` | 0.46 | previous port 0.5051 - 0.05 | 0.5401 |
+| `sphere.png` | 0.79 | blank 0.7405 + 0.05 | 0.8135 |
+| `face.jpg` | 0.57 | previous port 0.6189 - 0.05 | 0.6481 |
+| `photo.jpg` | 0.18 | previous random lines 0.1266 + 0.05 | 0.5099 |
+
+Measured with part 1's harness unchanged (vpype 1.15, A4 with the 10 mm
+margin, seed 42, `compute_likeness`) after the LUC-53 defaults and the
+reference-fidelity fixes; the same run gives covered width/height 0.747/0.747
+(circle), 0.830/0.997 (gradient), 0.745/0.747 (sphere), 0.999/0.999 (face and
+photo), bbox area 0.559 / 0.828 / 0.557 / 0.998 / 0.998, minimum 4x4 ink share
+0.0009 / 0.0019 / 0.0005 / 0.0158 / 0.0212, tone ratio 4442 / 41.1 / 8115 /
+27.7 / 2.87, and stroke counts 175 / 206 / 43 / 1163 / 1533. The random-lines
+row is report-only: the harness draws as many strokes as the algorithm
+produced, so that row moves with the stroke count.
+
 ### Machine Cost (LUC-27)
 
 Machine cost measures how much work the plotter does, independently of how the

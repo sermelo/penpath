@@ -234,8 +234,8 @@ class TestSketchLinesPFM:
         """Test SketchLinesPFM with default settings."""
         pfm = SketchLinesPFM()
         assert pfm.pfm_type == "sketch_lines"
-        assert pfm.settings.line_density == 1.0
-        assert pfm.settings.min_length == 10.0
+        assert pfm.settings.line_density == 0.75
+        assert pfm.settings.min_length == 2.0
 
     def test_sketch_lines_pfm_custom(self):
         """Test SketchLinesPFM with custom settings."""
