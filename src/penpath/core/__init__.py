@@ -68,6 +68,7 @@ from penpath.core.profiles import (
     ProfileParseError,
     UnknownProfileError,
     get_user_profiles_path,
+    list_profile_sources,
     list_profiles,
     load_profile,
 )
@@ -149,6 +150,7 @@ __all__ = [
     "grayscale",
     "invert",
     "list_filters",
+    "list_profile_sources",
     "list_profiles",
     "load_image",
     "load_profile",

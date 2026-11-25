@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from penpath.cli.config import load_config
+from penpath.core import ProfileError, list_profile_sources, load_profile
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.image.load import load_image
 from penpath.core.image.pipeline import list_filters
@@ -198,6 +199,59 @@ def info_pfms(fmt: str) -> None:
 
     data = {"available_pfms": pfm_data, "presets": presets}
     _output_format(data, fmt)
+
+
+def _print_profile_table(profiles: list[dict[str, Any]]) -> None:
+    """Print profile rows as a compact table with readable descriptions."""
+    table = Table(title="Machine Profiles")
+    table.add_column("Name", no_wrap=True)
+    table.add_column("Source", no_wrap=True)
+    table.add_column("Bed (mm)", no_wrap=True)
+    table.add_column("Travel", no_wrap=True)
+    table.add_column("Draw", no_wrap=True)
+    table.add_column("Z", no_wrap=True)
+    table.add_column("Description")
+    for row in profiles:
+        table.add_row(
+            row["name"],
+            row["source"],
+            f"{row['bed_width_mm']:g} x {row['bed_height_mm']:g}",
+            f"{row['travel_mm_s']:g}",
+            f"{row['draw_mm_s']:g}",
+            f"{row['z_mm_s']:g}",
+            row["description"],
+        )
+    console.print(table)
+
+
+@info_group.command(name="profiles")
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
+def info_profiles(fmt: str) -> None:
+    """List built-in and user machine profiles with their bed and feeds."""
+    try:
+        sources = list_profile_sources()
+        profile_data = []
+        for name, source in sources.items():
+            profile = load_profile(name)
+            profile_data.append(
+                {
+                    "name": name,
+                    "source": source,
+                    "description": profile.description,
+                    "bed_width_mm": profile.bed.size_mm[0],
+                    "bed_height_mm": profile.bed.size_mm[1],
+                    "travel_mm_s": profile.feed.travel_mm_s,
+                    "draw_mm_s": profile.feed.draw_mm_s,
+                    "z_mm_s": profile.feed.effective_z_mm_s,
+                }
+            )
+    except ProfileError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if fmt == "table":
+        _print_profile_table(profile_data)
+    else:
+        _output_format({"profiles": profile_data}, fmt)
 
 
 @info_group.command(name="filters")

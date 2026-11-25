@@ -396,6 +396,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `palettes` | List built-in palettes and their pens in drawing order |
 | `papers` | List built-in paper presets |
 | `pfms` | List available PFMs (MVP: only `sketch_lines`) |
+| `profiles` | List built-in and user machine profiles (source, description, bed size, feeds) |
 | `filters` | List available filters with parameters |
 | `image PATH` | Show image info (size, mode, EXIF, DPI, planned working resolution) |
 | `config` | Show resolved config (config + project + defaults) |
@@ -407,6 +408,13 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `--format json\|yaml\|table` | Output format (default: table) |
 | `--config PATH` (`-c`) | Config file path; sets the default paper and pen used for the planned working resolution |
 
+Every `info` subcommand writes to stdout: a rich table by default (colours are
+disabled when stdout is not a terminal) or one machine-readable document with
+`--format json` / `--format yaml`. `penpath info profiles --format json` prints
+one object with a `profiles` array, whose rows have `name`, `source`,
+`description`, `bed_width_mm`, `bed_height_mm`, `travel_mm_s`, `draw_mm_s` and
+`z_mm_s` (the Z feed falls back to the travel feed when the profile omits it).
+
 #### Examples
 
 ```bash
@@ -415,6 +423,8 @@ penpath info palettes
 penpath info palettes --format json
 penpath info papers --format yaml
 penpath info pfms
+penpath info profiles
+penpath info profiles --format json
 penpath info filters
 penpath info image photo.jpg
 penpath info image photo.jpg --format json
@@ -556,6 +566,160 @@ width = 300.0
 height = 200.0
 margin = 15.0
 ```
+
+---
+
+## Machine Profile Format (`profiles.yaml`)
+
+A machine profile holds every value `penpath gcode` needs to drive a plotter:
+bed geometry, feed rates, pen heights, verbatim G-code blocks and pen-change
+steps. Machine values live in the profile, never in penpath's code. Paper size,
+pen colours and pen widths stay in the reviewed SVG.
+
+### Where profiles live
+
+- **Built-in**: one YAML file per machine in `src/penpath/presets/profiles/`.
+  `generic` ships today. The profile name is the file name.
+- **User**: `$XDG_CONFIG_HOME/penpath/profiles.yaml`, or
+  `~/.config/penpath/profiles.yaml` when `XDG_CONFIG_HOME` is unset. One file
+  holds several machines as a mapping of names to profiles; a profile with a
+  built-in's name **overrides** the built-in.
+
+`penpath info profiles` lists both, marks the source of each (`built-in` or
+`user`) and shows its description, bed size and feeds. Creating or editing
+profiles is done by hand for now.
+
+### Complete example
+
+This profile is complete and loads unchanged. Save it as
+`~/.config/penpath/profiles.yaml` under a name (see below), or as a built-in
+file with the same body minus the outer name.
+
+```yaml
+version: 1
+name: my_plotter
+description: Example machine with a Z-lifted pen and an offset toolhead
+
+bed:
+  size_mm: [220.0, 220.0]              # physical bed, X and Y in mm
+  pen_offset_mm: [-22.7, -28.6]        # pen relative to the nozzle
+  nozzle_range_mm: [[0.0, 220.0], [0.0, 220.0]]  # where the nozzle may go
+  margin_mm: 2.0                       # keep the drawing this far from the edge
+  page:
+    placement: reachable_corner        # fixed | reachable_corner
+    origin_mm: [0.0, 0.0]              # pen-space page origin (fixed only)
+  invert_y: true                       # machine Y grows up, SVG Y grows down
+
+feed:
+  travel_mm_s: 100.0                   # G0 speed
+  draw_mm_s: 25.0                      # G1 speed
+  z_mm_s: 10.0                         # Z speed (optional, defaults to travel)
+
+pen:
+  z_up: 12.5                           # Z that lifts the pen
+  z_down: 9.0                          # Z that lowers the pen
+  z_touch: 10.0                        # Z where the pen touches the paper
+  z_hover: 10.5                        # Z just above the paper before landing
+  ramp_mm: 1.5                         # landing/lift distance (optional)
+  touch_xy_mm: [190.0, 12.0]           # pen-space spot where the pen is set
+  up_code: null                        # machines needing a command, not a Z
+  down_code: null
+
+gcode:
+  comment_prefix: ";"
+  start: |
+    G21
+    G90
+    G28
+  end: |
+    M2
+  layer_start: "; layer {layer_index}/{layer_count}, pen {pen} ({pen_index}/{pen_count})"
+  layer_end: ""
+
+pen_change:
+  mode: each                           # between | each | none
+  steps:
+    - {z: up, feed: z}
+    - {xy: touch, feed: travel}
+    - {raw: "M300 S1000 P300"}
+    - {message: "Change to {pen} ({pen_index}/{pen_count})"}
+    - {pause: "Press the knob"}
+```
+
+To put that example in your user file, indent the whole block under `my_plotter:`
+(two spaces); the inner `name:` key must match. Unknown keys are rejected so
+typos fail loudly. `version` must be `1`; `name`
+must be omitted or match the built-in file name or user mapping key. Required
+sections are `bed` (with `size_mm`), `feed` (with `travel_mm_s` and
+`draw_mm_s`) and `pen` (with `z_up` and `z_down`). All other keys above are
+optional; the shipped `generic.yaml` is a smaller, complete profile.
+
+### Profile fields
+
+| Key | Meaning |
+|-----|---------|
+| `description` | Text shown by `penpath info profiles`. |
+| `bed.size_mm` | Physical bed `[X, Y]` in millimetres; both must be positive. |
+| `bed.pen_offset_mm` | Pen position relative to the nozzle; the emitted G-code uses `nozzle = pen - offset`. Defaults to `[0, 0]`. |
+| `bed.nozzle_range_mm` | Optional `[[xmin, xmax], [ymin, ymax]]` for where the nozzle may travel. The drawable area is this range shifted by the pen offset and clipped to the bed; without it the bed itself is drawable. |
+| `bed.margin_mm` | Keep every point this far inside the drawable area. Defaults to `0`. |
+| `bed.page.placement` | `fixed` puts the page bottom-left at `origin_mm`; `reachable_corner` puts the page bottom-right at the drawable area's front-right corner. |
+| `bed.page.origin_mm` | Pen-space page origin used with `placement: fixed`. |
+| `bed.invert_y` | `true` when machine Y grows up while SVG Y grows down. Defaults to `true`. |
+| `feed.travel_mm_s` / `feed.draw_mm_s` | G0 / G1 speed in mm per second; both must be positive. |
+| `feed.z_mm_s` | Z speed; falls back to `travel_mm_s` when omitted. |
+| `pen.z_up` / `pen.z_down` | Pen-up and pen-down Z; `z_down` must be lower than `z_up`. |
+| `pen.z_touch` / `pen.z_hover` | Optional Z heights between down and up, used by the landing ramp and the pen change. |
+| `pen.ramp_mm` | Optional landing/lift distance; requires both `z_touch` and `z_hover`. |
+| `pen.touch_xy_mm` | Optional pen-space point where the pen is set during a pen change. |
+| `pen.up_code` / `pen.down_code` | Optional commands for machines that lift with a command instead of a Z move. |
+| `gcode.comment_prefix` | Comment prefix, `";"` by default. |
+| `gcode.start` / `gcode.end` | Verbatim G-code written once at the top / bottom of the file. |
+| `gcode.layer_start` / `gcode.layer_end` | Verbatim G-code written before / after each layer's strokes. |
+| `pen_change.mode` | `each` changes before every used layer including the first; `between` skips the first; `none` never changes. |
+| `pen_change.steps` | Ordered steps of one pen change. Each step has exactly one action: `z` (`up`, `down`, `touch`, `hover` or a number), `xy` (`touch` or `[x, y]`), `raw` (one verbatim G-code line), `message` (display text) or `pause` (operator pause). An optional `feed: travel\|draw\|z` selects the feed for `z` and `xy` moves. |
+
+### Placeholders
+
+`{pen}`, `{pen_index}`, `{pen_count}`, `{layer_index}` and `{layer_count}`
+work in every `pen_change` text (`raw`, `message`, `pause`) and in all `gcode`
+code blocks (`start`, `end`, `layer_start`, `layer_end`). Code blocks also
+accept the profile's own scalars: `{z_up}`, `{z_down}`, `{z_touch}`,
+`{z_hover}`, `{feed_travel}`, `{feed_draw}`, `{feed_z}`, `{ramp_mm}` and
+`{lead_in_mm}`.
+
+There are **no coordinate placeholders**. Code blocks are verbatim
+machine-space G-code, so any coordinate written in one is a literal number.
+The coordinates penpath manages (page placement and the pen-change touch spot)
+come from the profile's pen-space fields instead.
+
+### Coordinates: pen space vs machine space
+
+- The **SVG page** is millimetres, origin top-left, Y growing down.
+- **Pen space** is millimetres, origin at the bed's front-left corner, X to the
+  right and Y towards the back. `bed.page.origin_mm` and `pen.touch_xy_mm` are
+  pen space, as are the page and touch-spot coordinates the emitter computes.
+- **Machine space** is what the emitted G-code uses: nozzle coordinates. For
+  every pen-space point, `nozzle = pen - bed.pen_offset_mm`. Coordinates in
+  verbatim `gcode` blocks are already machine space and are passed through
+  unchanged.
+
+With `placement: fixed`, the page's bottom-left corner sits at
+`bed.page.origin_mm`. With `placement: reachable_corner`, the page's
+bottom-right corner sits at the drawable area's front-right corner
+(`x = drawable_x_max - page_width`, `y = drawable_y_min`). Stroke points map as:
+
+```
+X_pen = page_origin_x + x_svg
+Y_pen = page_origin_y + page_height - y_svg   # invert_y: true
+Y_pen = page_origin_y + y_svg                 # invert_y: false
+```
+
+For the example above, the pen offset `[-22.7, -28.6]` on a 220 x 220 mm bed
+with a 0..220 nozzle range gives a drawable area of X 0..197.3 mm and Y
+0..191.4 mm. Coordinates are written with three decimals (0.001 mm); a point
+outside the drawable area (minus `margin_mm`) fails the run with its
+coordinates instead of writing G-code the machine cannot follow.
 
 ---
 
