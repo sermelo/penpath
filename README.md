@@ -119,6 +119,25 @@ penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 ```
 
+### Working resolution
+
+Large photos are downscaled before drawing so they finish in seconds. Penpath
+uses one pixel per pen width on the longest side of the paper
+(`paper_longest_side_mm / pen_width_mm`, clamped to 256–1024 px), never enlarges
+the source, and scales the pixel-valued Sketch Lines settings with it. The
+chosen size is printed on stderr and recorded in the SVG metadata; the image
+rectangle on the page is unchanged. Override it with `--max-resolution` or keep
+all source pixels with `--no-downscale`:
+
+```bash
+penpath convert photo.jpg --paper 190x190 --pen 0.4
+# Working resolution: 475x358 px (source 4080x3072 px, scale 0.116)
+
+penpath convert photo.jpg --max-resolution 800
+penpath convert photo.jpg --no-downscale
+penpath info image photo.jpg  # shows the resolution penpath would plan
+```
+
 ---
 
 ## Project Files: Reproducible Workflows

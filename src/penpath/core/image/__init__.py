@@ -20,15 +20,26 @@ from penpath.core.image.pipeline import (
     get_filter,
     list_filters,
 )
+from penpath.core.image.resolution import (
+    MAX_WORKING_LONGEST_PX,
+    MIN_WORKING_LONGEST_PX,
+    WorkingResolution,
+    apply_working_resolution,
+    plan_working_resolution,
+)
 from penpath.core.image.separate import separate_palette
 
 __all__ = [
+    "MAX_WORKING_LONGEST_PX",
+    "MIN_WORKING_LONGEST_PX",
     "DitherMethod",
     "FilterPipeline",
     "FilterStep",
     "GrayscaleMethod",
     "ImageLoadError",
     "UnsupportedFormatError",
+    "WorkingResolution",
+    "apply_working_resolution",
     "box_blur",
     "brightness",
     "contrast",
@@ -39,6 +50,7 @@ __all__ = [
     "invert",
     "list_filters",
     "load_image",
+    "plan_working_resolution",
     "posterize",
     "separate_palette",
     "threshold",
