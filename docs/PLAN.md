@@ -86,13 +86,24 @@ penpath/
 - [ ] `core/image/pipeline.py` — `FilterPipeline` class: ordered steps, enable/disable, `apply(image) → image`
 - [ ] Unit tests: each filter, pipeline composition, EXIF orient
 
-### Phase 2: Sketch Lines PFM (2 tickets)
-- [ ] `core/drawing/pfm_sketch_lines.py` — port `PFMSketchLinesBasic.java`:
-    - Settings: line density, min/max length, angle range, shading on/off, squiggles, erasing, seed
+### Phase 2: Sketch Lines PFM (LUC-47, 3 tickets)
+**Acceptance criterion:** the shipped defaults must pass the SSIM-gated likeness
+test for all five reference images. The enforced floors — SSIM plus covered
+width/height, bounding-box area, ink spread and tone ratio — are recorded in
+[docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47), measured on the
+same image → SVG → strokes → simulator path used by `penpath convert` and
+`penpath evaluate`. Part 1 (LUC-52) defined the yardstick, part 2 (LUC-53)
+rewrote the algorithm to meet it, and part 3 (LUC-54) calibrated the defaults,
+documented every setting in [docs/CLI.md](CLI.md#pfm-settings-sketch-lines) and
+published the before/after evidence.
+
+- [x] `core/drawing/pfm_sketch_lines.py` — port `PFMSketchLinesBasic.java`:
+    - Settings: line density, min/max length, angle range, shading on/off, squiggles, erasing, seed, erase curve and brush, stop condition
     - Core algorithm: random-angle search, darkest-pixel sampling, shading branch, squiggle/erase helpers
     - Output: `list[LineString]` (shapely) in image coordinates
-- [ ] `core/drawing/registry.py` — `PFMRegistry` with `sketch_lines` entry; extensible for later PFMs
-- [ ] Unit tests: deterministic output with fixed seed, parameter bounds, output geometry validity
+- [x] `core/drawing/registry.py` — `PFMRegistry` with `sketch_lines` entry; extensible for later PFMs
+- [x] Unit tests: deterministic output with fixed seed, parameter bounds, output geometry validity
+- [x] Integration gate: `tests/integration/test_sketch_lines_gate.py` asserts the floors for all five reference images with the shipped defaults
 
 ### Phase 3: Geometry Optimization (2 tickets)
 - [ ] `core/geometry/simplify.py` — `simplify(lines, tolerance_mm, paper_dpi) → lines` via `shapely.simplify`
@@ -143,7 +154,7 @@ Eight parts in order, from the approved LUC-51 plan; one pull request each:
 |-----------|--------|-------------|
 | M0: Scaffold | Week 1 | Runnable `penpath config show` |
 | M1: Image Pipeline | Week 2 | `penpath convert --filter grayscale --filter threshold input.png -o out.svg` (no drawing yet) |
-| M2: Sketch Lines | Week 3 | Lines generated from filtered image |
+| M2: Sketch Lines | Week 3 | Sketch Lines PFM passes the SSIM-gated likeness test in [docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47) for all five reference images |
 | M3: Optimized SVG | Week 4 | `penpath convert input.png -o out.svg` produces plottable SVG |
 | M4: Project Files | Week 5 | `penpath convert --project project.yaml` round-trips |
 | M5: Release Prep | Week 6 | PyPI package, docs, CI green |
