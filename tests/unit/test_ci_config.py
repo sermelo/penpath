@@ -79,3 +79,49 @@ def test_python_classifiers_satisfy_requires_python() -> None:
         assert match is not None
         version = int(match.group(1)), int(match.group(2))
         assert version >= minimum, f"Classifier {classifier!r} is below requires-python {minimum}"
+
+
+def _ci_jobs() -> dict[str, dict[str, object]]:
+    workflow = yaml.safe_load((_WORKFLOWS_DIR / "ci.yml").read_text(encoding="utf-8"))
+    return workflow["jobs"]
+
+
+def _run_command(job: dict[str, object], step_name: str) -> str:
+    for step in job["steps"]:
+        if step.get("name") == step_name:
+            return str(step["run"])
+    raise AssertionError(f"No {step_name!r} step found in job")
+
+
+def _pytest_targets(command: str) -> list[str]:
+    tokens = command.split()
+    return [token for token in tokens[tokens.index("pytest") + 1 :] if not token.startswith("-")]
+
+
+def _needs(job: dict[str, object]) -> set[str]:
+    needs = job.get("needs", [])
+    if isinstance(needs, str):
+        return {needs}
+    return {str(entry) for entry in needs}
+
+
+def test_ci_splits_likeness_gate_from_rest_of_integration() -> None:
+    """The gate and the rest of integration run in separate parallel jobs."""
+    jobs = _ci_jobs()
+    gate = jobs["integration-gate"]
+    rest = jobs["integration-rest"]
+
+    assert _pytest_targets(_run_command(gate, "Run likeness gate")) == [
+        "tests/integration/test_sketch_lines_gate.py",
+        "tests/integration/test_gate_measures.py",
+    ]
+
+    rest_command = _run_command(rest, "Run integration tests")
+    assert _pytest_targets(rest_command) == ["tests/integration"]
+    assert "--ignore=tests/integration/test_sketch_lines_gate.py" in rest_command
+    assert "--ignore=tests/integration/test_gate_measures.py" in rest_command
+
+    assert "integration-gate" not in _needs(rest)
+    assert "integration-rest" not in _needs(gate)
+
+    assert "tests/unit" in _run_command(jobs["test"], "Run unit tests with coverage")
