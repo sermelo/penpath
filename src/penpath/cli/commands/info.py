@@ -14,6 +14,7 @@ from penpath.cli.config import load_config
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.image.load import load_image
 from penpath.core.image.pipeline import list_filters
+from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper, list_papers
 from penpath.presets.pens import get_pen, list_pens
 from penpath.presets.pfms import list_pfm_presets
@@ -145,6 +146,30 @@ def info_papers(fmt: str, config_path: Path | None) -> None:
         )
 
     data = {"builtin_papers": builtin_papers, "config_papers": config_papers}
+    _output_format(data, fmt)
+
+
+@info_group.command(name="palettes")
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
+def info_palettes(fmt: str) -> None:
+    """List built-in palettes and their pens in drawing order."""
+    builtin_palettes = []
+    palette_pens = []
+    for name in list_palettes():
+        palette = get_palette(name)
+        builtin_palettes.append({"name": name, "pen_count": len(palette.pens), "source": "builtin"})
+        for order, pen in enumerate(palette.pens, start=1):
+            palette_pens.append(
+                {
+                    "palette": name,
+                    "order": order,
+                    "name": pen.name,
+                    "width_mm": pen.width_mm,
+                    "color": pen.color,
+                }
+            )
+
+    data = {"builtin_palettes": builtin_palettes, "palette_pens": palette_pens}
     _output_format(data, fmt)
 
 
@@ -312,7 +337,8 @@ def info_config(fmt: str, config_path: Path | None, project_path: Path | None) -
                 "input": str(project.image.path),
                 "filters": project.image.filters.to_dict(),
                 "paper": project.paper.model_dump(),
-                "pen": project.pen.model_dump(),
+                "pen": project.palette[0].model_dump(),
+                "pens": [pen.model_dump() for pen in project.palette],
                 "pfm": project.pfm.model_dump(),
                 "output": str(project.output_path),
             }

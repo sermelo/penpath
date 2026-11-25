@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
+from pydantic import ValidationError
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -24,10 +25,11 @@ from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
-from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM
+from penpath.core.models import ImageRef, Palette, Paper, Pen, Project, SketchLinesPFM
 from penpath.core.output.svg import add_placement_metadata, export_svg, fit_image_placement
 from penpath.core.output.vpype import run_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
+from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper
 from penpath.presets.pens import get_pen
 from penpath.presets.pfms import DEFAULT_PFM, get_pfm_preset, list_pfm_presets
@@ -155,6 +157,49 @@ def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
     raise click.BadParameter(
         f"Unknown pen: '{pen_spec}'. Use a preset name or inline format 'width,color,type'"
     )
+
+
+def _resolve_palette(palette_spec: str) -> Palette:
+    """Resolve a built-in palette name or an inline 'name=width,#hex;...' list."""
+    if palette_spec in list_palettes():
+        return get_palette(palette_spec)
+
+    pens: list[Pen] = []
+    for index, entry in enumerate(palette_spec.split(";"), start=1):
+        if "=" not in entry:
+            raise click.BadParameter(
+                f"Invalid palette pen {index}: '{entry}'. Use NAME=WIDTH,#HEX",
+                param_hint="palette",
+            )
+        name, value = entry.split("=", 1)
+        parts = value.split(",")
+        if len(parts) != 2:
+            raise click.BadParameter(
+                f"Invalid palette pen {index}: '{entry}'. Use NAME=WIDTH,#HEX",
+                param_hint="palette",
+            )
+        try:
+            pens.append(
+                Pen(
+                    name=name.strip(),
+                    width_mm=float(parts[0].strip()),
+                    color=parts[1].strip(),
+                )
+            )
+        except (ValidationError, ValueError) as e:
+            raise click.BadParameter(
+                f"Invalid palette pen {index}: '{entry}'. {e}",
+                param_hint="palette",
+            ) from e
+
+    return Palette(name="inline", pens=pens)
+
+
+def _apply_palette(project: Project, palette: Palette) -> None:
+    """Put an ordered palette on a project, replacing any single pen."""
+    project.pens = list(palette.pens)
+    project.pen = None
+    project.palette_name = palette.name if palette.name in list_palettes() else None
 
 
 def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
@@ -293,6 +338,9 @@ def _run_convert_pipeline(
     task_id: TaskID,
 ) -> list[LineString]:
     """Run the full conversion pipeline and return optimized lines."""
+    # Until colour separation lands, the whole image uses the first palette pen.
+    pen = project.palette[0]
+
     # Step 1: Load image
     progress.update(task_id, description="Loading image...", advance=10)
     image = load_image(project.image.path)
@@ -337,7 +385,7 @@ def _run_convert_pipeline(
             svg_bytes = run_vpype(
                 optimized_lines,
                 project.paper,
-                [project.pen],
+                [pen],
                 vpype_path,
                 image_placement,
                 image_size_px,
@@ -354,7 +402,7 @@ def _run_convert_pipeline(
             export_svg(
                 optimized_lines,
                 project.paper,
-                [project.pen],
+                [pen],
                 project.output_path,
                 project.image.dpi,
                 image_placement,
@@ -364,7 +412,7 @@ def _run_convert_pipeline(
         export_svg(
             optimized_lines,
             project.paper,
-            [project.pen],
+            [pen],
             project.output_path,
             project.image.dpi,
             image_placement,
@@ -405,6 +453,11 @@ def _run_convert_pipeline(
     help="PFM setting override (repeatable). Format: KEY=VALUE",
 )
 @click.option("--pen", "pen_spec", help="Pen preset or inline 'width,color,type'")
+@click.option(
+    "--palette",
+    "palette_spec",
+    help="Built-in palette name or inline 'name=width,#hex;name2=width,#hex'",
+)
 @click.option("--paper", "paper_spec", help="Paper preset or inline 'WIDTHxHEIGHT[,margins]'")
 @click.option("--no-vpype", is_flag=True, help="Skip vpype optimization (use direct SVG export)")
 @click.option("--vpype-path", default="vpype", help="Path to vpype executable")
@@ -429,6 +482,7 @@ def convert_cmd(
     pfm_name: str | None,
     pfm_settings: tuple[str, ...],
     pen_spec: str | None,
+    palette_spec: str | None,
     paper_spec: str | None,
     no_vpype: bool,
     vpype_path: str,
@@ -441,6 +495,11 @@ def convert_cmd(
     INPUT_PATH: Path to input image (PNG, JPG, TIFF, BMP)
     OUTPUT_PATH: Output SVG path (default: <input>_plot.svg beside input)
     """
+    if pen_spec is not None and palette_spec is not None:
+        raise click.UsageError(
+            "Options --pen and --palette are mutually exclusive: use one or the other."
+        )
+
     resolved_output = _resolve_output_path(input_path, output_path, output_option)
 
     # Load config
@@ -460,6 +519,8 @@ def convert_cmd(
             project.pfm = _resolve_pfm(pfm_name, _parse_pfm_settings(pfm_settings))
         if pen_spec:
             project.pen = _resolve_pen(pen_spec, config)
+        if palette_spec:
+            _apply_palette(project, _resolve_palette(palette_spec))
         if paper_spec:
             project.paper = _resolve_paper(paper_spec, config)
         if resolved_output:
@@ -476,7 +537,16 @@ def convert_cmd(
         else:
             filter_pipeline = _build_filter_pipeline(list(filter_specs))
 
-        pen = _resolve_pen(pen_spec, config)
+        if palette_spec:
+            palette = _resolve_palette(palette_spec)
+            pen = None
+            pens = palette.pens
+            palette_name = palette.name if palette.name in list_palettes() else None
+        else:
+            pen = _resolve_pen(pen_spec, config)
+            pens = []
+            palette_name = None
+
         paper = _resolve_paper(paper_spec, config)
         pfm = _resolve_pfm(pfm_name, _parse_pfm_settings(pfm_settings))
         output = _determine_output_path(
@@ -487,6 +557,8 @@ def convert_cmd(
             image=ImageRef(path=input_path, filters=filter_pipeline, dpi=dpi),
             paper=paper,
             pen=pen,
+            pens=pens,
+            palette_name=palette_name,
             pfm=pfm,
             output_path=output,
         )

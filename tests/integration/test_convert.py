@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,6 +52,12 @@ def _convert(runner: CliRunner, image: Path, output: Path) -> Result:
         main,
         ["convert", str(image), "-o", str(output), "-s", "seed=42", "--no-vpype"],
     )
+
+
+def _stroke_geometry(path: Path) -> list[str]:
+    """Return the drawn paths of an SVG, ignoring pen name, colour and width."""
+    root = ET.parse(path).getroot()
+    return [el.get("d", "") for el in root.iter("{http://www.w3.org/2000/svg}path")]
 
 
 class TestConvertSeed:
@@ -126,3 +133,141 @@ class TestConvertSeed:
             assert result.exit_code == 0, result.output
 
         assert outputs[0].read_bytes() == outputs[1].read_bytes()
+
+
+class TestConvertPalette:
+    """A project file with a palette runs through the CLI as a user expects."""
+
+    def test_project_palette_key_produces_one_layer(
+        self, runner: CliRunner, reference_image: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "from_palette.svg"
+        project_path = tmp_path / "project.yaml"
+        project_path.write_text(
+            f"""version: 1
+image:
+  path: "{reference_image}"
+  filters:
+    steps: []
+  dpi: 300
+paper:
+  name: a4
+  width_mm: 210.0
+  height_mm: 297.0
+palette: stabilo_88
+pfm:
+  pfm_type: sketch_lines
+  settings:
+    seed: 42
+output_path: "{output}"
+"""
+        )
+        result = runner.invoke(
+            main,
+            ["convert", str(reference_image), "-p", str(project_path), "--no-vpype"],
+        )
+        assert result.exit_code == 0, result.output
+        svg = output.read_text()
+        assert 'inkscape:label="Pen: stabilo_88_yellow"' in svg
+        assert svg.count('inkscape:groupmode="layer"') == 2  # background + one pen
+
+    def test_palette_does_not_change_the_drawing(
+        self, runner: CliRunner, reference_image: Path, tmp_path: Path
+    ) -> None:
+        """With a fixed seed, a palette run draws exactly the same strokes."""
+        plain = tmp_path / "plain.svg"
+        palette = tmp_path / "palette.svg"
+        plain_result = _convert(runner, reference_image, plain)
+        palette_result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(reference_image),
+                "-o",
+                str(palette),
+                "-s",
+                "seed=42",
+                "--no-vpype",
+                "--palette",
+                "stabilo_88",
+            ],
+        )
+        assert plain_result.exit_code == 0, plain_result.output
+        assert palette_result.exit_code == 0, palette_result.output
+        assert _stroke_geometry(plain) == _stroke_geometry(palette)
+
+    def test_project_pens_list_uses_the_first_pen_once(
+        self, runner: CliRunner, reference_image: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "from_pens.svg"
+        project_path = tmp_path / "pens.yaml"
+        project_path.write_text(
+            f"""version: 1
+image:
+  path: "{reference_image}"
+  filters:
+    steps: []
+  dpi: 300
+paper:
+  name: a4
+  width_mm: 210.0
+  height_mm: 297.0
+pens:
+  - name: first
+    width_mm: 0.5
+    color: "#FF0000"
+  - name: second
+    width_mm: 0.4
+    color: "#0000FF"
+pfm:
+  pfm_type: sketch_lines
+  settings:
+    seed: 42
+output_path: "{output}"
+"""
+        )
+        result = runner.invoke(
+            main,
+            ["convert", str(reference_image), "-p", str(project_path), "--no-vpype"],
+        )
+        assert result.exit_code == 0, result.output
+        svg = output.read_text()
+        assert 'inkscape:label="Pen: first"' in svg
+        assert 'stroke="#FF0000"' in svg
+        assert "Pen: second" not in svg
+        assert svg.count('inkscape:groupmode="layer"') == 2  # background + one pen
+
+    def test_project_pen_and_palette_is_a_clear_error(
+        self, runner: CliRunner, reference_image: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "conflict.svg"
+        project_path = tmp_path / "conflict.yaml"
+        project_path.write_text(
+            f"""version: 1
+image:
+  path: "{reference_image}"
+  filters:
+    steps: []
+  dpi: 300
+paper:
+  name: a4
+  width_mm: 210.0
+  height_mm: 297.0
+pen:
+  name: fine
+  width_mm: 0.3
+palette: stabilo_88
+pfm:
+  pfm_type: sketch_lines
+  settings:
+    seed: 42
+output_path: "{output}"
+"""
+        )
+        result = runner.invoke(
+            main,
+            ["convert", str(reference_image), "-p", str(project_path), "--no-vpype"],
+        )
+        assert result.exit_code == 1
+        assert "mutually exclusive" in result.output
+        assert not output.exists()

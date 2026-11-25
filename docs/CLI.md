@@ -55,7 +55,16 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--pfm NAME` | — | `sketch_lines` | Path-finding module (only `sketch_lines` in MVP) |
 | `--pfm-setting KEY=VALUE` | `-s` | — | PFM-specific setting (repeatable). See **PFM Settings** below. |
 | `--pen NAME` | — | `default` | Pen preset name or `width,color,type` (e.g., `0.3,#000000,fineliner`) |
+| `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
 | `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,margins]` (e.g., `a4`, `210x297,10`) |
+
+A palette's order is the drawing order. Until colour separation lands, the
+whole image is still drawn with **one** pen — the first pen of the palette — so
+the SVG keeps a single pen layer. For `stabilo_88` that is
+`stabilo_88_yellow` (`#F7E300`); the remaining pens are listed by
+`penpath info palettes` and will get their layers when colour separation is
+implemented. `--pen` and `--palette` cannot be combined: penpath reports a
+usage error instead of choosing one silently.
 
 #### Output Options
 
@@ -146,6 +155,10 @@ penpath convert --project my_project.yaml
 
 # Override project settings
 penpath convert --project my_project.yaml --pen "0.5,#FF0000" -o red_plot.svg
+
+# Use a built-in palette or an inline ordered list
+penpath convert photo.jpg --palette stabilo_88
+penpath convert photo.jpg --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E"
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
@@ -254,6 +267,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | Subcommand | Description |
 |------------|-------------|
 | `pens` | List built-in pen presets |
+| `palettes` | List built-in palettes and their pens in drawing order |
 | `papers` | List built-in paper presets |
 | `pfms` | List available PFMs (MVP: only `sketch_lines`) |
 | `filters` | List available filters with parameters |
@@ -270,6 +284,8 @@ penpath info [SUBCOMMAND] [OPTIONS]
 
 ```bash
 penpath info pens
+penpath info palettes
+penpath info palettes --format json
 penpath info papers --format yaml
 penpath info pfms
 penpath info filters
@@ -353,6 +369,17 @@ pen:
   # width_mm: 0.3
   # color: "#000000"
 
+# Instead of `pen`, use a built-in palette:
+# palette: stabilo_88
+# Or an explicit ordered list of pens (drawing order):
+# pens:
+#   - name: my_red
+#     width_mm: 0.4
+#     color: "#E4002B"
+#   - name: my_blue
+#     width_mm: 0.4
+#     color: "#1B4C9E"
+
 paper:
   name: a4
   # or inline:
@@ -364,6 +391,11 @@ output:
   vpype: true
   layer_per_pen: true
 ```
+
+`pen:`, `palette:` and `pens:` are mutually exclusive: a project file that
+sets more than one of them fails to load with a clear error. A file with only
+`pen:` keeps its old meaning (one pen). `save_yaml` writes a built-in palette
+back as `palette:` and an explicit list back as `pens:`.
 
 **Minimal Example**:
 ```yaml
@@ -413,6 +445,14 @@ margin = 15.0
 | `green_fine` | 0.3 | Green | Green accent |
 
 **Inline Format**: `WIDTH,COLOR` — e.g., `0.4,#FF6600` (color defaults to black if omitted)
+
+---
+
+## Palette Presets (Built-in)
+
+| Name | Pens | Width | Drawing order |
+|------|------|-------|---------------|
+| `stabilo_88` | 12 Stabilo Point 88 colours | 0.4 mm | light → dark, as listed by `penpath info palettes` |
 
 ---
 

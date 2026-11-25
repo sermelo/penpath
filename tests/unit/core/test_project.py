@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 
 from penpath.core.image.pipeline import FilterPipeline
 from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM
@@ -15,6 +17,7 @@ from penpath.core.project import (
     load_yaml,
     save_yaml,
 )
+from penpath.presets.palettes import get_palette
 
 
 class TestLoadYaml:
@@ -515,6 +518,126 @@ output_path: output.svg
         )
         with pytest.raises(ProjectLoadError, match="validation failed"):
             load_yaml(invalid_file)
+
+
+def _yaml_data(tmp_path: Path) -> dict[str, Any]:
+    img_path = tmp_path / "input.png"
+    img_path.write_bytes(b"fake png")
+    return {
+        "version": PROJECT_FILE_VERSION,
+        "image": {"path": str(img_path), "filters": {"steps": []}, "dpi": 300},
+        "paper": {"name": "a4", "width_mm": 210.0, "height_mm": 297.0},
+        "pfm": {"pfm_type": "sketch_lines", "settings": {}},
+        "output_path": str(tmp_path / "output.svg"),
+    }
+
+
+def _write_yaml(tmp_path: Path, data: dict[str, Any], filename: str = "project.yaml") -> Path:
+    path = tmp_path / filename
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return path
+
+
+class TestPaletteProjectFiles:
+    """Palette and pen-list keys in project files."""
+
+    def test_old_project_with_pen_still_loads(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.pen is not None
+        assert project.palette == [project.pen]
+        assert project.palette_name is None
+
+    def test_palette_name_expands_to_ordered_pens(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["palette"] = "stabilo_88"
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.pen is None
+        assert project.palette_name == "stabilo_88"
+        assert [pen.name for pen in project.palette] == [
+            pen.name for pen in get_palette("stabilo_88").pens
+        ]
+
+    def test_explicit_pens_keep_their_order(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pens"] = [
+            {"name": "first", "width_mm": 0.4, "color": "#FF0000"},
+            {"name": "second", "width_mm": 0.4, "color": "#0000FF"},
+        ]
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert [pen.name for pen in project.palette] == ["first", "second"]
+        assert project.palette_name is None
+
+    def test_unknown_palette_is_a_clear_error(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["palette"] = "missing"
+        with pytest.raises(ProjectLoadError, match="Unknown palette: missing"):
+            load_yaml(_write_yaml(tmp_path, data))
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"pen": {"name": "fine", "width_mm": 0.3}, "palette": "stabilo_88"},
+            {
+                "palette": "stabilo_88",
+                "pens": [{"name": "first", "width_mm": 0.4}],
+            },
+            {
+                "pen": {"name": "fine", "width_mm": 0.3},
+                "pens": [{"name": "first", "width_mm": 0.4}],
+            },
+        ],
+    )
+    def test_pen_fields_are_mutually_exclusive(self, tmp_path: Path, extra: dict[str, Any]) -> None:
+        data = _yaml_data(tmp_path)
+        data.update(extra)
+        with pytest.raises(ProjectLoadError, match="mutually exclusive"):
+            load_yaml(_write_yaml(tmp_path, data))
+
+    def test_save_round_trips_builtin_palette_name(self, tmp_path: Path) -> None:
+        base = _yaml_data(tmp_path)
+        project = Project(
+            image=ImageRef(path=base["image"]["path"], filters=FilterPipeline(), dpi=300),
+            paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
+            pen=None,
+            pens=get_palette("stabilo_88").pens,
+            palette_name="stabilo_88",
+            pfm=SketchLinesPFM(),
+            output_path=base["output_path"],
+        )
+        path = tmp_path / "palette.yaml"
+        save_yaml(project, path)
+        content = path.read_text()
+        assert "# Built-in palette (drawing order)" in content
+        assert "palette: stabilo_88" in content
+        assert "pens:" not in content
+
+        loaded = load_yaml(path)
+        assert loaded.palette_name == "stabilo_88"
+        assert [pen.name for pen in loaded.palette] == [pen.name for pen in project.palette]
+
+    def test_save_round_trips_explicit_pens(self, tmp_path: Path) -> None:
+        base = _yaml_data(tmp_path)
+        pens = [Pen(name="first", width_mm=0.4, color="#FF0000")]
+        project = Project(
+            image=ImageRef(path=base["image"]["path"], filters=FilterPipeline(), dpi=300),
+            paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
+            pen=None,
+            pens=pens,
+            pfm=SketchLinesPFM(),
+            output_path=base["output_path"],
+        )
+        path = tmp_path / "pens.yaml"
+        save_yaml(project, path)
+        content = path.read_text()
+        assert "# Ordered pens (drawing order)" in content
+        assert "pens:" in content
+        assert "palette:" not in content
+
+        loaded = load_yaml(path)
+        assert loaded.palette == pens
+        assert loaded.palette_name is None
 
 
 if __name__ == "__main__":

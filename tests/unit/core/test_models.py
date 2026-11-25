@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from penpath.core.models import (
     ImageRef,
+    Palette,
     Paper,
     Pen,
     PFMSettings,
@@ -86,6 +87,26 @@ class TestPen:
         """Test vpype layer name generation."""
         pen = Pen(name="fine", width_mm=0.3)
         assert pen.to_vpype_layer_name() == "pen-fine"
+
+
+class TestPalette:
+    """Tests for the Palette model."""
+
+    def test_palette_round_trips_in_drawing_order(self):
+        palette = Palette(
+            name="custom",
+            pens=[
+                Pen(name="first", width_mm=0.4, color="#FF0000"),
+                Pen(name="second", width_mm=0.5),
+            ],
+        )
+        restored = Palette.model_validate(palette.model_dump())
+        assert restored == palette
+        assert [pen.name for pen in restored.pens] == ["first", "second"]
+
+    def test_palette_requires_at_least_one_pen(self):
+        with pytest.raises(ValidationError):
+            Palette(name="empty", pens=[])
 
 
 class TestPaper:
@@ -234,6 +255,19 @@ class TestSketchLinesPFM:
         assert typed.seed is None
 
 
+def _project_kwargs(tmp_path: Path) -> dict[str, object]:
+    from penpath.core.image.pipeline import FilterPipeline
+
+    img_path = tmp_path / "input.png"
+    img_path.write_bytes(b"fake png")
+    return {
+        "image": ImageRef(path=img_path, filters=FilterPipeline(), dpi=300),
+        "paper": Paper(name="a4", width_mm=210.0, height_mm=297.0),
+        "pfm": SketchLinesPFM(),
+        "output_path": tmp_path / "output.svg",
+    }
+
+
 class TestProject:
     """Tests for Project model."""
 
@@ -293,6 +327,40 @@ class TestProject:
         assert vpype_data["pen_width_mm"] == 0.3
         assert vpype_data["pen_color"] == "#FF0000"
         assert vpype_data["pen_opacity"] == 0.8
+
+    def test_palette_returns_pens_in_given_order(self, tmp_path):
+        """An explicit pen list is the effective palette, in order."""
+        pens = [Pen(name="first", width_mm=0.4), Pen(name="second", width_mm=0.4)]
+        project = Project(**_project_kwargs(tmp_path), pen=None, pens=pens)
+        assert [pen.name for pen in project.palette] == ["first", "second"]
+
+    def test_palette_falls_back_to_single_pen(self, tmp_path):
+        """Old-style projects still expose one effective pen."""
+        pen = Pen(name="fine", width_mm=0.3)
+        project = Project(**_project_kwargs(tmp_path), pen=pen)
+        assert project.palette == [pen]
+
+    def test_pen_and_pens_are_mutually_exclusive(self, tmp_path):
+        with pytest.raises(ValidationError, match="both 'pen' and 'pens'"):
+            Project(
+                **_project_kwargs(tmp_path),
+                pen=Pen(name="fine", width_mm=0.3),
+                pens=[Pen(name="other", width_mm=0.4)],
+            )
+
+    def test_project_requires_a_pen_or_pens(self, tmp_path):
+        with pytest.raises(ValidationError, match=r"either 'pen' or 'pens'"):
+            Project(**_project_kwargs(tmp_path))
+
+    def test_model_dump_for_vpype_uses_first_palette_pen(self, tmp_path):
+        pens = [
+            Pen(name="first", width_mm=0.4, color="#FF0000"),
+            Pen(name="second", width_mm=0.4, color="#0000FF"),
+        ]
+        project = Project(**_project_kwargs(tmp_path), pen=None, pens=pens)
+        data = project.model_dump_for_vpype()
+        assert data["layer_name"] == "pen-first"
+        assert data["pen_color"] == "#FF0000"
 
 
 if __name__ == "__main__":

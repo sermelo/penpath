@@ -34,6 +34,7 @@ from penpath.core.likeness import (
 )
 from penpath.core.models import (
     ImageRef,
+    Palette,
     Paper,
     Pen,
     PFMSettings,
@@ -101,6 +102,7 @@ __all__ = [
     "PFMSettings",
     "PFMSettingsUnion",
     "PageProfile",
+    "Palette",
     "Paper",
     "Pen",
     "PenChangeProfile",
