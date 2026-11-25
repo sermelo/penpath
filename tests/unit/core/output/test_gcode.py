@@ -139,6 +139,23 @@ def test_build_gcode_places_page_at_reachable_corner() -> None:
     assert "G1 X132.000 Y158.600 F1800\n" in produced
 
 
+def test_build_gcode_clips_drawable_area_to_restricted_nozzle_range() -> None:
+    profile = _profile(
+        bed={
+            "size_mm": [200.0, 200.0],
+            "pen_offset_mm": [-10.0, -10.0],
+            "nozzle_range_mm": [[20.0, 120.0], [20.0, 120.0]],
+        }
+    )
+
+    produced = build_gcode(_one_layer(((100.0, 100.0), (101.0, 100.0))), profile, (200.0, 200.0))
+
+    assert "G0 X110.000 Y110.000\n" in produced
+    with pytest.raises(PointOutsideBedError) as info:
+        build_gcode(_one_layer(((115.0, 100.0), (116.0, 100.0))), profile, (200.0, 200.0))
+    assert "X 10.000..110.000, Y 10.000..110.000" in str(info.value)
+
+
 @pytest.mark.parametrize(
     ("point", "bed", "expected"),
     [
@@ -228,3 +245,11 @@ def test_build_gcode_does_not_mutate_profile_or_layers() -> None:
 
     assert profile.model_dump() == original
     assert len(layers[0].polylines) == 1
+
+
+def test_build_gcode_with_no_drawn_layers_emits_only_wrapper() -> None:
+    produced = build_gcode([], _profile(), (10.0, 10.0))
+
+    assert (
+        produced == "; penpath gcode profile=test_machine z_up=4.000 z_down=1.000\nG21\nG90\nM2\n"
+    )
