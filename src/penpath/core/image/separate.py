@@ -52,8 +52,9 @@ def separate_palette(
     -------
     list[tuple[Pen, Image.Image]]
         One ``L``-mode image per pen, in the given pen order. Each image holds
-        the luminance of the pixels assigned to that pen and white elsewhere,
-        including pixels in a region smaller than eight connected pixels.
+        the luminance of the pixels assigned to that pen and white elsewhere.
+        A pixel assigned to a connected region smaller than eight pixels is
+        left white, so isolated specks do not become a pen's region.
 
     Raises
     ------

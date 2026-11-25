@@ -482,11 +482,18 @@ and scored with `measure_plot` against `photo.jpg`. The floors are the LUC-47
 floors verbatim: SSIM >= 0.18, covered width >= 0.60, covered height >= 0.60,
 bbox area >= 0.40, ink per 4x4 cell >= 0.0003 and dark/light tone ratio >= 2.0.
 
-| SSIM | cov W | cov H | bbox | ink min | tone ratio |
-|-----:|------:|------:|-----:|--------:|-----------:|
-| 0.3183 | 0.999 | 0.998 | 0.997 | 0.0427 | **1.6074** |
+| measure | before LUC-85 | after LUC-85 | floor | result |
+|---------|--------------:|-------------:|------:|--------|
+| SSIM | 0.3183 | 0.3122 | 0.18 | pass |
+| cov W | 0.999 | 0.999 | 0.60 | pass |
+| cov H | 0.998 | 0.998 | 0.60 | pass |
+| bbox | 0.997 | 0.997 | 0.40 | pass |
+| ink min | 0.0427 | 0.0453 | 0.0003 | pass |
+| tone ratio | 1.6074 | **1.6098** | 2.0 | recorded failure |
 
-Five floors pass. The tone ratio is a real regression of the palette drawing:
+Five floors pass. LUC-85 re-measures the tone ratio at 1.6098; it stays within
+the 0.05 tolerance that `KNOWN_UNION_FAILURES` pins for 1.6074, so the recorded
+failure is unchanged. The tone ratio remains a real regression of the palette drawing:
 the shipped Stabilo pens are 0.4 mm wide and their combined ink reaches too
 much of the photo's light areas. Simulating the same strokes with the gate's
 0.3 mm black pen gives a tone ratio of 2.2596 and SSIM 0.4645, so the miss is
@@ -517,22 +524,46 @@ floors account for it. Per-layer SSIM (`SSIM*` below) is evidence only, printed
 with all three baselines; it is not asserted. The blank page outscores the
 light-blue and brown drawings on SSIM, which is why it cannot carry the gate.
 
-Only three of the twelve palette pens produced strokes. Measured with seed 42:
+Only three of the twelve palette pens produced strokes. After LUC-85, measured
+with seed 42:
 
 | layer | strokes | region px | mode | SSIM* | recall | prec | ext W | ext H | bbox | cell |
 |-------|--------:|----------:|------|------:|-------:|-----:|------:|------:|-----:|-----:|
-| `stabilo_88_light_blue` | 73 | 8120 | algorithm | 0.5537 | 1.0748 | 0.0746 | 1.000 | 1.011 | 0.997 | 0.923 |
-| `stabilo_88_light_blue` | 73 | 8120 | blank | 0.7872 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 |
-| `stabilo_88_light_blue` | 73 | 8120 | random | 0.2418 | 0.1802 | 0.0378 | 1.001 | 0.998 | 0.998 | 1.000 |
-| `stabilo_88_light_blue` | 73 | 8120 | ideal | 0.9959 | 0.7372 | 0.0939 | 1.000 | 1.006 | 1.000 | 1.000 |
-| `stabilo_88_brown` | 5 | 4324 | algorithm | 0.9499 | 0.3481 | 0.8811 | 0.893 | 0.373 | 0.333 | 0.455 |
-| `stabilo_88_brown` | 5 | 4324 | blank | 0.9281 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 |
-| `stabilo_88_brown` | 5 | 4324 | random | 0.8145 | 0.0109 | 0.0151 | 0.868 | 0.673 | 0.584 | 0.636 |
-| `stabilo_88_brown` | 5 | 4324 | ideal | 0.9972 | 0.5985 | 0.9151 | 0.999 | 0.694 | 0.693 | 0.909 |
-| `stabilo_88_black` | 384 | 156631 | algorithm | 0.7523 | 0.9797 | 0.9968 | 1.003 | 1.004 | 1.000 | 1.000 |
-| `stabilo_88_black` | 384 | 156631 | blank | 0.5420 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 |
-| `stabilo_88_black` | 384 | 156631 | random | 0.0855 | 0.4504 | 0.5183 | 1.003 | 0.998 | 0.996 | 1.000 |
-| `stabilo_88_black` | 384 | 156631 | ideal | 0.9955 | 0.8502 | 0.9991 | 1.000 | 1.000 | 1.000 | 1.000 |
+| `stabilo_88_light_blue` | 73 | 7702 | algorithm | 0.5610 | 1.1143 | 0.0739 | 1.000 | 1.013 | 0.997 | 0.923 |
+| `stabilo_88_light_blue` | 73 | 7702 | blank | 0.7901 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| `stabilo_88_light_blue` | 73 | 7702 | random | 0.2420 | 0.1532 | 0.0305 | 1.001 | 1.000 | 0.998 | 1.000 |
+| `stabilo_88_light_blue` | 73 | 7702 | ideal | 0.9965 | 0.7466 | 0.0908 | 1.000 | 1.008 | 1.000 | 1.000 |
+| `stabilo_88_brown` | 14 | 2866 | algorithm | 0.9591 | 1.0412 | 0.8444 | 0.946 | 0.973 | 0.915 | 0.700 |
+| `stabilo_88_brown` | 14 | 2866 | blank | 0.9390 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| `stabilo_88_brown` | 14 | 2866 | random | 0.7211 | 0.0356 | 0.0158 | 0.933 | 2.544 | 0.866 | 0.600 |
+| `stabilo_88_brown` | 14 | 2866 | ideal | 0.9993 | 0.6172 | 0.9714 | 0.996 | 1.000 | 0.996 | 1.000 |
+| `stabilo_88_black` | 375 | 156412 | algorithm | 0.7538 | 0.9802 | 0.9968 | 1.003 | 1.004 | 1.000 | 1.000 |
+| `stabilo_88_black` | 375 | 156412 | blank | 0.5424 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| `stabilo_88_black` | 375 | 156412 | random | 0.0871 | 0.4454 | 0.5189 | 1.003 | 0.998 | 0.996 | 1.000 |
+| `stabilo_88_black` | 375 | 156412 | ideal | 0.9956 | 0.8504 | 0.9992 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+LUC-85's before/after numbers, re-measured with this region-relative gate (the
+LUC-84 recall/outside-ink figures no longer apply because LUC-86 replaced that
+measure with recall plus precision):
+
+| layer | measure | before | after | floor |
+|-------|---------|-------:|------:|------:|
+| `stabilo_88_brown` | strokes | 5 | 14 | — |
+| `stabilo_88_brown` | region px | 4324 | 2866 | — |
+| `stabilo_88_brown` | recall | 0.3481 | **1.0412** | 0.30 |
+| `stabilo_88_brown` | precision (was outside ink) | 0.8811 | 0.8444 | 0.50 |
+| `stabilo_88_brown` | extent W | 0.893 | 0.946 | 0.60 |
+| `stabilo_88_brown` | extent H | 0.373 | 0.973 | 0.30 |
+| `stabilo_88_brown` | bbox | 0.333 | 0.915 | 0.30 |
+| `stabilo_88_brown` | cell recall | 0.455 | 0.700 | 0.40 |
+| `stabilo_88_light_blue` | recall / precision | 1.0748 / 0.0746 | 1.1143 / 0.0739 | 0.30 / 0.05 |
+| `stabilo_88_black` | recall / precision | 0.9797 / 0.9968 | 0.9802 / 0.9968 | 0.55 / 0.60 |
+
+Before LUC-85 brown already cleared every floor, but only just: five strokes
+left extent H 0.373, bbox 0.333 and cell recall 0.455 close to their floors.
+After the fix it covers its region strongly; precision falls slightly as the
+stroke count grows but stays well above 0.50. Blue and black keep drawing the
+same number of strokes and clear their floors with or without the fix.
 
 #### Enforced region floors
 
@@ -553,12 +584,14 @@ fails both for light blue and brown and recall for black. The example floors
 in the task (recall 0.30, precision 0.50, extent 0.60, bbox 0.40, cell 0.75)
 cannot all be used here: light blue's dark region is only 2.4% of the source,
 so even the ideal channel scores 0.0939 precision and its drawing 0.0746;
-brown's five strokes span only 0.373 / 0.333 / 0.455 of extent H / bbox / cell
-recall against an ideal of 0.694 / 0.693 / 0.909, while black's random scribble
-reaches 0.4504 recall and 0.5183 precision. The per-pen floors stay above the
-trivial baselines and below the measured drawing; they are not lowered to let
-a blank or random page pass. These gaps are recorded as limitations, not
-fixed here: the drawing algorithm, palette and separation are out of scope.
+brown's five strokes before LUC-85 spanned only 0.373 / 0.333 / 0.455 of extent
+H / bbox / cell recall against an ideal of 0.694 / 0.693 / 0.909, while black's
+random scribble reaches 0.4504 recall and 0.5183 precision. The per-pen floors
+stay above the trivial baselines and below the measured drawing; they are not
+lowered to let a blank or random page pass. LUC-85 closes brown's gap (extent H
+0.973, bbox 0.915, cell recall 0.700) without changing these floors. The
+light-blue precision gap and the black random baseline stay recorded as
+limitations, out of scope here.
 
 ### Machine Cost (LUC-27)
 
