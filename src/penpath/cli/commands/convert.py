@@ -16,7 +16,6 @@ from penpath.cli.config import Config, load_config
 from penpath.cli.progress import StageReporter
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
-from penpath.core.drawing.settings import scale_pixel_settings
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
@@ -391,11 +390,10 @@ def _run_convert_pipeline(
     filtered_image = project.image.filters.apply(working_image)
     reporter.finish()
 
-    # Step 4: Run PFM (Sketch Lines) with settings scaled to the working image
+    # Step 4: Run PFM (Sketch Lines)
     reporter.start("Generating lines (PFM)")
     pfm_fn, _ = get_pfm(project.pfm.pfm_type)
-    typed_settings = cast(SketchLinesSettings, project.pfm.to_typed_settings())
-    pfm_settings = scale_pixel_settings(typed_settings, resolution.scale)
+    pfm_settings = cast(SketchLinesSettings, project.pfm.to_typed_settings())
     lines = pfm_fn(filtered_image, pfm_settings)
     reporter.finish()
 
