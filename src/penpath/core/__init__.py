@@ -57,6 +57,8 @@ from penpath.core.profiles import (
     ProfileFileError,
     ProfileParseError,
     UnknownProfileError,
+    get_user_profiles_path,
+    list_profiles,
     load_profile,
 )
 from penpath.core.project import (
@@ -128,9 +130,11 @@ __all__ = [
     "get_filter",
     "get_image_placement",
     "get_svg_paper_size",
+    "get_user_profiles_path",
     "grayscale",
     "invert",
     "list_filters",
+    "list_profiles",
     "load_image",
     "load_profile",
     "load_yaml",
