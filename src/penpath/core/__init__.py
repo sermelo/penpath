@@ -26,6 +26,7 @@ from penpath.core.image import (
     list_filters,
     load_image,
     posterize,
+    separate_palette,
     threshold,
 )
 from penpath.core.likeness import (
@@ -145,6 +146,7 @@ __all__ = [
     "posterize",
     "prepare_for_comparison",
     "save_yaml",
+    "separate_palette",
     "simplify",
     "simplify_line",
     "simulate_plot",
