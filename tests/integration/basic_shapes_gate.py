@@ -1,9 +1,9 @@
-"""Measurement harness for the basic-shape gate (LUC-75).
+"""Harness for the basic-shape gate (LUC-75).
 
 Runs the real ``penpath convert`` pipeline on each plain-text basic-shape
 fixture, rendered at 400x400, and measures likeness, ink placement, tone,
-machine cost and two baselines (blank page and random scribble). The decided
-thresholds live in ``docs/TESTING.md``; this module only produces numbers.
+machine cost and two baselines (blank page and random scribble). It also holds
+the single table of enforced thresholds recorded in ``docs/TESTING.md``.
 """
 
 from __future__ import annotations
@@ -79,6 +79,79 @@ class ShapeReport:
     algorithm: ShapeMeasures
     blank: ShapeMeasures
     random: ShapeMeasures
+
+
+@dataclass(frozen=True, slots=True)
+class ShapeThresholds:
+    """Enforced floors and caps for one shape, measured with seed 42 at 400x400."""
+
+    likeness_min: float
+    ink_outside_max: float
+    dark_coverage_min: float
+    tone_ratio_min: float
+    drawing_length_mm_max: float
+    num_strokes_max: int
+    num_lifts_max: int
+
+
+SHAPE_THRESHOLDS: dict[str, ShapeThresholds] = {
+    "black_square": ShapeThresholds(0.82, 0.10, 0.45, 2.0, 32000, 125, 125),
+    "white_square": ShapeThresholds(0.14, 0.12, 0.46, 1.05, 180000, 690, 690),
+    "black_disc": ShapeThresholds(0.58, 0.10, 0.45, 2.0, 81000, 320, 320),
+    "horizontal_line": ShapeThresholds(0.96, 0.25, 0.39, 2.0, 4200, 16, 16),
+    "checkerboard": ShapeThresholds(0.54, 0.20, 0.45, 2.0, 106000, 475, 475),
+    "triangle": ShapeThresholds(0.55, 0.10, 0.46, 2.0, 90000, 340, 340),
+}
+NUM_STROKES_MIN = 1
+
+
+@dataclass(frozen=True, slots=True)
+class ThresholdViolation:
+    """One enforced floor or cap that a measurement fails."""
+
+    shape: str
+    measure: str
+    value: float
+    bound: float
+    is_floor: bool
+
+    def __str__(self) -> str:
+        symbol = ">=" if self.is_floor else "<="
+        return f"{self.shape}: {self.measure} {self.value:.4f} {symbol} {self.bound:.4f}"
+
+
+def _fails(value: float, bound: float, is_floor: bool) -> bool:
+    return value < bound if is_floor else value > bound
+
+
+def threshold_violations(shape: str, measured: ShapeMeasures) -> list[ThresholdViolation]:
+    """Return every enforced threshold the measurement fails for this shape."""
+    bounds = SHAPE_THRESHOLDS[shape]
+    checks: tuple[tuple[str, float, float, bool], ...] = (
+        ("likeness", measured.likeness, bounds.likeness_min, True),
+        ("ink_outside", measured.ink_outside, bounds.ink_outside_max, False),
+        ("dark_coverage", measured.dark_coverage, bounds.dark_coverage_min, True),
+        ("tone_ratio", measured.tone_ratio, bounds.tone_ratio_min, True),
+        (
+            "drawing_length_mm",
+            measured.drawing_length_mm,
+            float(bounds.drawing_length_mm_max),
+            False,
+        ),
+        ("num_strokes", float(measured.num_strokes), float(bounds.num_strokes_max), False),
+        ("num_strokes", float(measured.num_strokes), float(NUM_STROKES_MIN), True),
+        ("num_lifts", float(measured.num_lifts), float(bounds.num_lifts_max), False),
+    )
+    return [
+        ThresholdViolation(shape, name, value, bound, is_floor)
+        for name, value, bound, is_floor in checks
+        if _fails(value, bound, is_floor)
+    ]
+
+
+def format_threshold_violations(violations: Sequence[ThresholdViolation]) -> str:
+    """Return the violations as one line each, for assertion messages."""
+    return "\n".join(str(violation) for violation in violations)
 
 
 def render_fixture(pbm_path: Path, png_path: Path) -> Image.Image:
@@ -285,16 +358,21 @@ def all_finite(measured: ShapeMeasures) -> bool:
 
 __all__ = [
     "BASIC_DIR",
+    "NUM_STROKES_MIN",
     "PREVIEW_PANEL",
     "PREVIEW_WIDTH",
     "RENDER_SIZE",
     "SEED",
     "SHAPE_NAMES",
+    "SHAPE_THRESHOLDS",
     "ShapeMeasures",
     "ShapeReport",
+    "ShapeThresholds",
+    "ThresholdViolation",
     "all_finite",
     "finite_values",
     "format_measurement_table",
+    "format_threshold_violations",
     "make_preview",
     "measure_all",
     "measure_shape",
@@ -303,5 +381,6 @@ __all__ = [
     "print_measurement_table",
     "render_fixture",
     "shape_masks",
+    "threshold_violations",
     "write_previews",
 ]
