@@ -20,7 +20,7 @@
 
 **Priority**: CLI flags > Project file > Config file > Defaults
 
-**Note**: Config file location follows XDG spec: `$XDG_CONFIG_HOME/penpath/config.toml` or `~/.config/penpath/config.toml`.
+**Note**: Config file location follows XDG spec: `$XDG_CONFIG_HOME/penpath/config.toml` or `~/.config/penpath/config.toml`. `--quiet` is currently implemented on `penpath convert`; see its Reporting Options below.
 
 ---
 
@@ -78,7 +78,7 @@ clamped to their allowed ranges, so the strokes keep their physical size.
 
 `--max-resolution PX` replaces the derived value without clamping (and still
 never enlarges); `--no-downscale` draws at the source resolution. The chosen
-resolution is printed to stderr before drawing:
+resolution is reported to stderr before drawing (and is silenced by `--quiet`):
 
 ```
 Working resolution: 475x358 px (source 4080x3072 px, scale 0.116)
@@ -108,6 +108,37 @@ usage error instead of choosing one silently.
 either one; if both are given and the paths differ, `penpath convert` exits 2 with
 a usage error naming both paths. Giving the same path both ways is fine. An output
 given on the command line also overrides `output.path` in a `--project` file.
+
+#### Reporting Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--quiet` | `-q` | `false` | Suppress progress, the working-resolution line and the final summary on stderr. Errors are still printed. |
+
+#### Progress output
+
+All `convert` messages go to stderr; stdout stays empty in every case, so the
+command is safe in a pipeline. On a terminal, a live `rich` progress bar shows a
+spinner, the current stage, a percentage and the elapsed time; the completed bar
+and the final summary stay on screen. When stderr is redirected to a file or a
+pipe, each finished stage becomes one plain line, flushed immediately so the log
+fills in while the command is still running:
+
+```
+[1/6] Loading image... done in 0.1 s
+[2/6] Downscaling image... done in 1.4 s
+[3/6] Applying filters... done in 0.0 s
+[4/6] Generating lines (PFM)... done in 19.1 s
+[5/6] Optimizing geometry... done in 0.2 s
+[6/6] Exporting SVG... done in 0.1 s
+Done in 20.9 s
+✓ SVG saved to: plot.svg
+```
+
+The downscale stage is reported only when the image is actually downscaled, so
+the counter ends at 5 when it is skipped. The working-resolution line is written
+to stderr too. `--quiet` removes all of this, including the "SVG saved to" line;
+errors are still reported on stderr and the SVG is still written.
 
 #### Optional: vpype
 
@@ -251,6 +282,12 @@ penpath convert photo.jpg --no-vpype
 # Cap the working image at 800 px on its longest side, or keep source pixels
 penpath convert photo.jpg --max-resolution 800
 penpath convert photo.jpg --no-downscale
+
+# Collect progress in a log while the command runs (stdout stays empty)
+penpath convert photo.jpg 2>convert.log
+
+# Silent conversion: no stderr output, errors still reported, SVG still written
+penpath convert photo.jpg --quiet
 ```
 
 ---

@@ -138,6 +138,24 @@ penpath convert photo.jpg --no-downscale
 penpath info image photo.jpg  # shows the resolution penpath would plan
 ```
 
+### Progress and quiet mode
+
+`convert` keeps stdout empty and reports progress on stderr. On a terminal it
+shows a live bar; redirected to a log it writes one flushed line per stage, so
+the log fills in while the command runs:
+
+```bash
+penpath convert photo.jpg 2>convert.log
+# [1/6] Loading image... done in 0.1 s
+# [2/6] Downscaling image... done in 1.4 s
+# ...
+# [6/6] Exporting SVG... done in 0.1 s
+# Done in 20.9 s
+# ✓ SVG saved to: photo_plot.svg
+
+penpath convert photo.jpg --quiet  # no stderr output; errors still shown
+```
+
 ---
 
 ## Project Files: Reproducible Workflows

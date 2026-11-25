@@ -10,18 +10,10 @@ from typing import Any, cast
 import click
 from pydantic import ValidationError
 from rich.console import Console
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskID,
-    TaskProgressColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
 from shapely import LineString
 
 from penpath.cli.config import Config, load_config
+from penpath.cli.progress import StageReporter
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.drawing.settings import scale_pixel_settings
@@ -37,8 +29,6 @@ from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper
 from penpath.presets.pens import get_pen
 from penpath.presets.pfms import DEFAULT_PFM, get_pfm_preset, list_pfm_presets
-
-console = Console(stderr=True)
 
 
 def _parse_filter_spec(spec: str) -> tuple[str, dict[str, str]]:
@@ -348,19 +338,18 @@ def _run_convert_pipeline(
     project: Project,
     use_vpype: bool,
     vpype_path: str,
-    progress: Progress,
-    task_id: TaskID,
+    reporter: StageReporter,
     max_resolution_px: int | None = None,
     no_downscale: bool = False,
 ) -> list[LineString]:
-    """Run the full conversion pipeline and return optimized lines."""
+    """Run the full conversion pipeline, reporting each stage as it finishes."""
     # Until colour separation lands, the whole image uses the first palette pen.
     pen = project.palette[0]
 
     # Step 1: Load image and plan the working resolution. Placement is derived
     # from the source size so the drawing rectangle does not move when the
     # working image is downscaled.
-    progress.update(task_id, description="Loading image...", advance=10)
+    reporter.start("Loading image")
     image = load_image(project.image.path)
     source_size_px = image.size
     image_placement = fit_image_placement(
@@ -379,31 +368,43 @@ def _run_convert_pipeline(
     )
     if no_downscale:
         resolution = replace(resolution, target_size_px=source_size_px, scale=1.0)
+    downscaling = resolution.target_size_px != source_size_px
+    reporter.set_total_stages(5 + int(downscaling))
+    reporter.finish()
+
     working_width, working_height = resolution.target_size_px
-    console.print(
+    reporter.message(
         f"Working resolution: {working_width}x{working_height} px "
         f"(source {source_size_px[0]}x{source_size_px[1]} px, scale {resolution.scale:.3f})"
     )
+
+    # Step 2: Downscale to the working resolution, only when it changes the image.
+    if downscaling:
+        reporter.start("Downscaling image")
     working_image = apply_working_resolution(image, resolution)
+    if downscaling:
+        reporter.finish()
     working_size_px = working_image.size
 
-    # Step 2: Apply filters
-    progress.update(task_id, description="Applying filters...", advance=15)
+    # Step 3: Apply filters
+    reporter.start("Applying filters")
     filtered_image = project.image.filters.apply(working_image)
+    reporter.finish()
 
-    # Step 3: Run PFM (Sketch Lines) with settings scaled to the working image
-    progress.update(task_id, description="Generating lines (PFM)...", advance=25)
+    # Step 4: Run PFM (Sketch Lines) with settings scaled to the working image
+    reporter.start("Generating lines (PFM)")
     pfm_fn, _ = get_pfm(project.pfm.pfm_type)
     typed_settings = cast(SketchLinesSettings, project.pfm.to_typed_settings())
     pfm_settings = scale_pixel_settings(typed_settings, resolution.scale)
     lines = pfm_fn(filtered_image, pfm_settings)
+    reporter.finish()
 
     if not lines:
-        console.print("[yellow]Warning: No lines generated[/yellow]")
+        reporter.message("Warning: No lines generated", style="yellow")
         return []
 
-    # Step 4: Optimize geometry
-    progress.update(task_id, description="Optimizing geometry...", advance=20)
+    # Step 5: Optimize geometry
+    reporter.start("Optimizing geometry")
     optimized_lines = optimize(
         lines,
         project.paper,
@@ -411,10 +412,11 @@ def _run_convert_pipeline(
         merge_angle_deg=5.0,
         merge_dist_mm=0.5,
     )
+    reporter.finish()
 
-    # Step 5: Export. vpype optimises geometry only; penpath writes the SVG
+    # Step 6: Export. vpype optimises geometry only; penpath writes the SVG
     # on both paths so the millimetre layout is identical.
-    progress.update(task_id, description="Exporting SVG...", advance=20)
+    reporter.start("Exporting SVG")
     if use_vpype:
         try:
             strokes_by_pen = optimize_with_vpype(
@@ -434,7 +436,7 @@ def _run_convert_pipeline(
                 resolution,
             )
         except FileNotFoundError:
-            console.print(
+            reporter.message(
                 "vpype not found, falling back to direct SVG export "
                 '(install it with: pip install "penpath[vpype]")',
                 style="yellow",
@@ -462,7 +464,7 @@ def _run_convert_pipeline(
             resolution,
         )
 
-    progress.update(task_id, description="Done!", advance=10)
+    reporter.finish()
     return optimized_lines
 
 
@@ -523,6 +525,12 @@ def _run_convert_pipeline(
     help="Keep the source pixels (do not downscale before drawing)",
 )
 @click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Suppress progress and other non-error output on stderr",
+)
+@click.option(
     "--config", "-c", "config_path", type=click.Path(path_type=Path), help="Config file path"
 )
 @click.pass_context
@@ -545,6 +553,7 @@ def convert_cmd(
     dpi: int,
     max_resolution_px: int | None,
     no_downscale: bool,
+    quiet: bool,
     config_path: Path | None,
 ) -> None:
     """Convert a raster image to a plottable SVG using the Sketch Lines algorithm.
@@ -625,33 +634,26 @@ def convert_cmd(
             output_path=output,
         )
 
-    # Run conversion with progress bar
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        task_id = progress.add_task("Starting...", total=100)
-        try:
+    # Report to stderr so stdout stays clean for pipelines and agents. The
+    # console is created here so its terminal detection sees the current stderr.
+    reporter = StageReporter(Console(stderr=True), quiet=quiet)
+    try:
+        with reporter:
             _run_convert_pipeline(
                 project,
                 not no_vpype,
                 vpype_path,
-                progress,
-                task_id,
+                reporter,
                 max_resolution_px=max_resolution_px,
                 no_downscale=no_downscale,
             )
-        except ImageLoadError as e:
-            raise click.ClickException(f"Image load error: {e}") from e
-        except Exception as e:
-            raise click.ClickException(f"Conversion failed: {e}") from e
+    except ImageLoadError as e:
+        raise click.ClickException(f"Image load error: {e}") from e
+    except Exception as e:
+        raise click.ClickException(f"Conversion failed: {e}") from e
 
-    console.print(f"[green]✓[/green] SVG saved to: {project.output_path}")
+    reporter.summary()
+    reporter.message(f"[green]✓[/green] SVG saved to: {project.output_path}")
 
 
 __all__ = ["convert_cmd"]
