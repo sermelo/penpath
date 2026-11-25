@@ -72,10 +72,13 @@ def test_preview_help_says_arcs_are_unsupported(runner: CliRunner) -> None:
     assert ".gcode" in result.output
 
 
-def test_preview_rejects_arcs_with_clean_error(runner: CliRunner, tmp_path: Path) -> None:
+@pytest.mark.parametrize("command", ["G2", "G02", "G3", "G03"])
+def test_preview_rejects_arcs_with_clean_error(
+    runner: CliRunner, tmp_path: Path, command: str
+) -> None:
     gcode = tmp_path / "arcs.gcode"
     gcode.write_text(
-        "; penpath gcode profile=generic z_up=5.000 z_down=0.000\nG2 X10.000 Y10.000\n",
+        f"; penpath gcode profile=generic z_up=5.000 z_down=0.000\n{command} X10.000 Y10.000\n",
         encoding="utf-8",
     )
     output = tmp_path / "arcs.png"
@@ -83,6 +86,42 @@ def test_preview_rejects_arcs_with_clean_error(runner: CliRunner, tmp_path: Path
     result = runner.invoke(main, ["preview", str(gcode), "-o", str(output)])
 
     assert result.exit_code == 1
-    assert "arcs (G2) are not supported" in result.output
+    assert f"arcs ({command}) are not supported" in result.output
+    assert "Traceback" not in result.output
+    assert not output.exists()
+
+
+def test_preview_unknown_profile_falls_back_to_a4(runner: CliRunner, tmp_path: Path) -> None:
+    """A header naming a profile that is not installed still renders in machine space."""
+    gcode = tmp_path / "foreign.gcode"
+    gcode.write_text(
+        "; penpath gcode profile=no_such_machine z_up=5.000 z_down=0.000\n"
+        "G0 Z5.000\nG0 X10.000 Y287.000\nG0 Z0.000\nG1 X20.000 Y287.000\nG0 Z5.000\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "foreign.png"
+
+    result = runner.invoke(main, ["preview", str(gcode), "-o", str(output), "--dpi", str(DPI)])
+
+    assert result.exit_code == 0, result.output
+    assert "no_such_machine" in result.output
+    assert "not found" in result.output
+    assert "Traceback" not in result.output
+    with Image.open(output) as image:
+        assert image.size == (210 * DPI, 297 * DPI)
+
+
+def test_preview_gcode_without_strokes_is_clean_error(runner: CliRunner, tmp_path: Path) -> None:
+    gcode = tmp_path / "empty.gcode"
+    gcode.write_text(
+        "; penpath gcode profile=generic z_up=5.000 z_down=0.000\nG21\nG90\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "empty.png"
+
+    result = runner.invoke(main, ["preview", str(gcode), "-o", str(output)])
+
+    assert result.exit_code == 1
+    assert "No pen strokes found" in result.output
     assert "Traceback" not in result.output
     assert not output.exists()
