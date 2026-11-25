@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from penpath.core import (
+    GcodeError,
     GcodeLayer,
     MachineProfile,
     PointOutsideBedError,
@@ -253,3 +254,137 @@ def test_build_gcode_with_no_drawn_layers_emits_only_wrapper() -> None:
     assert (
         produced == "; penpath gcode profile=test_machine z_up=4.000 z_down=1.000\nG21\nG90\nM2\n"
     )
+
+
+def _two_layers() -> list[GcodeLayer]:
+    return [
+        GcodeLayer("first", [((1.0, 1.0), (2.0, 1.0))]),
+        GcodeLayer("second", [((3.0, 3.0), (4.0, 3.0))]),
+    ]
+
+
+def test_pen_change_between_skips_the_first_layer() -> None:
+    profile = _profile(
+        pen_change={"mode": "between", "steps": [{"message": "{pen}"}, {"pause": ""}]}
+    )
+
+    produced = build_gcode(_two_layers(), profile, (10.0, 10.0))
+
+    assert produced.count("; pen change") == 1
+    assert produced.count("M0\n") == 1
+    assert produced.index("M117 second\n") < produced.index("; layer 2/2 pen=second")
+    assert "; layer 1/2 pen=first\nM117" not in produced
+
+
+def test_pen_change_each_pauses_before_every_used_layer() -> None:
+    profile = _profile(pen_change={"mode": "each", "steps": [{"message": "{pen}"}, {"pause": ""}]})
+
+    produced = build_gcode(_two_layers(), profile, (10.0, 10.0))
+
+    assert produced.count("; pen change") == 2
+    assert produced.count("M117") == 2
+    assert produced.index("M117 first") < produced.index("; layer 1/2")
+    assert produced.index("M117 second") < produced.index("; layer 2/2")
+
+
+def test_pen_change_none_emits_no_block() -> None:
+    profile = _profile(pen_change={"mode": "none", "steps": [{"message": "{pen}"}, {"pause": ""}]})
+
+    produced = build_gcode(_two_layers(), profile, (10.0, 10.0))
+
+    assert "; pen change" not in produced
+    assert "M117" not in produced
+
+
+def test_pen_change_skips_layers_without_drawn_points() -> None:
+    layers = [
+        GcodeLayer("unused", [((1.0, 1.0),)]),
+        GcodeLayer("ink", [((2.0, 2.0), (3.0, 2.0))]),
+        GcodeLayer("other", [((4.0, 4.0), (5.0, 4.0))]),
+    ]
+    profile = _profile(
+        pen_change={"mode": "between", "steps": [{"message": "{pen}"}, {"pause": ""}]}
+    )
+
+    produced = build_gcode(layers, profile, (10.0, 10.0))
+
+    assert "unused" not in produced
+    assert produced.count("; pen change") == 1
+    assert "; layer 1/2 pen=ink" in produced
+    assert "; layer 2/2 pen=other" in produced
+    assert "M117 other" in produced
+
+
+def test_pen_change_and_layer_comments_fill_all_placeholders() -> None:
+    profile = _profile(
+        gcode={
+            "layer_start": "; layer {pen} {pen_index}/{pen_count} {layer_index}/{layer_count}",
+        },
+        pen_change={
+            "mode": "each",
+            "steps": [
+                {"raw": "; raw {pen} {pen_index}/{pen_count} {layer_index}/{layer_count}"},
+                {
+                    "message": "take {pen} ({pen_index}/{pen_count}) "
+                    "layer {layer_index}/{layer_count}"
+                },
+                {"pause": "mount {pen}"},
+            ],
+        },
+    )
+
+    produced = build_gcode(_two_layers(), profile, (10.0, 10.0))
+
+    assert "; raw first 1/2 1/2" in produced
+    assert "M117 take first (1/2) layer 1/2" in produced
+    assert "M0 mount first" in produced
+    assert "; layer first 1/2 1/2" in produced
+    assert "; raw second 2/2 2/2" in produced
+    assert "M117 take second (2/2) layer 2/2" in produced
+    assert "; layer second 2/2 2/2" in produced
+
+
+def test_pen_change_z_and_xy_steps_use_profile_values_and_feeds() -> None:
+    profile = _profile(
+        bed={
+            "size_mm": [100.0, 100.0],
+            "pen_offset_mm": [-1.0, -2.0],
+        },
+        feed={"travel_mm_s": 100.0, "draw_mm_s": 50.0, "z_mm_s": 10.0},
+        pen={"z_up": 5.0, "z_down": 0.0, "z_touch": 2.0, "z_hover": 3.0, "touch_xy_mm": [10, 20]},
+        pen_change={
+            "mode": "each",
+            "steps": [
+                {"z": "up", "feed": "z"},
+                {"z": "touch"},
+                {"xy": "touch", "feed": "travel"},
+                {"xy": [30, 40]},
+                {"z": 7.5},
+            ],
+        },
+    )
+
+    produced = build_gcode(_one_layer(((1.0, 1.0), (2.0, 1.0))), profile, (10.0, 10.0))
+
+    assert "G1 Z5.000 F600\n" in produced
+    assert "G0 Z2.000\n" in produced
+    assert "G1 X11.000 Y22.000 F6000\n" in produced
+    assert "G0 X31.000 Y42.000\n" in produced
+    assert "G0 Z7.500\n" in produced
+
+
+@pytest.mark.parametrize(
+    ("steps", "expected"),
+    [
+        ([{"z": "touch"}], "pen.z_touch"),
+        ([{"z": "hover"}], "pen.z_hover"),
+        ([{"xy": "touch"}], "pen.touch_xy_mm"),
+    ],
+)
+def test_pen_change_names_missing_profile_value(
+    steps: list[dict[str, object]], expected: str
+) -> None:
+    profile = _profile(pen_change={"mode": "each", "steps": steps})
+
+    with pytest.raises(GcodeError, match=expected):
+        build_gcode(_one_layer(((1.0, 1.0), (2.0, 1.0))), profile, (10.0, 10.0))

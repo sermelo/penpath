@@ -11,7 +11,13 @@ from penpath.core.image.resolution import WorkingResolution
 from penpath.core.models import Paper, Pen
 from penpath.core.output.svg import ImagePlacement, export_svg, fit_image_placement
 from penpath.core.simulation import compute_machine_cost
-from penpath.core.svg_parse import get_image_placement, get_svg_paper_size, parse_svg_strokes
+from penpath.core.svg_parse import (
+    get_image_placement,
+    get_svg_paper_size,
+    list_svg_layers,
+    parse_svg_layers,
+    parse_svg_strokes,
+)
 
 
 def _paper() -> Paper:
@@ -610,3 +616,109 @@ class TestLayerFiltering:
         assert len(first) == len(second) == 1
         assert first[0].polyline == [(0.0, 0.0), (10.0, 10.0)]
         assert second[0].polyline == [(20.0, 20.0), (30.0, 30.0)]
+
+
+class TestSvgLayerEnumeration:
+    @staticmethod
+    def _two_layers() -> str:
+        return """<svg xmlns="http://www.w3.org/2000/svg"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    width="100mm" height="100mm" viewBox="0 0 100 100">
+  <rect width="100" height="100" fill="#FFFFFF"/>
+  <g id="layer1" inkscape:groupmode="layer" inkscape:label="yellow"
+     fill="none" stroke="#FFFF00" stroke-width="0.4">
+    <polyline points="0,0 10,0"/>
+    <polyline points="90,90 100,90"/>
+    <polyline points="11,0 21,0"/>
+  </g>
+  <g id="layer2" inkscape:groupmode="layer" inkscape:label="red"
+     fill="none" stroke="#FF0000" stroke-width="0.4">
+    <polyline points="0,50 10,50"/>
+  </g>
+</svg>"""
+
+    def _write(self, tmp_path: Path, svg: str) -> Path:
+        path = tmp_path / "layers.svg"
+        path.write_text(svg, encoding="utf-8")
+        return path
+
+    def test_list_svg_layers_returns_id_and_label_in_document_order(self, tmp_path: Path) -> None:
+        svg = self._write(tmp_path, self._two_layers())
+
+        assert list_svg_layers(svg) == [("layer1", "yellow"), ("layer2", "red")]
+
+    def test_list_svg_layers_falls_back_to_id_or_label(self, tmp_path: Path) -> None:
+        svg = self._write(
+            tmp_path,
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">'
+            '<g id="unlabelled" inkscape:groupmode="layer"/>'
+            '<g inkscape:groupmode="layer" inkscape:label="named"/>'
+            '<g id="not-a-layer"/><g inkscape:groupmode="group" id="plain"/></svg>',
+        )
+
+        assert list_svg_layers(svg) == [("unlabelled", "unlabelled"), ("named", "named")]
+
+    def test_list_svg_layers_without_layers_returns_empty(self, tmp_path: Path) -> None:
+        svg = self._write(tmp_path, '<svg xmlns="http://www.w3.org/2000/svg"/>')
+
+        assert list_svg_layers(svg) == []
+
+    def test_parse_svg_layers_groups_strokes_in_document_order(self, tmp_path: Path) -> None:
+        svg = self._write(tmp_path, self._two_layers())
+
+        layers = parse_svg_layers(svg)
+
+        assert [layer.pen for layer in layers] == ["yellow", "red"]
+        assert [len(layer.polylines) for layer in layers] == [3, 1]
+        assert layers[0].polylines[0] == ((0.0, 0.0), (10.0, 0.0))
+
+    def test_parse_svg_layers_sorts_strokes_by_travel_within_a_layer(self, tmp_path: Path) -> None:
+        svg = self._write(tmp_path, self._two_layers())
+
+        first = parse_svg_layers(svg)[0]
+
+        assert [line[0] for line in first.polylines] == [
+            (0.0, 0.0),
+            (11.0, 0.0),
+            (90.0, 90.0),
+        ]
+
+    def test_parse_svg_layers_keeps_strokes_outside_layers(self, tmp_path: Path) -> None:
+        svg = self._write(
+            tmp_path,
+            """<svg xmlns="http://www.w3.org/2000/svg"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    width="100mm" height="100mm" viewBox="0 0 100 100">
+  <path d="M 40 40 L 45 40" fill="none" stroke="#000000"/>
+  <g id="layer1" inkscape:groupmode="layer" inkscape:label="yellow"
+     fill="none" stroke="#FFFF00">
+    <polyline points="0,0 10,0"/>
+  </g>
+</svg>""",
+        )
+
+        layers = parse_svg_layers(svg)
+
+        assert len(layers) == 1
+        assert len(layers[0].polylines) == 2
+
+    def test_parse_svg_layers_without_layers_uses_first_stroke_colour(self, tmp_path: Path) -> None:
+        svg = self._write(
+            tmp_path,
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+            'viewBox="0 0 100 100">'
+            '<path d="M 0 0 L 10 0" fill="none" stroke="#FF0000" stroke-width="1"/>'
+            "</svg>",
+        )
+
+        layers = parse_svg_layers(svg)
+
+        assert len(layers) == 1
+        assert layers[0].pen == "#FF0000"
+        assert layers[0].polylines == [((0.0, 0.0), (10.0, 0.0))]
+
+    def test_parse_svg_layers_empty_svg_returns_no_layers(self, tmp_path: Path) -> None:
+        svg = self._write(tmp_path, '<svg xmlns="http://www.w3.org/2000/svg"/>')
+
+        assert parse_svg_layers(svg) == []

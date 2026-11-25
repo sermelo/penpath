@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
@@ -12,7 +11,6 @@ from rich.console import Console
 
 from penpath.core import (
     GcodeError,
-    GcodeLayer,
     MachineProfile,
     ProfileError,
     UnknownProfileError,
@@ -21,11 +19,10 @@ from penpath.core import (
     get_svg_paper_size,
     list_profiles,
     load_profile,
+    parse_svg_layers,
     parse_svg_strokes,
 )
-from penpath.core.simulation import LayerMetrics, PenStroke
-
-INKSCAPE_LABEL = "{http://www.inkscape.org/namespaces/inkscape}label"
+from penpath.core.simulation import LayerMetrics
 
 console = Console(stderr=True, soft_wrap=True)
 
@@ -43,19 +40,6 @@ def _available_hint(profiles_path: Path | None) -> str:
     except ProfileError:
         return "Run 'penpath info profiles' to list the available profiles."
     return f"Available profiles: {available}"
-
-
-def _layer_pen(svg_path: Path, strokes: Sequence[PenStroke]) -> str:
-    """Return the layer label, or the first stroke colour for a plain SVG."""
-    fallback = strokes[0].color if strokes else "black"
-    try:
-        for element in ET.parse(svg_path).getroot().iter():
-            label = element.get(INKSCAPE_LABEL)
-            if label:
-                return label
-    except ET.ParseError, OSError:
-        return fallback
-    return fallback
 
 
 def _estimate_plot_seconds(profile: MachineProfile, total: LayerMetrics) -> float:
@@ -110,6 +94,10 @@ def gcode_cmd(
 ) -> None:
     """Turn DRAWING_SVG into G-code for the machine named by --profile.
 
+    Inkscape pen layers become G-code layers in document order, with one pen
+    change per used layer as described by the profile. Layers with no strokes
+    are skipped, so an unused pen never triggers a pause.
+
     Penpath does not guess the machine: --profile is required, and a missing or
     unknown name is a usage error (exit 2) that lists the available profiles.
     An unreadable or invalid profile file, or a point outside the machine's
@@ -145,12 +133,10 @@ def gcode_cmd(
             f"Could not read the page size from {drawing_svg}; set width and height in mm"
         )
 
-    layer = GcodeLayer(
-        pen=_layer_pen(drawing_svg, strokes),
-        polylines=[tuple(stroke.polyline) for stroke in strokes],
-    )
+    layers = parse_svg_layers(drawing_svg)
+    layer_count = sum(1 for layer in layers if any(len(line) >= 2 for line in layer.polylines))
     try:
-        text = build_gcode([layer], profile, page_size)
+        text = build_gcode(layers, profile, page_size)
     except GcodeError as exc:
         raise ProfileValidationError(str(exc)) from exc
 
@@ -170,7 +156,7 @@ def gcode_cmd(
 
     console.print("G-code summary")
     console.print(f"  Profile: {profile.name}")
-    console.print("  Layers: 1")
+    console.print(f"  Layers: {layer_count}")
     console.print(f"  Drawing length: {float(total['drawing_length_mm']):.2f} mm")
     console.print(f"  Pen-up travel: {float(total['pen_up_travel_mm']):.2f} mm")
     console.print(f"  Pen lifts: {int(total['num_lifts'])}")

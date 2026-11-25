@@ -362,6 +362,17 @@ penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
 | `--profiles PATH` | — | user config | Alternate user profiles YAML file for this run |
 | `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
 
+Each Inkscape pen layer (`<g inkscape:groupmode="layer">`) becomes a G-code
+layer in document order, which is the drawing order of the pens. Strokes inside
+a layer are sorted by nearest-neighbour travel before they are emitted. Layers
+with no strokes are skipped entirely, so an unused pen never causes a pause.
+Exactly one pen-change block is emitted before each used layer according to the
+profile's `pen_change.mode`: `between` skips the first layer, `each` pauses
+before every layer (needed by machines that set the pen at a touch spot before
+the first stroke), and `none` never changes pens. The pen name and both layer
+and pen indices are available to the block's messages and to the layer code
+blocks through the placeholders below.
+
 The default output path replaces the SVG suffix: `card.svg` becomes
 `card.gcode` beside the input. It is printed to stderr with the summary.
 `--profiles PATH` replaces the default user file for one run; a profile there
@@ -391,6 +402,9 @@ penpath gcode card.svg --profile generic -o card.gcode
 penpath gcode card.svg --profile generic             # writes card.gcode
 penpath gcode card.svg --profile generic --dry-run > card.gcode
 penpath gcode card.svg --profile my_plotter --profiles ./profiles.yaml
+
+# A palette SVG: one G-code layer per used pen, with a pen change between layers
+penpath gcode christmas_card.svg --profile generic -o card.gcode
 ```
 
 ---
@@ -743,8 +757,8 @@ optional; the shipped `generic.yaml` is a smaller, complete profile.
 | `gcode.comment_prefix` | Comment prefix, `";"` by default. |
 | `gcode.start` / `gcode.end` | Verbatim G-code written once at the top / bottom of the file. |
 | `gcode.layer_start` / `gcode.layer_end` | Verbatim G-code written before / after each layer's strokes. |
-| `pen_change.mode` | `each` changes before every used layer including the first; `between` skips the first; `none` never changes. |
-| `pen_change.steps` | Ordered steps of one pen change. Each step has exactly one action: `z` (`up`, `down`, `touch`, `hover` or a number), `xy` (`touch` or `[x, y]`), `raw` (one verbatim G-code line), `message` (display text) or `pause` (operator pause). An optional `feed: travel\|draw\|z` selects the feed for `z` and `xy` moves. |
+| `pen_change.mode` | `each` changes before every used layer including the first; `between` skips the first; `none` never changes. Layers with no strokes are not used layers. |
+| `pen_change.steps` | Ordered steps of one pen change. Each step has exactly one action: `z` (`up`, `down`, `touch`, `hover` or a number), `xy` (`touch` or `[x, y]`), `raw` (one verbatim G-code line), `message` (`M117`) or `pause` (`M0`, optionally with text). An optional `feed: travel\|draw\|z` selects the feed for `z` and `xy` moves: without it the move is `G0`, with it the move is `G1` at the profile's feed in mm/min. `z: touch\|hover` and `xy: touch` need the matching `pen` fields in the profile. |
 
 ### Placeholders
 

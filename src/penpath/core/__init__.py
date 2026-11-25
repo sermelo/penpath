@@ -94,6 +94,8 @@ from penpath.core.svg_parse import (
     ImagePlacement,
     get_image_placement,
     get_svg_paper_size,
+    list_svg_layers,
+    parse_svg_layers,
     parse_svg_strokes,
 )
 
@@ -162,11 +164,13 @@ __all__ = [
     "list_filters",
     "list_profile_sources",
     "list_profiles",
+    "list_svg_layers",
     "load_image",
     "load_profile",
     "load_yaml",
     "merge_lines",
     "mm_to_pixels",
+    "parse_svg_layers",
     "parse_svg_strokes",
     "pixels_to_mm",
     "plan_working_resolution",
