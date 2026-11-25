@@ -4,7 +4,8 @@ The union keeps the LUC-47 floors verbatim. Each used layer is measured with
 region-relative recall, precision, extent, bbox area and cell recall; SSIM is
 printed as evidence but is not a per-layer floor. Blank pages and random
 scribbles must fail the region floors, so the gate cannot pass for every
-possible drawing.
+possible drawing. Brown's LUC-85 improvement is pinned with the current
+region-relative measures so the fix cannot regress silently.
 """
 
 from __future__ import annotations
@@ -176,6 +177,30 @@ def test_used_layers_meet_region_floors(multi_pen_report: MultiPenGateReport) ->
         for name, value, floor in gate_failures(layer)
     ]
     assert not failures, "Multi-pen per-layer gate not met:\n" + "\n".join(failures)
+
+
+def test_brown_region_ownership_is_pinned_after_luc85(
+    multi_pen_report: MultiPenGateReport,
+) -> None:
+    """Brown covers its own region instead of drawing only a few sparse strokes.
+
+    Before LUC-85 the five brown strokes scored recall 0.3481, extent H 0.373,
+    bbox 0.333 and cell recall 0.455 on this gate; the speckle cleanup and the
+    sparse-canvas baseline raise them to the values below. Precision falls
+    slightly as more strokes are drawn but stays far above its 0.50 floor.
+    """
+    layers = {layer.pen_name: layer for layer in multi_pen_report.layers}
+    brown = layers["stabilo_88_brown"]
+    measured = brown.algorithm
+
+    assert brown.stroke_count == 14
+    assert measured.region_pixels == 2866
+    assert measured.recall == pytest.approx(1.0412, abs=0.02)
+    assert measured.precision == pytest.approx(0.8444, abs=0.02)
+    assert measured.extent_width == pytest.approx(0.9457, abs=0.02)
+    assert measured.extent_height == pytest.approx(0.9725, abs=0.02)
+    assert measured.bbox_area == pytest.approx(0.9145, abs=0.02)
+    assert measured.cell_recall == pytest.approx(0.7000, abs=0.02)
 
 
 def test_blank_page_fails_region_floors(multi_pen_report: MultiPenGateReport) -> None:

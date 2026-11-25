@@ -682,5 +682,27 @@ class TestErase:
         assert _erase_amount(mid, 50.0, 125.0, 0.5) == expected
 
 
+class TestSparseCanvas:
+    """A palette channel is mostly white with a small, fragmented ink region."""
+
+    def test_sparse_channel_draws_enough_strokes_to_cover_its_region(self):
+        image = Image.new("L", (100, 100), 255)
+        region: set[tuple[int, int]] = set()
+        for index in range(16):
+            block_x = 10 + (index % 4) * 22
+            block_y = 10 + (index // 4) * 22
+            for dy in range(2):
+                for dx in range(2):
+                    point = (block_x + dx, block_y + dy)
+                    image.putpixel(point, 40)
+                    region.add(point)
+
+        lines = sketch_lines(image, SketchLinesSettings(seed=42))
+        points = {(int(x), int(y)) for line in lines for x, y in line.coords}
+
+        assert len(lines) == 5
+        assert len(points & region) >= 25
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-xvs"])

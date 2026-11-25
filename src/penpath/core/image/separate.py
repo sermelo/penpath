@@ -7,6 +7,9 @@ before the split destroys the colour information needed to choose a pen.
 Each pixel goes to the pen whose colour is nearest in CIE Lab space. A pen's
 image is full size, white everywhere except that pen's pixels, which keep
 their luminance, so the drawing algorithm sees the same geometry as before.
+A pen's assignment must form a connected region of at least eight pixels;
+smaller specks are left white so a pen does not chase single pixels a stroke
+cannot follow. Every pixel reaches some pen on a single-pen palette.
 """
 
 from __future__ import annotations
@@ -15,9 +18,12 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image, ImageColor
 from skimage.color import rgb2lab
+from skimage.measure import label
 
 from penpath.core.image.filters import grayscale
 from penpath.core.models import Pen
+
+_MIN_REGION_PIXELS = 8
 
 
 def _pen_rgb(pen: Pen) -> NDArray[np.float32]:
@@ -47,6 +53,8 @@ def separate_palette(
     list[tuple[Pen, Image.Image]]
         One ``L``-mode image per pen, in the given pen order. Each image holds
         the luminance of the pixels assigned to that pen and white elsewhere.
+        A pixel assigned to a connected region smaller than eight pixels is
+        left white, so isolated specks do not become a pen's region.
 
     Raises
     ------
@@ -69,6 +77,14 @@ def separate_palette(
         axis=-1,
     )
     nearest = np.argmin(squared_distances, axis=-1)
+    if len(pens) > 1:
+        keep = np.zeros(nearest.shape, dtype=bool)
+        for index in range(len(pens)):
+            components = label(nearest == index)  # type: ignore[no-untyped-call]
+            sizes = np.bincount(components.ravel())
+            sizes[0] = 0
+            keep |= sizes[components] >= _MIN_REGION_PIXELS
+        nearest = np.where(keep, nearest, -1)
 
     separated: list[tuple[Pen, Image.Image]] = []
     for index, pen in enumerate(pens):

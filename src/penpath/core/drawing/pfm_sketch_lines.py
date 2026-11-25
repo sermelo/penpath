@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 _DESIRED_LUMINANCE = 253.5
 _MAX_FAILS = 1000
 _WHITE = 255.0
+_NEARLY_BLANK_MEAN = 252.5
+_BLANK_CANVAS_MEAN = 254.0
 
 
 class SketchLinesSettings(BaseModel):
@@ -391,8 +393,13 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     Strokes are returned in image pixel coordinates (origin top-left) and are
     always inside the image. Drawing lightens the working image, so the run
     stops when its average luminance reaches the target given by
-    ``line_density``. With ``erase_enabled=False`` the image never lightens;
-    only the stroke cap stops the run and the result is dense and dark.
+    ``line_density``. On a nearly blank canvas (mean from 252.5 to below 254),
+    that average is taken over the ink-bearing pixels only: a sparse palette
+    channel is mostly white, so a whole-canvas average collapses the stop
+    target and ends the run after a handful of strokes. Canvases below 252.5
+    and near-blank canvases at 254 or above keep the whole-canvas rule. With
+    ``erase_enabled=False`` the image never lightens; only the stroke cap stops
+    the run and the result is dense and dark.
 
     Parameters
     ----------
@@ -420,7 +427,13 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     sample_step = int(settings.sample_step)
     num_tests = max(1, round(360.0 / settings.search_angle_step))
 
-    initial_avg = float(np.mean(working))
+    canvas_avg = float(np.mean(working))
+    ink_pixels = working < _WHITE
+    sparse_canvas = bool(ink_pixels.any()) and _NEARLY_BLANK_MEAN <= canvas_avg < _BLANK_CANVAS_MEAN
+    progress_pixels = ink_pixels if sparse_canvas else None
+    initial_avg = (
+        float(np.mean(working[progress_pixels])) if progress_pixels is not None else canvas_avg
+    )
     if settings.max_strokes is not None:
         max_strokes = settings.max_strokes
     elif settings.erase_enabled:
@@ -431,7 +444,10 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     lines: list[LineString] = []
     fails = 0
     while len(lines) < max_strokes and fails < _MAX_FAILS:
-        current_avg = float(np.mean(working))
+        canvas_avg = float(np.mean(working))
+        current_avg = (
+            float(np.mean(working[progress_pixels])) if progress_pixels is not None else canvas_avg
+        )
         if settings.erase_enabled:
             if initial_avg >= _DESIRED_LUMINANCE:
                 break
@@ -476,7 +492,7 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
 
             if settings.erase_enabled:
                 if s >= settings.squiggle_min_length and (
-                    avg_lum > allowable or avg_lum > current_avg
+                    avg_lum > allowable or avg_lum > canvas_avg
                 ):
                     break
             elif avg_lum > allowable:
