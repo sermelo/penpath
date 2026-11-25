@@ -624,9 +624,13 @@ Before tagging a release:
 
 ## Basic shapes gate (LUC-75)
 
-Part 2 of LUC-75 measures a small gate for six simple shapes. It records the
-numbers here; part 3 (LUC-78) turns them into assertions in
-`tests/integration/test_basic_shapes.py`. No assertion is made by this part.
+Parts 1 and 2 of LUC-75 define and measure a small gate for six simple shapes.
+Part 3 (LUC-78) turns those measurements into assertions in
+`tests/integration/test_basic_shapes.py`, which runs on every pull request. The
+six shapes are converted once per test session through the shared fixture; each
+shape and both baselines are then checked against the table below. That table
+is copied from `SHAPE_THRESHOLDS` in `tests/integration/basic_shapes_gate.py`,
+the one place to change the enforced numbers.
 
 ### Fixtures and format
 
@@ -712,7 +716,14 @@ The last digits of `tone_ratio` and `drawing_length_mm` move in the fourth
 decimal between runs because the mm SVG layout rounds coordinates; the caps
 below have a factor of two of headroom for that reason.
 
-### Thresholds (recorded here, asserted in LUC-78)
+### Enforced gate (LUC-78, 2026-11-25)
+
+`test_basic_shapes.py` asserts every cell below for the algorithm's drawing,
+one test per shape, plus `num_strokes >= 1` for every shape. Two more tests
+prove the gate is meaningful: the blank page fails `dark_coverage` for every
+shape, and the random scribble fails `ink_outside` for every shape; both also
+fail the `likeness` floor. Without them a threshold could pass for every
+possible drawing.
 
 | shape | likeness >= | ink_outside <= | dark_coverage >= | tone_ratio >= | drawing_length_mm <= | num_strokes <= | num_lifts <= |
 |-------|------------:|---------------:|-----------------:|--------------:|---------------------:|---------------:|---------------:|
@@ -754,6 +765,9 @@ How each number was chosen:
   `triangle` 44826.0 → 90000, 170 → 340, 169 → 340. The old global rule
   "`num_lifts <= 5` for every shape" is **withdrawn**: it described the
   pre-LUC-53 algorithm, not the shape.
+
+The six numbers above are the ones in `SHAPE_THRESHOLDS`; keep the two in sync.
+The next section records the withdrawn pre-LUC-53 target and is not enforced.
 
 ### Withdrawn pre-LUC-53 target (recorded, not enforced)
 

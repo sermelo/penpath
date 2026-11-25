@@ -1,4 +1,9 @@
-"""Fast checks of the plain-text basic-shape fixtures."""
+"""Check the basic-shape fixtures and enforce the thresholds in docs/TESTING.md.
+
+The gate table lives in ``basic_shapes_gate.py`` so there is one place to change
+it. All tests share the session-cached measurements: each shape is converted
+once, then the algorithm's drawing and both baselines are checked against it.
+"""
 
 from __future__ import annotations
 
@@ -6,15 +11,19 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import click
 import pytest
 from basic_shapes_gate import (
     PREVIEW_PANEL,
     PREVIEW_WIDTH,
     SHAPE_NAMES,
+    ShapeMeasures,
     ShapeReport,
     all_finite,
+    format_threshold_violations,
     measure_all,
     print_measurement_table,
+    threshold_violations,
     write_previews,
 )
 from PIL import Image
@@ -83,6 +92,33 @@ def gate_reports(gate_data: tuple[list[ShapeReport], Path]) -> list[ShapeReport]
     return gate_data[0]
 
 
+def _algorithm_measurements(gate_reports: list[ShapeReport], shape: str) -> ShapeMeasures:
+    for report in gate_reports:
+        if report.shape == shape:
+            return report.algorithm
+    raise AssertionError(f"no measurements recorded for {shape}")
+
+
+def _assert_shape_meets_thresholds(gate_reports: list[ShapeReport], shape: str) -> None:
+    violations = threshold_violations(shape, _algorithm_measurements(gate_reports, shape))
+    assert not violations, f"{shape} gate not met:\n{format_threshold_violations(violations)}"
+
+
+def test_threshold_violations_distinguish_floors_and_caps() -> None:
+    """The comparator accepts a passing drawing and names each kind of failure."""
+    passing = ShapeMeasures(0.90, 0.01, 0.90, 3.0, 1000.0, 2, 2)
+    assert threshold_violations("black_square", passing) == []
+
+    failing = ShapeMeasures(0.10, 0.90, 0.90, 3.0, 1000.0, 0, 1000)
+    violations = threshold_violations("black_square", failing)
+    assert {(violation.measure, violation.is_floor) for violation in violations} == {
+        ("likeness", True),
+        ("ink_outside", False),
+        ("num_strokes", True),
+        ("num_lifts", False),
+    }
+
+
 def test_basic_shapes_gate_runs(gate_reports: list[ShapeReport]) -> None:
     """The real pipeline runs for every shape and all reported numbers are finite."""
     assert [report.shape for report in gate_reports] == list(SHAPE_NAMES)
@@ -110,3 +146,65 @@ def test_basic_shape_previews_are_greyscale(
         with Image.open(path) as image:
             assert image.mode == "L"
             assert image.size == (PREVIEW_WIDTH, PREVIEW_PANEL)
+
+
+def test_basic_shape_black_square(gate_reports: list[ShapeReport]) -> None:
+    """The black square drawing meets every floor and cap in the gate table."""
+    _assert_shape_meets_thresholds(gate_reports, "black_square")
+
+
+def test_basic_shape_white_square(gate_reports: list[ShapeReport]) -> None:
+    """The white square drawing meets every floor and cap in the gate table."""
+    _assert_shape_meets_thresholds(gate_reports, "white_square")
+
+
+def test_basic_shape_black_disc(gate_reports: list[ShapeReport]) -> None:
+    """The black disc drawing meets every floor and cap in the gate table."""
+    _assert_shape_meets_thresholds(gate_reports, "black_disc")
+
+
+def test_basic_shape_horizontal_line(gate_reports: list[ShapeReport]) -> None:
+    """The horizontal line drawing meets every floor and cap in the gate table."""
+    _assert_shape_meets_thresholds(gate_reports, "horizontal_line")
+
+
+def test_basic_shape_checkerboard(gate_reports: list[ShapeReport]) -> None:
+    """The checkerboard drawing meets every floor and cap in the gate table."""
+    _assert_shape_meets_thresholds(gate_reports, "checkerboard")
+
+
+def test_basic_shape_triangle(gate_reports: list[ShapeReport]) -> None:
+    """The triangle drawing meets every floor and cap in the gate table."""
+    _assert_shape_meets_thresholds(gate_reports, "triangle")
+
+
+def test_blank_page_fails_every_shape(gate_reports: list[ShapeReport]) -> None:
+    """Inking nothing fails dark_coverage and likeness for every shape."""
+    passing: list[str] = []
+    for report in gate_reports:
+        violations = threshold_violations(report.shape, report.blank)
+        key = [
+            violation
+            for violation in violations
+            if violation.measure in ("dark_coverage", "likeness")
+        ]
+        click.echo(f"blank {report.shape}: " + "; ".join(str(violation) for violation in key))
+        if not violations or len(key) != 2:
+            passing.append(report.shape)
+    assert not passing, f"blank page passes a required floor for: {', '.join(passing)}"
+
+
+def test_random_scribble_fails_every_shape(gate_reports: list[ShapeReport]) -> None:
+    """Seeded random strokes fail ink_outside and likeness for every shape."""
+    passing: list[str] = []
+    for report in gate_reports:
+        violations = threshold_violations(report.shape, report.random)
+        key = [
+            violation
+            for violation in violations
+            if violation.measure in ("ink_outside", "likeness")
+        ]
+        click.echo(f"random {report.shape}: " + "; ".join(str(violation) for violation in key))
+        if not violations or len(key) != 2:
+            passing.append(report.shape)
+    assert not passing, f"random scribble passes a required floor for: {', '.join(passing)}"
