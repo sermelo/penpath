@@ -120,13 +120,22 @@ published the before/after evidence.
     - Layers per pen, `inkscape:groupmode="layer"`, viewBox from paper, background layer
 - [ ] Integration test: round-trip photo → SVG → vpype read → geometry count
 
+Multi-pen / colour separation is in MVP (sergio approved on 2026-11-24). The
+loader splits the image into one full-size greyscale channel per palette pen
+before filtering; the filter, PFM and geometry optimization then run once per
+pen. `convert --palette stabilo_88` draws in palette order and writes one SVG
+layer per used pen. With no palette the single default pen draws the whole
+image, so the default path still produces exactly one layer. Consumers should
+read the `<g id="layerN">` groups with an XML parser rather than feeding the
+SVG back through `vpype read` (see `docs/CLI.md`).
+
 ### Phase 5: Project File & Convert Command (2 tickets)
 - [ ] `core/project.py` — `Project` Pydantic model (image, filters, PFM, pens, paper, output), `load_yaml/save_yaml`
 - [ ] `cli/commands/convert.py` — `penpath convert`:
     - Args: `input`, `-o/--output`, `--project`, `--pfm`, `--pen`, `--paper`, `--filter` (repeatable)
     - Reads project file or builds from flags, runs pipeline, writes SVG
     - Progress via `rich.progress`
-- [ ] `cli/commands/info.py` — `penpath info image|pfm|pen|paper` — show details/presets
+- [ ] `cli/commands/info.py` — `penpath info image|pfm|pen|palettes|paper` — show details/presets
 
 ### Phase 6: Polish & Docs (1 ticket)
 - [ ] `docs/CLI.md` complete (every command/option)
@@ -175,7 +184,6 @@ Eight parts in order, from the approved LUC-51 plan; one pull request each:
 ## Out of Scope (MVP)
 
 - GUI / preview window
-- Multi-pen / colour separation
 - Additional PFMs (Sketch Squares, Spiral, Contour)
 - GCode / HPGL / DXF export
 - Batch directory processing
