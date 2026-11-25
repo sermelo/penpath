@@ -130,6 +130,16 @@ def test_separate_palette_accepts_named_css_colours() -> None:
     assert np.all(red_layer[_region_mask(30, 2, 13)] < 128)
 
 
+def test_separate_palette_drops_isolated_colour_speckles() -> None:
+    image = Image.new("RGB", (30, 30), "white")
+    image.putpixel((15, 15), (255, 0, 0))
+
+    separated = separate_palette(image, [RED, WHITE])
+
+    assert np.all(np.asarray(separated[0][1]) == 255)
+    assert np.all(np.asarray(separated[1][1]) == 255)
+
+
 @pytest.mark.parametrize("mode", ["RGBA", "L"])
 def test_separate_palette_handles_non_rgb_input(mode: str) -> None:
     image = _three_region_image().convert(mode)
