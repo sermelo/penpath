@@ -52,7 +52,7 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--pfm NAME` | — | `sketch_lines` | Path-finding module (only `sketch_lines` in MVP) |
+| `--pfm NAME` | — | `sketch_lines` | PFM algorithm or built-in preset (see **PFM Presets** below) |
 | `--pfm-setting KEY=VALUE` | `-s` | — | PFM-specific setting (repeatable). See **PFM Settings** below. |
 | `--pen NAME` | — | `default` | Pen preset name or `width,color,type` (e.g., `0.3,#000000,fineliner`) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
@@ -109,33 +109,64 @@ returns the plotted strokes as `PenStroke` objects in millimetres.
 
 #### PFM Settings (Sketch Lines)
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `line_density` | float | `0.75` | Ink-density multiplier in the luminance-progress stop rule (0.01–10) |
-| `min_length` | float | `2.0` | Minimum segment length in image pixels |
-| `max_length` | float | `40.0` | Maximum segment length in image pixels |
-| `angle_range` | tuple | `-72,-52` | Random start-angle band in degrees (−360–360) |
-| `search_angle_step` | float | `18.0` | Degrees between candidate rays (20 angle tests) |
-| `shading_enabled` | bool | `false` | Search two opposite directions late in the run |
-| `squiggle_enabled` | bool | `false` | Add perpendicular noise (a penpath addition; the reference has none) |
-| `erase_enabled` | bool | `true` | Lighten drawn pixels so strokes move on |
-| `erase_min` | float | `35.0` | Brightness added to a dark pixel |
-| `erase_max` | float | `80.0` | Brightness added to a bright pixel |
-| `tone` | float | `0.5` | Cubic/linear blend of the erase amount and brush radius |
-| `erase_radius_min` | float | `1.0` | Erase brush radius in pixels for a dark pixel |
-| `erase_radius_max` | float | `1.0` | Erase brush radius in pixels for a bright pixel |
-| `squiggle_max_deviation` | float | `0.25` | How far a squiggle may stray from the starting darkness |
-| `squiggle_min_length` | int | `50` | Segments before the darkness rule may end a squiggle |
-| `squiggle_max_length` | int | `500` | Hard limit on segments in one squiggle |
-| `shading_threshold` | float | `0.5` | Progress at which shading starts |
-| `max_strokes` | int | `auto` | Hard stroke cap (needed when erasing is off) |
-| `seed` | int | `random` | Random seed for reproducibility |
+Every field of `SketchLinesSettings` is accepted by `-s KEY=VALUE`; the flag
+forwards the key to the algorithm unchanged. Booleans accept `true`, `1`,
+`yes` or `on` (and their opposites for false). `angle_range` takes two
+comma-separated degrees. Invalid keys, values or out-of-range numbers exit 2
+with a message naming the setting.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `line_density` | float | 0.01–10.0 | `0.75` | Ink-density multiplier in the luminance-progress stop rule; higher draws more ink. |
+| `min_length` | float | 1–1000 px | `2.0` | Shortest segment the ray search may end at (pixels). Must be ≤ `max_length`. |
+| `max_length` | float | 1–5000 px | `40.0` | Longest segment the ray search may take (pixels). Must be ≥ `min_length`. |
+| `angle_range` | tuple | −360–360° each | `-72,-52` | Band of degrees for each random ray's start angle; the reference uses −72..−52. Min ≤ max. |
+| `search_angle_step` | float | 0.1–90° | `18.0` | Degrees between candidate rays (360/step tests); smaller searches more angles and is slower. |
+| `sample_step` | float | 1–100 px | `10.0` | Side of the tiles used to find the next darkest pixel; smaller follows detail more closely. |
+| `shading_enabled` | bool | — | `false` | After `shading_threshold`, test only two opposite directions. |
+| `shading_threshold` | float | 0–1 | `0.5` | Fraction of luminance progress at which shading starts. |
+| `squiggle_enabled` | bool | — | `false` | Add perpendicular noise to segments (a penpath addition; the reference has none). |
+| `squiggle_max_deviation` | float | 0–10 | `0.25` | How far a squiggle may wander above the starting darkness, as a fraction of 253.5. |
+| `squiggle_min_length` | int | 1–100000 | `50` | Segments before the darkness rule may end a squiggle. Must be ≤ `squiggle_max_length`. |
+| `squiggle_max_length` | int | 1–100000 | `500` | Hard upper bound on segments in one squiggle. |
+| `erase_enabled` | bool | — | `true` | Lighten drawn pixels so later strokes move elsewhere. Off gives a dense, dark scribble. |
+| `erase_min` | float | 0–255 | `35.0` | Brightness added to a very dark pixel by one stroke. Must be ≤ `erase_max`. |
+| `erase_max` | float | 0–255 | `80.0` | Brightness added to a very bright pixel by one stroke. Must be ≥ `erase_min`. |
+| `tone` | float | 0–1 | `0.5` | Cubic/linear blend of the erase amount and brush radius (0 = linear). |
+| `erase_radius_min` | float | 0–50 px | `1.0` | Erase-brush radius for a very dark pixel. Must be ≤ `erase_radius_max`. |
+| `erase_radius_max` | float | 0–50 px | `1.0` | Erase-brush radius for a very bright pixel. |
+| `max_strokes` | int | ≥1 or `auto` | `auto` | Hard stroke cap; derived from image size and density unless set explicitly. |
+| `seed` | int | any | random | Fix the random seed for byte-identical reruns. |
+
+The cross-field limits above are validated, so `min_length=100 -s
+max_length=50` fails with a clear error rather than drawing nothing.
 
 **Example**: `-s line_density=0.5 -s shading_enabled=true -s seed=42`
 
 **Breaking change**: `line_density` now scales the luminance-progress stop
 rule instead of counting lines per millimetre, and `min_length` and
 `max_length` are image pixels rather than millimetres.
+
+#### PFM Presets (`--pfm NAME`)
+
+`--pfm` accepts both the registered algorithm name (`sketch_lines`) and a
+built-in preset name. A preset supplies a bundle of the settings above; any
+`-s` override is applied on top of it. Run `penpath info pfms` to list them.
+
+| Preset | Character |
+|--------|-----------|
+| `default` | Shipped defaults below; passes the SSIM likeness gate for all five reference images. |
+| `fine` | Short, thin strokes with fine sampling and squiggles; quirky detail work. |
+| `bold` | Fewer, much longer strokes at higher density; graphic, high-contrast look. |
+| `shaded` | Dense, many-angled sampling of both shading directions; smooth tone. |
+| `squiggly` | Erasing off (`erase_enabled=false`): a dense, dark decorative scribble, not a photo likeness. |
+| `crosshatch` | Angles restricted to 45–135°, so strokes cross in a woven grid. |
+| `hatch_horizontal` | Angles near 85–95°, giving near-horizontal hatching. |
+| `hatch_vertical` | Angles near 0–10°, giving near-vertical hatching. |
+
+The three hatch presets and `squiggly` are style choices: they deliberately
+give up photo likeness for a particular look. Only `default` is calibrated
+against the gate in [docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47).
 
 #### Filters (Applied in Order)
 
@@ -370,12 +401,12 @@ pfm:
   name: sketch_lines
   settings:
     line_density: 0.3
-    min_length: 0.5
-    max_length: 10.0
-    angle_range: 180
-    shading: true
-    squiggles: false
-    erasing: false
+    min_length: 2.0
+    max_length: 40.0
+    angle_range: [0.0, 360.0]
+    shading_enabled: true
+    squiggle_enabled: false
+    erase_enabled: false
     seed: null
 
 pen:
@@ -521,7 +552,7 @@ penpath convert photo.jpg
 ```bash
 penpath convert photo.jpg -o art.svg \
   -f grayscale -f "posterize:levels=6,dither=floyd_steinberg" \
-  -s line_density=0.4 -s shading=true -s seed=12345 \
+  -s line_density=0.4 -s shading_enabled=true -s seed=12345 \
   --pen fine --paper a4
 ```
 ### Project-Based Workflow

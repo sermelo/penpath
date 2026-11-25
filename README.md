@@ -103,7 +103,7 @@ penpath convert input.jpg -o output.svg
 penpath convert photo.jpg -f grayscale -f "threshold:levels=4,dither=floyd_steinberg"
 
 # Adjust PFM (Sketch Lines) settings
-penpath convert photo.jpg -s line_density=0.5 -s shading=true -s seed=42
+penpath convert photo.jpg -s line_density=0.5 -s shading_enabled=true -s seed=42
 
 # Choose pen and paper
 penpath convert photo.jpg --pen fineliner_03 --paper a4
@@ -155,12 +155,12 @@ pfm:
   name: sketch_lines
   settings:
     line_density: 0.3
-    min_length: 0.5
-    max_length: 10.0
-    angle_range: 180
-    shading: true
-    squiggles: false
-    erasing: false
+    min_length: 2.0
+    max_length: 40.0
+    angle_range: [0.0, 360.0]
+    shading_enabled: true
+    squiggle_enabled: false
+    erase_enabled: false
     seed: null
 
 pen:
@@ -202,7 +202,7 @@ output:
 ```bash
 penpath convert photo.jpg -o art.svg \
   -f grayscale -f "threshold:levels=6,dither=floyd_steinberg" \
-  -s line_density=0.4 -s shading=true -s seed=12345 \
+  -s line_density=0.4 -s shading_enabled=true -s seed=12345 \
   --pen fineliner_03 --paper a4
 ```
 
@@ -246,9 +246,35 @@ penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '{likeness, total: .machine_cost.total}'
 ```
 
+### Worked Example: Photo → SVG → Preview
+
+The shipped defaults are calibrated against five reference images. Here is the
+whole path on one of them, from a repository checkout:
+
+```bash
+# Convert with the shipped defaults; the seed makes the result reproducible
+penpath convert tests/fixtures/images/reference/photo.jpg -o photo_plot.svg -s seed=42
+
+# Render the simulated plot as an image
+penpath preview photo_plot.svg -o photo_preview.png --dpi 10
+
+# Score likeness (SSIM 0.5099 with these defaults) and machine cost
+penpath evaluate tests/fixtures/images/reference/photo.jpg photo_plot.svg
+```
+
+This is what the simulated plot looks like; the 600 px greyscale preview is
+committed at [docs/images/luc-47/photo_after.png](docs/images/luc-47/photo_after.png):
+
+![Simulated plot of the reference photo](docs/images/luc-47/photo_after.png)
+
+Before the LUC-53 algorithm fix the same photo produced a much smaller, sparser
+plot (SSIM 0.4917, only 41% of the placement width covered). Compare the
+[before preview](docs/images/luc-47/photo_before.png) and the full
+[before/after measurements](docs/TESTING.md#final-shipped-defaults-measurement-luc-54-2026-11-25).
+
 ### Reproducible Results
 
-Use `--seed` for deterministic output:
+Use `-s seed=N` for deterministic output:
 
 ```bash
 penpath convert photo.jpg -s seed=42 -o plot1.svg

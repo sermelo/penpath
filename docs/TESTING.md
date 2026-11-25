@@ -125,9 +125,11 @@
 
 ## Sketch Lines likeness gate (LUC-47)
 
-This is a written yardstick for the Sketch Lines fix in part 2. It changes no
-algorithm and no default; it only records what "resembles the photo" will mean
-when measured. The gate is allowed to fail on `main` today.
+This is the likeness gate for the Sketch Lines PFM. Parts 1 and 2 defined and
+enforced it; part 3 (LUC-54) shipped the calibrated defaults, refreshed the
+numbers below and published before/after evidence. It is green on `main` with
+the shipped defaults — `uv run pytest tests/integration/test_sketch_lines_gate.py`
+passes for all five reference images.
 
 Reproduce the numbers with:
 
@@ -252,9 +254,9 @@ with the SSIM thresholds.
 | Ink per 4x4 cell | 0.0003 | The ideal puts at least 0.00035 of all ink in its sparsest cell (sphere); rounded down, every cell must receive some ink, which rejects drawings that ignore a whole quarter of the rectangle. |
 | Dark/light tone ratio | 2.0 | The ideal's weakest dark-vs-light ratio is 2.89 (photo); a floor of 2.0 still requires dark image areas to receive at least twice the ink density of light ones. |
 
-The gate is not asserted yet: `test_sketch_lines_gate.py` prints this table and
-checks only that the harness runs and every number is finite. Part 2 turns
-these thresholds into assertions.
+`test_sketch_lines_gate.py` now asserts the enforced floors under "Enforced
+gate" below; the withdrawn thresholds in this section are kept as the record of
+why the floor had to be re-derived.
 
 ### Enforced gate (LUC-47 part 2, re-derived 2026-11-24)
 
@@ -285,6 +287,53 @@ photo), bbox area 0.559 / 0.828 / 0.557 / 0.998 / 0.998, minimum 4x4 ink share
 27.7 / 2.87, and stroke counts 175 / 206 / 43 / 1163 / 1533. The random-lines
 row is report-only: the harness draws as many strokes as the algorithm
 produced, so that row moves with the stroke count.
+
+### Final shipped-defaults measurement (LUC-54, 2026-11-25)
+
+Remeasured with the same harness, vpype 1.15, seed 42 and the defaults shipped
+in `SketchLinesSettings()`. "Before" is the algorithm at `ac3206d`, the commit
+before part 2; both runs use the same image, placement, pen and simulator.
+
+| image | before SSIM | after SSIM | enforced floor | stroke count before → after |
+|-------|------------:|-----------:|---------------:|----------------------------:|
+| `circle.png` | 0.5933 | **0.5474** | 0.53 | 80 → 175 |
+| `gradient.png` | 0.6492 | **0.5401** | 0.46 | 141 → 206 |
+| `sphere.png` | 0.7806 | **0.8135** | 0.79 | 78 → 43 |
+| `face.jpg` | 0.3097 | **0.6481** | 0.57 | 415 → 1163 |
+| `photo.jpg` | 0.4917 | **0.5099** | 0.18 | 601 → 1533 |
+
+SSIM alone goes *down* on the circle and gradient. The old algorithm covered
+little or no area with a near-solid stipple, which SSIM rewards but a pen cannot
+plot; that is why part 1's stipple-based floors were withdrawn. The fix spends
+that score on the measures that make a plot recognizable: coverage, ink spread
+and tone separation. Every after value clears its enforced floor, and the photo
+now scores above its blank page (0.4993).
+
+| image | covered W before → after | covered H before → after | bbox area before → after | ink per cell (min) before → after | tone ratio before → after |
+|-------|-------------------------:|-------------------------:|-------------------------:|----------------------------------:|--------------------------:|
+| `circle.png` | 0.750 → 0.747 | 0.755 → 0.747 | 0.566 → 0.559 | 0.0011 → 0.0009 | 725 → 4442 |
+| `gradient.png` | 0.047 → 0.830 | 0.997 → 0.997 | 0.047 → 0.828 | 0.0000 → 0.0019 | 39689 → 41 |
+| `sphere.png` | 0.617 → 0.745 | 0.620 → 0.747 | 0.383 → 0.557 | 0.0000 → 0.0005 | 157490 → 8115 |
+| `face.jpg` | 0.999 → 0.999 | 0.315 → 0.999 | 0.315 → 0.998 | 0.0000 → 0.0158 | 303078 → 27.7 |
+| `photo.jpg` | 0.407 → 0.999 | 0.980 → 0.999 | 0.399 → 0.998 | 0.0000 → 0.0212 | 1500 → 2.87 |
+
+The striking coverage gains are the gradient (a 5%-wide strip becomes a full
+83%-wide drawing), the face (31% of the height becomes 99%) and the photo (41%
+of the width becomes 99%). Ink now reaches every 4x4 cell of the placement
+instead of none in three images. Tone ratios are lower but stay well above the
+2.0 floor; the very large before values came from light areas receiving almost
+no ink at all.
+
+Simulated-plot previews for every image, before and after, are committed under
+[`docs/images/luc-47/`](../images/luc-47/) (greyscale, 600 px wide):
+
+| image | before | after |
+|-------|--------|-------|
+| `circle.png` | [before](../images/luc-47/circle_before.png) | [after](../images/luc-47/circle_after.png) |
+| `gradient.png` | [before](../images/luc-47/gradient_before.png) | [after](../images/luc-47/gradient_after.png) |
+| `sphere.png` | [before](../images/luc-47/sphere_before.png) | [after](../images/luc-47/sphere_after.png) |
+| `face.jpg` | [before](../images/luc-47/face_before.png) | [after](../images/luc-47/face_after.png) |
+| `photo.jpg` | [before](../images/luc-47/photo_before.png) | [after](../images/luc-47/photo_after.png) |
 
 ### Machine Cost (LUC-27)
 

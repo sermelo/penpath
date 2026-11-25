@@ -283,19 +283,33 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> SketchLi
         if key not in base_settings:
             raise click.BadParameter(f"Unknown PFM setting: '{key}'")
         current_value = base_settings[key]
-        if isinstance(current_value, bool):
-            base_settings[key] = value_str.lower() in ("true", "1", "yes", "on")
-        elif isinstance(current_value, int):
-            base_settings[key] = int(value_str)
-        elif isinstance(current_value, float):
-            base_settings[key] = float(value_str)
-        elif isinstance(current_value, tuple):
-            parts = value_str.split(",")
-            base_settings[key] = tuple(float(p) for p in parts)
-        else:
-            base_settings[key] = value_str
+        try:
+            if isinstance(current_value, bool):
+                base_settings[key] = value_str.lower() in ("true", "1", "yes", "on")
+            elif isinstance(current_value, int):
+                base_settings[key] = int(value_str)
+            elif isinstance(current_value, float):
+                base_settings[key] = float(value_str)
+            elif isinstance(current_value, tuple):
+                parts = value_str.split(",")
+                base_settings[key] = tuple(float(p) for p in parts)
+            else:
+                base_settings[key] = value_str
+        except (TypeError, ValueError) as e:
+            raise click.BadParameter(
+                f"Invalid value '{value_str}' for PFM setting '{key}': {e}",
+                param_hint="-s/--pfm-setting",
+            ) from e
 
-    settings_model = SketchLinesSettings(**base_settings)
+    try:
+        settings_model = SketchLinesSettings(**base_settings)
+    except ValidationError as e:
+        error = e.errors()[0]
+        key = str(error["loc"][0]) if error.get("loc") else "pfm"
+        raise click.BadParameter(
+            f"Invalid value for PFM setting '{key}': {error['msg']}",
+            param_hint="-s/--pfm-setting",
+        ) from e
     return SketchLinesPFM(settings=settings_model)
 
 
@@ -444,7 +458,7 @@ def _run_convert_pipeline(
     help="Filter to apply (repeatable). Format: name:param=value",
 )
 @click.option("--no-auto-orient", is_flag=True, help="Disable EXIF auto-orientation")
-@click.option("--pfm", "pfm_name", help="PFM algorithm to use (default: sketch_lines)")
+@click.option("--pfm", "pfm_name", help="PFM algorithm or built-in preset (default: sketch_lines)")
 @click.option(
     "--pfm-setting",
     "-s",
