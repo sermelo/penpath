@@ -342,6 +342,38 @@ class TestConvertCommand:
         assert "mutually exclusive" in result.output
         assert not output_path.exists()
 
+    @pytest.mark.parametrize(
+        ("palette", "message"),
+        [
+            ("nonsense", "Invalid palette pen 1"),
+            ("red=wide,#FF0000", "Invalid palette pen 1"),
+        ],
+    )
+    def test_convert_invalid_palette_is_a_clear_error(
+        self,
+        runner: CliRunner,
+        test_image: Path,
+        tmp_path: Path,
+        palette: str,
+        message: str,
+    ) -> None:
+        output_path = tmp_path / "bad_palette.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(test_image),
+                "-o",
+                str(output_path),
+                "--no-vpype",
+                "--palette",
+                palette,
+            ],
+        )
+        assert result.exit_code == 2
+        assert message in result.output
+        assert not output_path.exists()
+
     def test_convert_invalid_input(self, runner: CliRunner, tmp_path: Path) -> None:
         """Test convert with non-existent input file."""
         output_path = tmp_path / "output.svg"
