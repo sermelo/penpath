@@ -16,7 +16,20 @@ from penpath.core.output.svg import (
     add_placement_metadata,
     export_svg,
     fit_image_placement,
+    write_penpath_svg,
 )
+
+SVG_NS = "{http://www.w3.org/2000/svg}"
+INKSCAPE_NS = "{http://www.inkscape.org/namespaces/inkscape}"
+
+
+def _layer_groups(root: ET.Element) -> list[ET.Element]:
+    """Return the Inkscape layer groups in document order."""
+    return [
+        group
+        for group in root.iter(SVG_NS + "g")
+        if group.get(INKSCAPE_NS + "groupmode") == "layer"
+    ]
 
 
 class TestExportSvg:
@@ -37,7 +50,7 @@ class TestExportSvg:
         assert "</svg>" in content
 
     def test_export_svg_viewbox(self, tmp_path: Path):
-        """SVG should have correct viewBox from paper size at 96 DPI."""
+        """Root width, height and viewBox are all in millimetres."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [LineString([(100, 100), (200, 200)])]
@@ -45,14 +58,13 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        # A4 at 96 DPI: 210 * 96 / 25.4 ≈ 793.7, 297 * 96 / 25.4 ≈ 1122.5
-        assert 'viewBox="0 0 793.7' in content
-        assert 'width="210' in content
-        assert 'height="297' in content
+        root = ET.parse(output_path).getroot()
+        assert root.get("width") == "210mm"
+        assert root.get("height") == "297mm"
+        assert root.get("viewBox") == "0 0 210 297"
 
-    def test_export_svg_background_layer(self, tmp_path: Path):
-        """SVG should have background layer with paper color."""
+    def test_export_svg_background_rect_is_direct_child(self, tmp_path: Path):
+        """The paper background is a rect on the root, with no Background layer."""
         paper = Paper(
             name="A4",
             width_mm=210,
@@ -66,14 +78,18 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        assert 'id="background"' in content
-        assert 'inkscape:groupmode="layer"' in content
-        assert 'inkscape:label="Background"' in content
-        assert "#FF0000" in content or "rgb(255, 0, 0)" in content
+        root = ET.parse(output_path).getroot()
+        rects = root.findall(SVG_NS + "rect")
+        assert len(rects) == 1
+        assert rects[0].get("fill") == "#FF0000"
+        assert rects[0].get("width") == "210.0"
+        assert rects[0].get("height") == "297.0"
+        assert all(
+            group.get(INKSCAPE_NS + "label") != "Background" for group in _layer_groups(root)
+        )
 
     def test_export_svg_pen_layer(self, tmp_path: Path):
-        """SVG should have pen layer with correct id and inkscape attributes."""
+        """The used pen gets a numbered layer labelled with its name."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="fine", width_mm=0.3, color="#0000FF")
         lines = [LineString([(100, 100), (200, 200)])]
@@ -81,13 +97,14 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        assert 'id="pen-fine"' in content
-        assert 'inkscape:groupmode="layer"' in content
-        assert 'inkscape:label="Pen: fine"' in content
+        root = ET.parse(output_path).getroot()
+        layers = _layer_groups(root)
+        assert len(layers) == 1
+        assert layers[0].get("id") == "layer1"
+        assert layers[0].get(INKSCAPE_NS + "label") == "fine"
 
     def test_export_svg_stroke_properties(self, tmp_path: Path):
-        """SVG paths should have correct stroke width and color from pen."""
+        """Paths use a hex stroke, no fill and a millimetre stroke width."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="bold", width_mm=0.5, color="#FF0000", opacity=0.8)
         lines = [LineString([(100, 100), (200, 200)])]
@@ -95,16 +112,18 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        # Stroke width: 0.5mm * 96 / 25.4 ≈ 1.89 SVG units
-        assert 'stroke="#FF0000"' in content or 'stroke="rgb(255, 0, 0)"' in content
-        assert "stroke-opacity" in content
-        assert "stroke-width" in content
-        assert "stroke-linecap" in content
-        assert "stroke-linejoin" in content
+        root = ET.parse(output_path).getroot()
+        path = root.find(".//" + SVG_NS + "path")
+        assert path is not None
+        assert path.get("fill") == "none"
+        assert path.get("stroke") == "#FF0000"
+        assert path.get("stroke-width") == "0.5"
+        assert path.get("stroke-opacity") == "0.8"
+        assert path.get("stroke-linecap") == "round"
+        assert path.get("stroke-linejoin") == "round"
 
-    def test_export_svg_multiple_pens_creates_layers(self, tmp_path: Path):
-        """Multiple pens should create multiple layers (only first populated)."""
+    def test_export_svg_multiple_pens_only_used_pens_get_layers(self, tmp_path: Path):
+        """Only pens with geometry get a layer, numbered in drawing order."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pens = [
             Pen(name="fine", width_mm=0.3, color="#000000"),
@@ -115,27 +134,29 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, pens, output_path)
 
-        content = output_path.read_text()
-        assert 'id="pen-fine"' in content
-        assert 'id="pen-bold"' in content
-        assert 'inkscape:label="Pen: fine"' in content
-        assert 'inkscape:label="Pen: bold"' in content
+        root = ET.parse(output_path).getroot()
+        layers = _layer_groups(root)
+        assert [layer.get("id") for layer in layers] == ["layer1"]
+        assert [layer.get(INKSCAPE_NS + "label") for layer in layers] == ["fine"]
 
     def test_export_svg_coordinate_scaling(self, tmp_path: Path):
-        """Geometries should be scaled from image coords to paper coords."""
+        """Geometries are scaled from image coords to paper millimetres."""
         paper = Paper(name="square", width_mm=100, height_mm=100, margin_mm=10, dpi=300)
         pen = Pen(name="fine", width_mm=0.3)
-        # Large image coordinates (e.g., 3000x3000 pixels at 300 DPI = 10x10 inch)
         lines = [LineString([(1500, 1500), (3000, 3000)])]
 
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path, image_dpi=300)
 
-        content = output_path.read_text()
-        # Should produce valid paths within the viewBox
-        assert "<path" in content
-        # ViewBox should be 100mm at 96 DPI ≈ 378 SVG units
-        assert "378" in content or "377" in content
+        root = ET.parse(output_path).getroot()
+        path = root.find(".//" + SVG_NS + "path")
+        assert path is not None
+        numbers = [
+            float(number)
+            for number in path.get("d", "").replace("M", " ").replace("L", " ").split()
+        ]
+        assert numbers
+        assert all(10 <= number <= 90 for number in numbers)
 
     def test_export_svg_empty_geometries_raises(self, tmp_path: Path):
         """Empty geometries list should raise ValueError."""
@@ -160,8 +181,8 @@ class TestExportSvg:
         paper = Paper(name="A4", width_mm=210, height_mm=297)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [
-            LineString([]),  # Empty
-            LineString([]),  # Also empty
+            LineString([]),
+            LineString([]),
         ]
 
         output_path = tmp_path / "output.svg"
@@ -173,15 +194,14 @@ class TestExportSvg:
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [
-            LineString([]),  # Empty - filtered out
-            LineString([(200, 200), (300, 300)]),  # Valid
+            LineString([]),
+            LineString([(200, 200), (300, 300)]),
         ]
 
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        assert "<path" in content
+        assert root_has_path(output_path)
 
     def test_export_svg_custom_paper_size(self, tmp_path: Path):
         """Should respect custom paper size."""
@@ -192,9 +212,10 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        assert 'width="100' in content
-        assert 'height="150' in content
+        root = ET.parse(output_path).getroot()
+        assert root.get("width") == "100mm"
+        assert root.get("height") == "150mm"
+        assert root.get("viewBox") == "0 0 100 150"
 
     def test_export_svg_margin_respected(self, tmp_path: Path):
         """Margins should be respected in coordinate scaling."""
@@ -205,11 +226,8 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        # Drawable area: 200 - 40 = 160mm per side
-        # ViewBox should be full paper size
-        assert 'viewBox="0 0' in content
-        # Paths should be within margins (not testable easily without parsing coords)
+        root = ET.parse(output_path).getroot()
+        assert root.get("viewBox") == "0 0 200 200"
 
     def test_export_svg_pen_opacity(self, tmp_path: Path):
         """Pen opacity should be applied to stroke-opacity."""
@@ -220,8 +238,22 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        content = output_path.read_text()
-        assert 'stroke-opacity="0.5"' in content or "stroke-opacity:0.5" in content
+        path = ET.parse(output_path).getroot().find(".//" + SVG_NS + "path")
+        assert path is not None
+        assert path.get("stroke-opacity") == "0.5"
+
+    def test_export_svg_named_color_becomes_hex(self, tmp_path: Path):
+        """Penpath writes the pen colour as hex even when given a CSS name."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
+        pen = Pen(name="red_fine", width_mm=0.3, color="red")
+        lines = [LineString([(100, 100), (200, 200)])]
+
+        output_path = tmp_path / "output.svg"
+        export_svg(lines, paper, [pen], output_path)
+
+        path = ET.parse(output_path).getroot().find(".//" + SVG_NS + "path")
+        assert path is not None
+        assert path.get("stroke") == "#FF0000"
 
     def test_export_svg_inkscape_namespace(self, tmp_path: Path):
         """SVG should have Inkscape namespace for layer support."""
@@ -247,7 +279,7 @@ class TestExportSvg:
         assert output_path.exists()
 
     def test_export_svg_path_roundtrip(self, tmp_path: Path):
-        """Exported SVG should be valid XML."""
+        """Exported SVG should be valid XML with one layer per used pen."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [
@@ -258,15 +290,47 @@ class TestExportSvg:
         output_path = tmp_path / "output.svg"
         export_svg(lines, paper, [pen], output_path)
 
-        # Should parse as valid XML
-        tree = ET.parse(output_path)
-        root = tree.getroot()
+        root = ET.parse(output_path).getroot()
         assert root.tag.endswith("svg")
-        # Check for layers
-        groups = root.findall(".//{http://www.w3.org/2000/svg}g")
-        layer_ids = [g.get("id") for g in groups if g.get("id")]
-        assert "background" in layer_ids
-        assert "pen-fine" in layer_ids
+        assert [layer.get("id") for layer in _layer_groups(root)] == ["layer1"]
+
+
+class TestWritePenpathSvg:
+    """Tests for the shared writer used by both export paths."""
+
+    def test_write_penpath_svg_numbers_used_pens_in_drawing_order(self, tmp_path: Path) -> None:
+        """Every used pen gets layerN with its own name, colour and width."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pens = [
+            Pen(name="red", width_mm=0.3, color="#FF0000"),
+            Pen(name="unused", width_mm=0.5, color="#00FF00"),
+            Pen(name="blue", width_mm=0.4, color="#0000FF"),
+        ]
+        lines = [
+            [LineString([(10, 10), (20, 20)])],
+            [],
+            [LineString([(30, 30), (40, 40)])],
+        ]
+        output_path = tmp_path / "layers.svg"
+
+        write_penpath_svg(lines, paper, pens, output_path)
+
+        root = ET.parse(output_path).getroot()
+        layers = _layer_groups(root)
+        assert [layer.get("id") for layer in layers] == ["layer1", "layer2"]
+        assert [layer.get(INKSCAPE_NS + "label") for layer in layers] == ["red", "blue"]
+        strokes = [layer.find(SVG_NS + "path").get("stroke") for layer in layers]
+        assert strokes == ["#FF0000", "#0000FF"]
+        widths = [layer.find(SVG_NS + "path").get("stroke-width") for layer in layers]
+        assert widths == ["0.3", "0.4"]
+
+    def test_write_penpath_svg_rejects_mismatched_pen_counts(self, tmp_path: Path) -> None:
+        """One geometry entry per pen is required."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297)
+        pens = [Pen(name="fine", width_mm=0.3)]
+
+        with pytest.raises(ValueError, match="one entry per pen"):
+            write_penpath_svg([], paper, pens, tmp_path / "bad.svg")
 
 
 class TestPlacementMetadata:
@@ -312,7 +376,7 @@ class TestPlacementMetadata:
         assert "<metadata>" not in content
 
     def test_export_svg_maps_geometries_into_placement(self, tmp_path: Path) -> None:
-        """Stroke coordinates follow the placement rectangle, in SVG units."""
+        """Stroke coordinates are the placement rectangle, in millimetres."""
         paper = Paper(name="square", width_mm=100, height_mm=100)
         pen = Pen(name="fine", width_mm=0.3)
         placement = ImagePlacement(10.0, 20.0, 50.0, 25.0)
@@ -328,11 +392,11 @@ class TestPlacementMetadata:
         )
 
         root = ET.parse(output_path).getroot()
-        paths = [element for element in root.iter() if element.tag.endswith("}path")]
+        paths = list(root.iter(SVG_NS + "path"))
         assert len(paths) == 1
         path_data = paths[0].attrib["d"]
-        assert "M 37.795 75.591" in path_data
-        assert "L 226.772 170.079" in path_data
+        assert "M 10.000 20.000" in path_data
+        assert "L 60.000 45.000" in path_data
 
     def test_export_svg_placement_requires_image_size(self, tmp_path: Path) -> None:
         """Placement without the original image size cannot be applied."""
@@ -457,6 +521,12 @@ class TestResolutionMetadata:
         add_placement_metadata(output_path, (10.0, 20.0, 190.0, 100.0), self._resolution())
 
         assert output_path.read_text().count("image-placement") == 1
+
+
+def root_has_path(svg_path: Path) -> bool:
+    """Return whether an SVG contains at least one path element."""
+    root = ET.parse(svg_path).getroot()
+    return root.find(".//" + SVG_NS + "path") is not None
 
 
 if __name__ == "__main__":

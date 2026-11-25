@@ -144,8 +144,8 @@ class TestConvertCommand:
         svg_content = output_path.read_text()
         assert "<svg" in svg_content
         assert "</svg>" in svg_content
-        assert "viewBox" in svg_content
-        assert "pen-" in svg_content  # Layer for pen
+        assert 'viewBox="0 0 210 297"' in svg_content
+        assert 'id="layer1"' in svg_content  # Layer for the used pen
 
     def test_convert_positional_output(
         self, runner: CliRunner, test_image: Path, tmp_path: Path
@@ -278,10 +278,10 @@ class TestConvertCommand:
         )
         assert result.exit_code == 0, result.output
         svg = output_path.read_text()
-        assert 'inkscape:label="Pen: stabilo_88_yellow"' in svg
+        assert 'inkscape:label="stabilo_88_yellow"' in svg
         assert 'stroke="#F7E300"' in svg
-        assert "Pen: stabilo_88_cyan" not in svg
-        assert svg.count('inkscape:groupmode="layer"') == 2  # background + one pen
+        assert "stabilo_88_cyan" not in svg
+        assert svg.count('inkscape:groupmode="layer"') == 1  # one used pen
 
     def test_convert_with_inline_palette_keeps_user_order(
         self, runner: CliRunner, test_image: Path, tmp_path: Path
@@ -303,9 +303,9 @@ class TestConvertCommand:
         )
         assert result.exit_code == 0, result.output
         svg = output_path.read_text()
-        assert 'inkscape:label="Pen: red"' in svg
+        assert 'inkscape:label="red"' in svg
         assert 'stroke="#FF0000"' in svg
-        assert "Pen: blue" not in svg
+        assert "blue" not in svg
 
     def test_convert_pen_and_palette_is_a_clear_error(
         self, runner: CliRunner, test_image: Path, tmp_path: Path

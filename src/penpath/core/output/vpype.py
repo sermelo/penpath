@@ -1,8 +1,12 @@
-"""vpype CLI wrapper for line optimization and SVG export."""
+"""vpype CLI wrapper for geometry optimization.
+
+vpype contributes geometry only: it is called once per pen, its output is read
+back with :func:`penpath.core.svg_parse.parse_svg_strokes`, and penpath writes
+the final SVG itself so both export paths share one layout.
+"""
 
 from __future__ import annotations
 
-import contextlib
 import subprocess
 import tempfile
 from pathlib import Path
@@ -11,16 +15,21 @@ from typing import TYPE_CHECKING
 from shapely import LineString
 
 from penpath.core.output.svg import (
+    MM_PER_INCH,
+    SVG_DPI,
     ImagePlacement,
     _as_placement,
-    _pen_layer_label,
     _scale_geometries_to_placement,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
     from penpath.core.models import Paper, Pen
+    from penpath.core.simulation import PenStroke
+
+
+SVG_UNITS_PER_MM = SVG_DPI / MM_PER_INCH
 
 
 def _create_vpype_script(geometries: Iterable[LineString], layer_id: int) -> str:
@@ -31,7 +40,7 @@ def _create_vpype_script(geometries: Iterable[LineString], layer_id: int) -> str
     Parameters
     ----------
     geometries : Iterable[LineString]
-        Line geometries in pixel coordinates (1/96 inch = 1 SVG pixel).
+        Line geometries in vpype user units (1/96 inch).
     layer_id : int
         Target layer ID (1-indexed for vpype).
 
@@ -66,145 +75,145 @@ def generate():
 """
 
 
-def run_vpype(
-    geometries: list[LineString],
+def _to_vpype_units(geometries: Iterable[LineString]) -> list[LineString]:
+    """Convert millimetre geometry to vpype's 96-DPI user units."""
+    transformed: list[LineString] = []
+    for line in geometries:
+        coords = list(line.coords)
+        if len(coords) < 2:
+            continue
+        transformed.append(
+            LineString([(x * SVG_UNITS_PER_MM, y * SVG_UNITS_PER_MM) for x, y in coords])
+        )
+    return transformed
+
+
+def _optimise_one_pen(
+    geometries: Sequence[LineString],
     paper: Paper,
-    pens: list[Pen],
+    vpype_path: str,
+    center: bool,
+) -> list[PenStroke]:
+    """Run one vpype call for one pen and read the optimised strokes back."""
+    from penpath.core.svg_parse import parse_svg_strokes
+
+    script_content = _create_vpype_script(geometries, 1)
+    with tempfile.TemporaryDirectory(prefix="penpath_vpype_") as tmp_dir:
+        script_path = Path(tmp_dir) / "pen.py"
+        script_path.write_text(script_content, encoding="utf-8")
+
+        cmd = [
+            vpype_path,
+            "script",
+            "--layer",
+            "1",
+            str(script_path),
+            "linemerge",
+            "linesimplify",
+            "reloop",
+            "linesort",
+            "write",
+            "--page-size",
+            paper.to_vpype_page_size(),
+        ]
+        if center:
+            cmd.append("--center")
+        cmd.extend(["--format", "SVG", "-"])
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=False,
+                check=True,
+            )
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"vpype executable not found at '{vpype_path}'. "
+                'Install it with: pip install "penpath[vpype]"'
+            ) from e
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else "Unknown error"
+            raise RuntimeError(f"vpype command failed (exit code {e.returncode}): {stderr}") from e
+
+        svg_path = Path(tmp_dir) / "optimised.svg"
+        svg_path.write_bytes(result.stdout)
+        return parse_svg_strokes(svg_path)
+
+
+def optimize_with_vpype(
+    geometries_by_pen: Sequence[Sequence[LineString]],
+    paper: Paper,
+    pens: Sequence[Pen],
     vpype_path: str = "vpype",
     image_placement: ImagePlacement | tuple[float, float, float, float] | None = None,
     image_size_px: tuple[int, int] | None = None,
-) -> bytes:
-    """Run vpype pipeline for line optimization and SVG export.
+) -> list[list[PenStroke]]:
+    """Optimise each pen's geometry in exactly one vpype call per pen.
 
-    Pipeline: linemerge -> linesimplify -> reloop -> linesort -> penwidth -> write.
-    Each pen's colour and layer label are written to its vpype layer with the
-    ``color`` and ``name`` commands, so the output describes the same pen as the
-    direct SVG export.
-    Without a placement, vpype centers the output on the page. When a placement
-    is given, the geometries are scaled onto that rectangle first (in pixels,
-    1/96 inch per unit) and ``--center`` is dropped, so vpype writes them where
-    the placement metadata says they are.
+    A call carries a single layer, so vpype never merges or sorts geometry
+    across pens. Strokes are read back in paper millimetres and penpath writes
+    the final SVG. Without a placement vpype centres its output on the page;
+    with one, the geometry is mapped into the placement rectangle first and
+    vpype is not allowed to move it.
 
     Parameters
     ----------
-    geometries : list[LineString]
-        Input line geometries in image pixel coordinates.
+    geometries_by_pen : Sequence[Sequence[LineString]]
+        Image pixel geometries, one list per pen in drawing order.
     paper : Paper
-        Paper configuration (size, margins, DPI).
-    pens : list[Pen]
-        Pen configurations. First pen gets all geometries (MVP: single pen).
+        Paper configuration (size, margins).
+    pens : Sequence[Pen]
+        Pens in drawing order. Used for the one-call-per-pen contract.
     vpype_path : str, optional
         Path to vpype executable. Defaults to "vpype" in PATH.
     image_placement : ImagePlacement | tuple, optional
-        Rectangle (x, y, width, height in mm) where the source image was
-        placed. Geometries are mapped into this rectangle before export and
-        vpype is not allowed to move them afterwards. ``image_size_px`` must
-        also be provided.
+        Rectangle (x, y, width, height in mm) where the source image sits.
+        ``image_size_px`` must also be provided.
     image_size_px : tuple[int, int], optional
-        Original image size (width, height) in pixels. Required when
-        ``image_placement`` is provided.
+        Original image size (width, height) in pixels.
 
     Returns
     -------
-    bytes
-        SVG output from vpype stdout.
+    list[list[PenStroke]]
+        Optimised strokes per pen, in paper millimetres.
 
     Raises
     ------
     FileNotFoundError
         If vpype executable is not found.
     RuntimeError
-        If vpype command fails.
+        If a vpype command fails.
     ValueError
-        If no pens provided, no valid geometries, or a placement is given
-        without the image size.
+        If the pen/geometry counts disagree, a placement is given without
+        the image size, or no valid geometry is supplied.
     """
     if not pens:
         raise ValueError("At least one pen must be provided")
-
-    if not geometries:
-        raise ValueError("No geometries provided")
-
-    valid_geometries = [g for g in geometries if not g.is_empty and len(list(g.coords)) >= 2]
-    if not valid_geometries:
-        raise ValueError("No valid geometries (need at least 2 points per line)")
-
+    if len(geometries_by_pen) != len(pens):
+        raise ValueError("geometries_by_pen must have one entry per pen")
     if image_placement is not None and image_size_px is None:
         raise ValueError("image_size_px is required when image_placement is provided")
 
-    if image_placement is not None and image_size_px is not None:
-        placed_geometries = _scale_geometries_to_placement(
-            valid_geometries, _as_placement(image_placement), image_size_px
+    valid_by_pen = [
+        [line for line in lines if not line.is_empty and len(list(line.coords)) >= 2]
+        for lines in geometries_by_pen
+    ]
+    if not any(valid_by_pen):
+        raise ValueError("No valid geometries (need at least 2 points per line)")
+
+    placement = _as_placement(image_placement) if image_placement is not None else None
+    optimized: list[list[PenStroke]] = []
+    for lines in valid_by_pen:
+        if placement is not None and image_size_px is not None:
+            placed_mm = _scale_geometries_to_placement(lines, placement, image_size_px)
+            vpype_geometry = _to_vpype_units(placed_mm)
+        else:
+            vpype_geometry = lines
+        optimized.append(
+            _optimise_one_pen(vpype_geometry, paper, vpype_path, center=placement is None)
         )
-    else:
-        placed_geometries = valid_geometries
-
-    # Create temporary script files for each layer
-    temp_files: list[Path] = []
-    try:
-        # Build vpype command
-        cmd = [vpype_path]
-
-        # Add script commands for each pen layer, carrying the pen's identity
-        # into vpype so the exported SVG uses the same colour and label as the
-        # direct export.
-        for i, pen in enumerate(pens):
-            layer_id = i + 1  # vpype layers are 1-indexed
-            script_content = _create_vpype_script(
-                placed_geometries if i == 0 else [],  # Only first pen gets geometries (MVP)
-                layer_id,
-            )
-
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".py", delete=False, prefix=f"penpath_vpype_layer{layer_id}_"
-            ) as f:
-                f.write(script_content)
-                temp_files.append(Path(f.name))
-
-            cmd.extend(["script", "--layer", str(layer_id), str(temp_files[-1])])
-            cmd.extend(["color", "--layer", str(layer_id), pen.color])
-            cmd.extend(["name", "--layer", str(layer_id), _pen_layer_label(pen)])
-
-        # Add optimization pipeline. The pen width is written as a vpype layer
-        # property so the simulator sees the real stroke width, not a fallback.
-        cmd.extend(
-            [
-                "linemerge",
-                "linesimplify",
-                "reloop",
-                "linesort",
-                "penwidth",
-                f"{pens[0].width_mm}mm",
-                "write",
-                "--page-size",
-                paper.to_vpype_page_size(),
-            ]
-        )
-        if image_placement is None:
-            cmd.append("--center")
-        cmd.extend(["--format", "SVG", "-"])  # Write to stdout
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=False,
-            check=True,
-        )
-        return result.stdout
-
-    except FileNotFoundError as e:
-        raise FileNotFoundError(
-            f"vpype executable not found at '{vpype_path}'. "
-            'Install it with: pip install "penpath[vpype]"'
-        ) from e
-    except subprocess.CalledProcessError as e:
-        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else "Unknown error"
-        raise RuntimeError(f"vpype command failed (exit code {e.returncode}): {stderr}") from e
-    finally:
-        # Clean up temporary script files
-        for temp_file in temp_files:
-            with contextlib.suppress(OSError):
-                temp_file.unlink()
+    return optimized
 
 
-__all__ = ["run_vpype"]
+__all__ = ["optimize_with_vpype"]

@@ -344,8 +344,8 @@ output_path: "{output}"
         )
         assert result.exit_code == 0, result.output
         svg = output.read_text()
-        assert 'inkscape:label="Pen: stabilo_88_yellow"' in svg
-        assert svg.count('inkscape:groupmode="layer"') == 2  # background + one pen
+        assert 'inkscape:label="stabilo_88_yellow"' in svg
+        assert svg.count('inkscape:groupmode="layer"') == 1  # one used pen
 
     def test_palette_does_not_change_the_drawing(
         self, runner: CliRunner, reference_image: Path, tmp_path: Path
@@ -408,10 +408,10 @@ output_path: "{output}"
         )
         assert result.exit_code == 0, result.output
         svg = output.read_text()
-        assert 'inkscape:label="Pen: first"' in svg
+        assert 'inkscape:label="first"' in svg
         assert 'stroke="#FF0000"' in svg
-        assert "Pen: second" not in svg
-        assert svg.count('inkscape:groupmode="layer"') == 2  # background + one pen
+        assert "second" not in svg
+        assert svg.count('inkscape:groupmode="layer"') == 1  # one used pen
 
     def test_project_pen_and_palette_is_a_clear_error(
         self, runner: CliRunner, reference_image: Path, tmp_path: Path

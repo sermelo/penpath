@@ -1,63 +1,56 @@
-"""Unit tests for vpype wrapper."""
+"""Unit tests for the vpype wrapper."""
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+import subprocess
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
-from PIL import ImageColor
 from shapely import LineString
 
 from penpath.core.models import Paper, Pen
-from penpath.core.output.svg import ImagePlacement, export_svg
-from penpath.core.output.vpype import run_vpype
+from penpath.core.output.vpype import optimize_with_vpype
 
-# Skip all tests in this module if vpype is not installed
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from penpath.core.simulation import PenStroke
+
+
 pytest.importorskip("vpype", reason="vpype not installed, skipping vpype tests")
 
-INKSCAPE_ATTR = "{http://www.inkscape.org/namespaces/inkscape}"
+
+_FAKE_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg"
+ xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+ width="100mm" height="100mm" viewBox="0 0 100 100">
+ <g fill="none" inkscape:groupmode="layer" inkscape:label="1">
+  <line x1="10" y1="10" x2="20" y2="20"/>
+ </g>
+</svg>"""
 
 
-def _layers_by_label(svg_bytes: bytes) -> dict[str, dict[str, str]]:
-    """Map each Inkscape layer label to its attributes."""
-    root = ET.fromstring(svg_bytes)
-    layers: dict[str, dict[str, str]] = {}
-    for element in root.iter():
-        if not element.tag.endswith("g"):
-            continue
-        groupmode = element.get("inkscape:groupmode") or element.get(INKSCAPE_ATTR + "groupmode")
-        if groupmode != "layer":
-            continue
-        label = element.get("inkscape:label") or element.get(INKSCAPE_ATTR + "label")
-        if label:
-            attrs = dict(element.attrib)
-            if "stroke" not in attrs:
-                for descendant in element.iter():
-                    if descendant.get("stroke"):
-                        attrs["stroke"] = descendant.get("stroke") or ""
-                        break
-            layers[label] = attrs
-    return layers
+class TestOptimizeWithVpype:
+    """Tests for optimise-with-vpype, which returns geometry in millimetres."""
 
-
-class TestRunVpype:
-    """Tests for run_vpype function."""
-
-    def test_run_vpype_basic(self):
-        """Basic vpype pipeline should produce valid SVG."""
+    def test_optimize_with_vpype_basic(self):
+        """A vpype run returns strokes in paper millimetres."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [LineString([(100, 100), (200, 200), (300, 100)])]
 
-        svg_bytes = run_vpype(lines, paper, [pen])
+        strokes_by_pen = optimize_with_vpype([lines], paper, [pen])
 
-        assert isinstance(svg_bytes, bytes)
-        assert len(svg_bytes) > 0
-        assert b"<svg" in svg_bytes
-        assert b"</svg>" in svg_bytes
+        assert len(strokes_by_pen) == 1
+        strokes = strokes_by_pen[0]
+        assert strokes
+        assert all(stroke.pen_up is False for stroke in strokes)
+        assert all(
+            point[0] <= 210 and point[1] <= 297 for stroke in strokes for point in stroke.polyline
+        )
 
-    def test_run_vpype_multiple_lines(self):
-        """Multiple lines should all appear in output."""
+    def test_optimize_with_vpype_multiple_lines(self):
+        """Multiple lines all appear in the returned geometry."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [
@@ -66,206 +59,155 @@ class TestRunVpype:
             LineString([(500, 100), (600, 200)]),
         ]
 
-        svg_bytes = run_vpype(lines, paper, [pen])
+        strokes = optimize_with_vpype([lines], paper, [pen])[0]
 
-        assert isinstance(svg_bytes, bytes)
-        assert b"<svg" in svg_bytes
+        assert len(strokes) >= 1
 
-    def test_run_vpype_empty_geometries_raises(self):
-        """Empty geometries list should raise ValueError."""
+    def test_optimize_with_vpype_empty_geometries_raises(self):
+        """No valid geometry is rejected."""
         paper = Paper(name="A4", width_mm=210, height_mm=297)
         pen = Pen(name="fine", width_mm=0.3)
 
-        with pytest.raises(ValueError, match="No geometries provided"):
-            run_vpype([], paper, [pen])
+        with pytest.raises(ValueError, match="No valid geometries"):
+            optimize_with_vpype([[]], paper, [pen])
 
-    def test_run_vpype_no_pens_raises(self):
-        """Empty pens list should raise ValueError."""
+    def test_optimize_with_vpype_no_pens_raises(self):
+        """At least one pen is required."""
         paper = Paper(name="A4", width_mm=210, height_mm=297)
         lines = [LineString([(100, 100), (200, 200)])]
 
         with pytest.raises(ValueError, match="At least one pen must be provided"):
-            run_vpype(lines, paper, [])
+            optimize_with_vpype([lines], paper, [])
 
-    def test_run_vpype_invalid_geometries_raises(self):
-        """Invalid geometries (empty) should raise ValueError."""
+    def test_optimize_with_vpype_pen_count_must_match(self):
+        """One geometry entry is required per pen."""
         paper = Paper(name="A4", width_mm=210, height_mm=297)
-        pen = Pen(name="fine", width_mm=0.3)
-        lines = [
-            LineString([]),  # Empty
-            LineString([]),  # Also empty
-        ]
-
-        with pytest.raises(ValueError, match="No valid geometries"):
-            run_vpype(lines, paper, [pen])
-
-    def test_run_vpype_mixed_valid_invalid_geometries(self):
-        """Should filter out invalid geometries and process valid ones."""
-        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
-        pen = Pen(name="fine", width_mm=0.3)
-        lines = [
-            LineString([]),  # Empty - filtered out
-            LineString([(200, 200), (300, 300)]),  # Valid
-        ]
-
-        svg_bytes = run_vpype(lines, paper, [pen])
-
-        assert isinstance(svg_bytes, bytes)
-        assert b"<svg" in svg_bytes
-
-    def test_run_vpype_custom_paper_size(self):
-        """Should respect custom paper size."""
-        paper = Paper(name="Custom", width_mm=100, height_mm=150, dpi=300)
-        pen = Pen(name="fine", width_mm=0.3)
+        pens = [Pen(name="fine", width_mm=0.3), Pen(name="bold", width_mm=0.5)]
         lines = [LineString([(100, 100), (200, 200)])]
 
-        svg_bytes = run_vpype(lines, paper, [pen])
+        with pytest.raises(ValueError, match="one entry per pen"):
+            optimize_with_vpype([lines], paper, pens)
 
-        assert b'width="10.0cm"' in svg_bytes or b'viewBox="0 0' in svg_bytes
-
-    def test_run_vpype_vpype_not_found(self):
-        """Should raise FileNotFoundError with helpful message if vpype not found."""
+    def test_optimize_with_vpype_vpype_not_found(self):
+        """A missing executable raises a helpful error."""
         paper = Paper(name="A4", width_mm=210, height_mm=297)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [LineString([(100, 100), (200, 200)])]
 
         with pytest.raises(FileNotFoundError, match="vpype executable not found"):
-            run_vpype(lines, paper, [pen], vpype_path="/nonexistent/vpype")
+            optimize_with_vpype([lines], paper, [pen], vpype_path="/nonexistent/vpype")
 
-    def test_run_vpype_svg_contains_layer(self):
-        """Output SVG should contain layer for the pen."""
-        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
-        pen = Pen(name="fine", width_mm=0.3)
-        lines = [LineString([(100, 100), (200, 200)])]
-
-        svg_bytes = run_vpype(lines, paper, [pen])
-
-        # vpype uses layer numbers as IDs by default
-        layer_checks = [
-            b'id="layer1"',
-            b'inkscape:label="1"',
-        ]
-        svg_lower = svg_bytes.lower()
-        assert any(check in svg_lower for check in layer_checks) or b"layer" in svg_lower
-
-    def test_run_vpype_centered_output(self):
-        """Output should be centered (--center flag) when no placement is given."""
-        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
-        pen = Pen(name="fine", width_mm=0.3)
-        lines = [LineString([(100, 100), (200, 200)])]
-
-        svg_bytes = run_vpype(lines, paper, [pen])
-
-        assert b"<svg" in svg_bytes
-        assert b"--center" in svg_bytes
-
-    def test_run_vpype_placement_without_image_size_raises(self):
+    def test_optimize_with_vpype_placement_without_image_size_raises(self):
         """A placement requires the image size in pixels."""
         paper = Paper(name="A4", width_mm=210, height_mm=297)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [LineString([(100, 100), (200, 200)])]
 
         with pytest.raises(ValueError, match="image_size_px is required"):
-            run_vpype(lines, paper, [pen], image_placement=(10.0, 20.0, 50.0, 50.0))
+            optimize_with_vpype([lines], paper, [pen], image_placement=(10.0, 20.0, 50.0, 50.0))
 
-    def test_run_vpype_placement_scales_geometry_and_drops_center(self):
-        """With a placement, geometry lands in the rectangle without recentering."""
+    def test_optimize_with_vpype_placement_scales_geometry_and_drops_center(self):
+        """With a placement, strokes land in the rectangle without recentering."""
         paper = Paper(name="square", width_mm=100, height_mm=100)
         pen = Pen(name="fine", width_mm=0.3)
         lines = [LineString([(0, 0), (100, 50)])]
-        placement = ImagePlacement(x=10.0, y=10.0, width=50.0, height=25.0)
+        placement = (10.0, 10.0, 50.0, 25.0)
 
-        svg_bytes = run_vpype(
-            lines,
+        strokes = optimize_with_vpype(
+            [lines], paper, [pen], image_placement=placement, image_size_px=(100, 50)
+        )[0]
+
+        assert strokes
+        points = [point for stroke in strokes for point in stroke.polyline]
+        assert min(point[0] for point in points) == pytest.approx(10.0, abs=0.1)
+        assert min(point[1] for point in points) == pytest.approx(10.0, abs=0.1)
+        assert max(point[0] for point in points) == pytest.approx(60.0, abs=0.1)
+        assert max(point[1] for point in points) == pytest.approx(35.0, abs=0.1)
+
+    def test_optimize_with_vpype_without_placement_centers(self, monkeypatch):
+        """Without a placement, vpype is allowed to centre the output."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+        lines = [LineString([(0, 0), (100, 50)])]
+        commands: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+            commands.append(cmd)
+            return SimpleNamespace(stdout=_FAKE_SVG, stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        optimize_with_vpype([lines], paper, [pen])
+
+        assert commands
+        assert "--center" in commands[0]
+
+    def test_optimize_with_vpype_one_call_and_one_layer_per_pen(self, monkeypatch):
+        """Each pen gets exactly one vpype call with one layer and no sorting across pens."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pens = [
+            Pen(name="red", width_mm=0.3, color="#FF0000"),
+            Pen(name="blue", width_mm=0.4, color="#0000FF"),
+        ]
+        batches: Sequence[Sequence[LineString]] = [
+            [LineString([(0, 0), (10, 10)])],
+            [LineString([(20, 20), (30, 30)])],
+        ]
+        commands: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+            commands.append(cmd)
+            return SimpleNamespace(stdout=_FAKE_SVG, stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        strokes_by_pen = optimize_with_vpype(batches, paper, pens, vpype_path="vpype-stub")
+
+        assert len(commands) == 2
+        for command in commands:
+            assert command.count("--layer") == 1
+            assert "--layer" in command
+            assert "script" in command
+            assert "linesort" in command
+            assert "color" not in command
+            assert "name" not in command
+        assert len(strokes_by_pen) == 2
+        assert all(len(strokes) == 1 for strokes in strokes_by_pen)
+        assert all(
+            stroke.polyline == [(10.0, 10.0), (20.0, 20.0)]
+            for strokes in strokes_by_pen
+            for stroke in strokes
+        )
+
+    def test_optimize_with_vpype_failed_call_raises_runtime_error(self, monkeypatch):
+        """A vpype failure is reported with its stderr."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+        lines = [LineString([(0, 0), (10, 10)])]
+
+        def fake_run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+            raise subprocess.CalledProcessError(1, cmd, stderr=b"broken pipeline")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        with pytest.raises(RuntimeError, match="broken pipeline"):
+            optimize_with_vpype([lines], paper, [pen], vpype_path="vpype-stub")
+
+    def test_optimize_with_vpype_reads_back_millimetres_from_viewbox(self):
+        """The parser derives millimetres from the root width/viewBox ratio."""
+        paper = Paper(name="square", width_mm=100, height_mm=100)
+        pen = Pen(name="fine", width_mm=0.3)
+        lines = [LineString([(0, 0), (100, 50)])]
+
+        strokes: list[PenStroke] = optimize_with_vpype(
+            [lines],
             paper,
             [pen],
-            image_placement=placement,
-            image_size_px=(100, 50),
+            image_placement=(0.0, 0.0, 100.0, 100.0),
+            image_size_px=(100, 100),
+        )[0]
+
+        assert strokes
+        assert max(point[0] for stroke in strokes for point in stroke.polyline) == pytest.approx(
+            100.0, abs=0.1
         )
-
-        assert b"<svg" in svg_bytes
-        assert b"--center" not in svg_bytes
-        root = ET.fromstring(svg_bytes)
-        drawn_lines = [element for element in root.iter() if element.tag.endswith("line")]
-        assert len(drawn_lines) == 1
-        line = drawn_lines[0]
-        mm_to_px = 96 / 25.4
-        assert float(line.get("x1")) == pytest.approx(placement.x * mm_to_px, abs=0.01)
-        assert float(line.get("y1")) == pytest.approx(placement.y * mm_to_px, abs=0.01)
-        assert float(line.get("x2")) == pytest.approx(
-            (placement.x + placement.width) * mm_to_px, abs=0.01
-        )
-        assert float(line.get("y2")) == pytest.approx(
-            (placement.y + placement.height) * mm_to_px, abs=0.01
-        )
-
-    def test_run_vpype_writes_pen_width(self):
-        """The vpype output carries the real pen width for faithful previews."""
-        paper = Paper(name="square", width_mm=100, height_mm=100)
-        pen = Pen(name="fine", width_mm=0.3)
-        lines = [LineString([(0, 0), (100, 50)])]
-
-        svg_bytes = run_vpype(lines, paper, [pen])
-
-        root = ET.fromstring(svg_bytes)
-        groups = [element for element in root.iter() if element.tag.endswith("g")]
-        assert any(
-            float(group.get("stroke-width", "0")) == pytest.approx(0.3 * 96 / 25.4, abs=0.001)
-            for group in groups
-        )
-
-    def test_run_vpype_writes_pen_colour_and_layer_label(self):
-        """The vpype layer carries the pen's colour and label, not vpype defaults."""
-        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
-        pen = Pen(name="fine", width_mm=0.3, color="#123456")
-        lines = [LineString([(100, 100), (200, 200)])]
-
-        svg_bytes = run_vpype(lines, paper, [pen])
-
-        layers = _layers_by_label(svg_bytes)
-        assert set(layers) == {"Pen: fine"}
-        assert layers["Pen: fine"].get("stroke", "").lower() == pen.color
-        assert b"#0000ff" not in svg_bytes
-
-    def test_run_vpype_pen_identity_agrees_with_direct_export(self, tmp_path):
-        """Both export paths describe the same pen, even when CSS names are normalised."""
-        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
-        pen = Pen(name="red_fine", width_mm=0.3, color="red")
-        lines = [LineString([(100, 100), (200, 200)])]
-        output = tmp_path / "direct.svg"
-
-        export_svg(lines, paper, [pen], output)
-        vpype_layers = _layers_by_label(run_vpype(lines, paper, [pen]))
-        direct_layers = _layers_by_label(output.read_bytes())
-
-        assert "Pen: red_fine" in vpype_layers
-        assert "Pen: red_fine" in direct_layers
-        assert ImageColor.getrgb(vpype_layers["Pen: red_fine"]["stroke"]) == ImageColor.getrgb(
-            direct_layers["Pen: red_fine"]["stroke"]
-        )
-
-
-class TestRunVpypeMultiPen:
-    """Tests for multi-pen support (future extensibility)."""
-
-    def test_run_vpype_multiple_pens_creates_layers(self):
-        """Multiple pens should create multiple layers (only first populated)."""
-        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
-        pens = [
-            Pen(name="fine", width_mm=0.3, color="#000000"),
-            Pen(name="bold", width_mm=0.5, color="#FF0000"),
-        ]
-        lines = [LineString([(100, 100), (200, 200)])]
-
-        svg_bytes = run_vpype(lines, paper, pens)
-
-        assert isinstance(svg_bytes, bytes)
-        assert b"<svg" in svg_bytes
-        # Both layers should exist (layer1 populated, layer2 empty)
-        # vpype creates layers for all script calls
-        layers = _layers_by_label(svg_bytes)
-        assert layers["Pen: fine"]["stroke"].lower() == "#000000"
-        assert layers["Pen: bold"]["stroke"].lower() == "#ff0000"
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import click
 from pydantic import ValidationError
@@ -19,6 +19,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
+from shapely import LineString
 
 from penpath.cli.config import Config, load_config
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
@@ -29,17 +30,13 @@ from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
 from penpath.core.models import ImageRef, Palette, Paper, Pen, Project, SketchLinesPFM
-from penpath.core.output.svg import add_placement_metadata, export_svg, fit_image_placement
-from penpath.core.output.vpype import run_vpype
+from penpath.core.output.svg import export_svg, fit_image_placement, write_penpath_svg
+from penpath.core.output.vpype import optimize_with_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
 from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper
 from penpath.presets.pens import get_pen
 from penpath.presets.pfms import DEFAULT_PFM, get_pfm_preset, list_pfm_presets
-
-if TYPE_CHECKING:
-    from shapely import LineString
-
 
 console = Console(stderr=True)
 
@@ -415,20 +412,27 @@ def _run_convert_pipeline(
         merge_dist_mm=0.5,
     )
 
-    # Step 5: Export (vpype or direct SVG)
+    # Step 5: Export. vpype optimises geometry only; penpath writes the SVG
+    # on both paths so the millimetre layout is identical.
     progress.update(task_id, description="Exporting SVG...", advance=20)
     if use_vpype:
         try:
-            svg_bytes = run_vpype(
-                optimized_lines,
+            strokes_by_pen = optimize_with_vpype(
+                [optimized_lines],
                 project.paper,
                 [pen],
                 vpype_path,
                 image_placement,
                 working_size_px,
             )
-            project.output_path.write_bytes(svg_bytes)
-            add_placement_metadata(project.output_path, image_placement, resolution)
+            write_penpath_svg(
+                [[LineString(stroke.polyline) for stroke in strokes] for strokes in strokes_by_pen],
+                project.paper,
+                [pen],
+                project.output_path,
+                image_placement,
+                resolution,
+            )
         except FileNotFoundError:
             console.print(
                 "vpype not found, falling back to direct SVG export "

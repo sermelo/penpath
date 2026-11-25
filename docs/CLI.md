@@ -118,10 +118,14 @@ pip install "penpath[vpype]"
 ```
 
 Installing plain `pip install vpype` works too. Without vpype, the run prints
-`vpype not found, falling back to direct SVG export (install it with: pip install "penpath[vpype]")`
-and exports the SVG directly: penpath's own simplify → merge → sort still runs,
-but vpype's extra `linemerge → linesimplify → reloop → linesort` pass and its SVG
-writer do not. Use `--no-vpype` to skip vpype on purpose.
+`vpype not found, falling back to direct SVG export (install it with: pip install "penpath[vpype]")`.
+Penpath's own simplify → merge → sort still runs, but vpype's extra
+`linemerge → linesimplify → reloop → linesort` pass does not. Use `--no-vpype`
+to skip vpype on purpose. vpype contributes geometry only; penpath writes the
+final SVG on both paths. Each used pen gets an Inkscape layer with `id="layerN"`
+and the pen name as `inkscape:label`, and the page uses millimetres throughout.
+Do not feed the result back to `vpype read`: vpype reads its layer number from
+the digits in the label, so `stabilo_88_red` and `stabilo_88_green` would merge.
 
 The SVG records where the source image was placed on the page, in millimetres:
 
@@ -283,7 +287,7 @@ one fall back to A4. All progress messages go to stderr, so stdout stays clean.
 ```bash
 penpath preview plot.svg -o preview.png
 penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
-penpath preview plot.svg -o fine.png --layer "Pen: fine"
+penpath preview plot.svg -o fine.png --layer fine
 ```
 
 ---
@@ -336,7 +340,7 @@ With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 ```bash
 penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
-penpath evaluate photo.jpg plot.svg --dpi 5 --layer "Pen: fine"
+penpath evaluate photo.jpg plot.svg --dpi 5 --layer fine
 ```
 
 ---
