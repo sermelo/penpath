@@ -1,4 +1,4 @@
-; penpath gcode profile=ramped page=210.000x297.000 z_up=5.000 z_touch=2.000 z_down=1.000
+; penpath gcode profile=ramped page=210.000x297.000 page_origin=0.000,0.000 usable_x=0.000..208.000 usable_y=0.000..294.000 z_up=5.000 z_touch=2.000 z_down=1.000
 G21
 G90
 ; layer 1/1 pen=black

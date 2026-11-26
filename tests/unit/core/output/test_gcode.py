@@ -55,7 +55,9 @@ def test_build_gcode_emits_profile_values_and_pen_state_machine() -> None:
     produced = build_gcode(layers, profile, (50.0, 60.0))
 
     assert produced == (
-        "; penpath gcode profile=test_machine page=50.000x60.000 z_up=4.000 z_down=1.000\n"
+        "; penpath gcode profile=test_machine page=50.000x60.000 "
+        "page_origin=0.000,0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
+        "z_up=4.000 z_down=1.000\n"
         "G21\n"
         "G90\n"
         "; layer 1/1 pen=ink\n"
@@ -221,6 +223,7 @@ def test_build_gcode_header_carries_z_touch_for_the_preview() -> None:
 
     assert produced.startswith(
         "; penpath gcode profile=test_machine page=20.000x20.000 "
+        "page_origin=0.000,0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
         "z_up=12.500 z_touch=10.000 z_down=9.000\n"
     )
 
@@ -247,7 +250,9 @@ def test_build_gcode_generic_profile_comes_from_the_builtin_yaml(tmp_path: Path)
     )
 
     assert produced.startswith(
-        "; penpath gcode profile=generic page=210.000x297.000 z_up=5.000 z_down=0.000\n"
+        "; penpath gcode profile=generic page=210.000x297.000 "
+        "page_origin=0.000,0.000 usable_x=0.000..210.000 usable_y=0.000..297.000 "
+        "z_up=5.000 z_down=0.000\n"
     )
     assert "G21\nG90\nG28\n" in produced
     assert "G0 Z5.000 F6000\nG0 X1.000 Y296.000 F6000\nG0 Z0.000 F6000\n" in produced
@@ -271,6 +276,7 @@ def test_build_gcode_with_no_drawn_layers_emits_only_wrapper() -> None:
 
     assert (
         produced == "; penpath gcode profile=test_machine page=10.000x10.000 "
+        "page_origin=0.000,0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
         "z_up=4.000 z_down=1.000\nG21\nG90\nM2\n"
     )
 
@@ -439,6 +445,7 @@ def test_build_gcode_ramped_stroke_lands_and_lifts_while_moving() -> None:
 
     assert produced == (
         "; penpath gcode profile=test_machine page=100.000x100.000 "
+        "page_origin=0.000,0.000 usable_x=0.000..98.000 usable_y=0.000..97.000 "
         "z_up=5.000 z_touch=2.000 z_down=1.000\n"
         "G21\nG90\n"
         "; layer 1/1 pen=ink\n"
@@ -605,7 +612,10 @@ def test_build_gcode_error_names_per_axis_overshoot() -> None:
 
     message = str(info.value)
     assert "point (x=101.000, y=-5.000) mm" in message
-    assert "drawable area X 0.000..100.000, Y 0.000..100.000 mm" in message
+    assert (
+        "usable area X 0.000..100.000, Y 0.000..100.000 mm "
+        "(drawable area minus a 0.000 mm margin)" in message
+    )
     assert "overshoot x=1.000 mm, y=5.000 mm" in message
 
 

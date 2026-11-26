@@ -31,10 +31,13 @@ class GcodePreviewError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class GcodeHeader:
-    """Profile name and Z heights a penpath header declares."""
+    """Profile name, page placement, usable area and Z heights a header declares."""
 
     profile: str | None = None
     page: tuple[float, float] | None = None
+    page_origin: tuple[float, float] | None = None
+    usable_x: tuple[float, float] | None = None
+    usable_y: tuple[float, float] | None = None
     z_up: float | None = None
     z_touch: float | None = None
     z_down: float | None = None
@@ -66,6 +69,16 @@ def _page_size(text: str) -> tuple[float, float] | None:
     return (width, height)
 
 
+def _pair(text: str, separator: str) -> tuple[float, float] | None:
+    parts = text.split(separator)
+    if len(parts) != 2:
+        return None
+    first, second = _number(parts[0]), _number(parts[1])
+    if first is None or second is None:
+        return None
+    return (first, second)
+
+
 def parse_gcode_header(text: str) -> GcodeHeader:
     """Return the penpath header fields, empty when the file has no header."""
     for line in text.splitlines():
@@ -78,6 +91,9 @@ def parse_gcode_header(text: str) -> GcodeHeader:
         return GcodeHeader(
             profile=fields.get("profile"),
             page=_page_size(fields["page"]) if "page" in fields else None,
+            page_origin=_pair(fields["page_origin"], ",") if "page_origin" in fields else None,
+            usable_x=_pair(fields["usable_x"], "..") if "usable_x" in fields else None,
+            usable_y=_pair(fields["usable_y"], "..") if "usable_y" in fields else None,
             z_up=_number(fields["z_up"]) if "z_up" in fields else None,
             z_touch=_number(fields["z_touch"]) if "z_touch" in fields else None,
             z_down=_number(fields["z_down"]) if "z_down" in fields else None,
@@ -119,9 +135,9 @@ def _to_page(
     point: tuple[float, float],
     page_size_mm: tuple[float, float],
     profile: MachineProfile | None,
+    origin: tuple[float, float],
 ) -> tuple[float, float]:
     offset = profile.bed.pen_offset_mm if profile is not None else (0.0, 0.0)
-    origin = page_origin_mm(profile, page_size_mm) if profile is not None else (0.0, 0.0)
     x = point[0] + offset[0] - origin[0]
     y = point[1] + offset[1] - origin[1]
     if profile is None or profile.bed.invert_y:
@@ -141,12 +157,20 @@ def gcode_to_strokes(
     ``z_touch`` from the header decides when the pen is down; a header without
     it uses ``z_down`` and a foreign file uses its lowest Z. The header's ``page``
     overrides ``paper_size_mm`` so an SVG page that differs from the bed inverts
-    around the same height the emitter used. ``pen_styles`` maps pen names to
-    ``(color, width_mm)``; unknown pens render black at 0.3 mm. Arcs and
-    malformed coordinates raise :class:`GcodePreviewError`.
+    around the same height the emitter used, and the header's ``page_origin``
+    overrides the profile's placement so a one-run margin override previews
+    correctly. ``pen_styles`` maps pen names to ``(color, width_mm)``; unknown
+    pens render black at 0.3 mm. Arcs and malformed coordinates raise
+    :class:`GcodePreviewError`.
     """
     header = parse_gcode_header(text)
     page_size_mm = header.page or paper_size_mm
+    if header.page_origin is not None:
+        origin = header.page_origin
+    elif profile is not None:
+        origin = page_origin_mm(profile, page_size_mm)
+    else:
+        origin = (0.0, 0.0)
     moves = _moves(text)
     if header.z_touch is not None:
         touch_z = header.z_touch
@@ -192,11 +216,11 @@ def gcode_to_strokes(
             return
         if math.dist(first, last) <= Z_EPSILON_MM:
             if not points:
-                points.append(_to_page(first, page_size_mm, profile))
+                points.append(_to_page(first, page_size_mm, profile, origin))
             return
         if not points:
-            points.append(_to_page(first, page_size_mm, profile))
-        points.append(_to_page(last, page_size_mm, profile))
+            points.append(_to_page(first, page_size_mm, profile, origin))
+        points.append(_to_page(last, page_size_mm, profile, origin))
 
     for move in moves:
         if move.pen is not None:

@@ -79,6 +79,7 @@ from penpath.core.output import (
     fit_layers_to_drawable,
     lead_in_mm,
     page_origin_mm,
+    usable_area,
 )
 from penpath.core.profiles import (
     PROFILE_FILE_VERSION,
@@ -99,6 +100,7 @@ from penpath.core.profiles import (
     list_profile_sources,
     list_profiles,
     load_profile,
+    with_margin_mm,
 )
 from penpath.core.project import (
     PROJECT_FILE_VERSION,
@@ -229,4 +231,6 @@ __all__ = [
     "simplify_line",
     "simulate_plot",
     "threshold",
+    "usable_area",
+    "with_margin_mm",
 ]

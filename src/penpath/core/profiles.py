@@ -10,6 +10,7 @@ built-in of the same name.
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -24,6 +25,9 @@ USER_PROFILES_FILENAME = "profiles.yaml"
 
 _MmPositive = Annotated[float, Field(gt=0.0)]
 _MmNonNegative = Annotated[float, Field(ge=0.0)]
+_MarginValue = (
+    _MmNonNegative | tuple[_MmNonNegative, _MmNonNegative, _MmNonNegative, _MmNonNegative]
+)
 
 
 class ProfileError(Exception):
@@ -65,9 +69,25 @@ class BedProfile(_ProfileModel):
     size_mm: tuple[_MmPositive, _MmPositive]
     pen_offset_mm: tuple[float, float] = (0.0, 0.0)
     nozzle_range_mm: tuple[tuple[float, float], tuple[float, float]] | None = None
-    margin_mm: _MmNonNegative = 0.0
+    margin_mm: _MarginValue = 0.0
+    """Safety margin from the drawable edge, in millimetres.
+
+    A single non-negative number is used on all four sides. A list or tuple of
+    exactly four non-negative numbers sets ``[top, right, bottom, left]``: in
+    pen space ``top`` is the back (maximum Y), ``right`` the maximum X,
+    ``bottom`` the front (minimum Y) and ``left`` the minimum X. The raw value
+    is kept for display and serialization; use ``margins_mm`` for the normalized
+    four floats in ``(top, right, bottom, left)`` order.
+    """
     page: PageProfile = Field(default_factory=PageProfile)
     invert_y: bool = True
+
+    @property
+    def margins_mm(self) -> tuple[float, float, float, float]:
+        """Return the four margins in ``(top, right, bottom, left)`` pen-space order."""
+        if isinstance(self.margin_mm, tuple):
+            return self.margin_mm
+        return (self.margin_mm, self.margin_mm, self.margin_mm, self.margin_mm)
 
     @model_validator(mode="after")
     def _check_nozzle_range(self) -> Self:
@@ -199,6 +219,35 @@ class MachineProfile(_ProfileModel):
     pen: PenProfile
     gcode: GcodeProfile = Field(default_factory=GcodeProfile)
     pen_change: PenChangeProfile = Field(default_factory=PenChangeProfile)
+
+
+def with_margin_mm(profile: MachineProfile, margin_mm: float | Sequence[float]) -> MachineProfile:
+    """Return a validated copy of ``profile`` with its bed margin overridden.
+
+    Parameters
+    ----------
+    profile : MachineProfile
+        Validated profile to copy; it is left unchanged.
+    margin_mm : float | Sequence[float]
+        One non-negative number for all four sides, or four numbers in
+        ``[top, right, bottom, left]`` pen-space order.
+
+    Returns
+    -------
+    MachineProfile
+        The copy, revalidated so an invalid margin raises pydantic's error
+        naming ``bed.margin_mm``.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        The margin is negative, not numeric or has the wrong number of sides.
+    """
+    bed = profile.bed.model_dump()
+    bed["margin_mm"] = margin_mm
+    data = profile.model_dump()
+    data["bed"] = bed
+    return MachineProfile.model_validate(data)
 
 
 def get_user_profiles_path() -> Path:
@@ -372,4 +421,5 @@ __all__ = [
     "list_profile_sources",
     "list_profiles",
     "load_profile",
+    "with_margin_mm",
 ]

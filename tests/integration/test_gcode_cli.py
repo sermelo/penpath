@@ -203,7 +203,7 @@ pen:
     )
 
     assert result.exit_code == 3
-    assert "outside the drawable area" in result.stderr
+    assert "outside the usable area" in result.stderr
     assert "x=10.000, y=287.000" in result.stderr
 
 
@@ -420,7 +420,7 @@ def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    assert "outside the drawable area" in result.stderr
+    assert "outside the usable area" in result.stderr
     assert "X 0.000..197.300, Y 0.000..191.400" in result.stderr
     assert not drawing.with_suffix(".gcode").exists()
 
@@ -469,6 +469,44 @@ pen:
     assert result.exit_code == 3
     assert "x=105.000, y=90.000" in result.stderr
     assert "X 10.000..100.000" in result.stderr
+
+
+def test_gcode_uses_a_user_profiles_asymmetric_margin(
+    runner: CliRunner, card: Path, tmp_path: Path
+) -> None:
+    """A user profile's per-side margin shapes the header and the reachable check."""
+    profiles = _user_profile(
+        tmp_path,
+        "asymmetric",
+        """version: 1
+name: asymmetric
+bed:
+  size_mm: [210.0, 297.0]
+  margin_mm: [1.0, 2.0, 3.0, 4.0]
+feed:
+  travel_mm_s: 100.0
+  draw_mm_s: 50.0
+pen:
+  z_up: 5.0
+  z_down: 0.0
+gcode:
+  end: M2
+""",
+    )
+
+    result = runner.invoke(
+        main,
+        ["gcode", str(card), "--profile", "asymmetric", "--profiles", str(profiles), "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.startswith(
+        "; penpath gcode profile=asymmetric page=210.000x297.000 "
+        "page_origin=0.000,0.000 usable_x=4.000..208.000 usable_y=3.000..296.000 "
+        "z_up=5.000 z_down=0.000\n"
+    )
+    assert "G0 X10.000 Y287.000 F6000\n" in result.stdout
+    assert result.stdout.endswith("M2\n")
 
 
 def test_gcode_help_lists_its_options(runner: CliRunner) -> None:
