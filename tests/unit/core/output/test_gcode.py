@@ -1,4 +1,4 @@
-"""Unit tests for the pure G-code emitter (LUC-51 parts 3 and 7)."""
+"""Unit tests for the pure G-code emitter (LUC-51 parts 3 and 7, LUC-99)."""
 
 from __future__ import annotations
 
@@ -8,13 +8,17 @@ from pathlib import Path
 import pytest
 
 from penpath.core import (
+    FIT_TOLERANCE_MM,
     GcodeError,
     GcodeLayer,
     MachineProfile,
     PointOutsideBedError,
     build_gcode,
+    fit_layers_to_drawable,
+    get_svg_paper_size,
     lead_in_mm,
     load_profile,
+    parse_svg_layers,
 )
 
 
@@ -476,3 +480,135 @@ def test_build_gcode_without_ramp_keeps_the_plain_stroke_with_touch_and_hover() 
 
     assert "G0 Z1.000\nG1 X2.000 Y9.000 F1800\n" in produced
     assert "Z3.000" not in produced
+
+
+def test_fit_layers_to_drawable_inside_keeps_the_original_layers() -> None:
+    layers = _one_layer(((10.0, 10.0), (20.0, 10.0)))
+
+    fitted = fit_layers_to_drawable(layers, _profile(), (50.0, 50.0))
+
+    assert FIT_TOLERANCE_MM == 0.05
+    assert not fitted.changed
+    assert fitted.layers is layers
+    assert fitted.scale == 1.0
+    assert fitted.offset_mm == (0.0, 0.0)
+    assert fitted.overshoot_mm == (0.0, 0.0)
+
+
+def test_fit_layers_to_drawable_shifts_a_page_spill_without_scaling() -> None:
+    profile = _profile(bed={"size_mm": [190.0, 190.0]})
+    layers = _one_layer(((190.13, 10.0), (190.13, 20.0)))
+
+    with pytest.raises(PointOutsideBedError):
+        build_gcode(layers, profile, (190.0, 190.0))
+
+    fitted = fit_layers_to_drawable(layers, profile, (190.0, 190.0))
+
+    assert fitted.changed
+    assert fitted.scale == 1.0
+    assert fitted.overshoot_mm == pytest.approx((0.13, 0.0))
+    assert fitted.offset_mm == pytest.approx((-0.13, 0.0))
+    assert fitted.layers[0].pen == "ink"
+    assert "G0 X190.000 Y180.000\n" in build_gcode(fitted.layers, profile, (190.0, 190.0))
+
+
+def test_fit_layers_to_drawable_scales_a_drawing_larger_than_the_bed() -> None:
+    layers = [
+        GcodeLayer("first", [((0.0, 0.0), (200.0, 0.0))]),
+        GcodeLayer("second", [((100.0, 100.0), (100.0, 200.0))]),
+    ]
+
+    fitted = fit_layers_to_drawable(layers, _profile(), (200.0, 200.0))
+
+    assert fitted.changed
+    assert fitted.scale == pytest.approx(0.5)
+    assert fitted.overshoot_mm == pytest.approx((100.0, 100.0))
+    assert fitted.offset_mm == (0.0, 0.0)
+    assert [layer.pen for layer in fitted.layers] == ["first", "second"]
+    assert "G0 X0.000 Y100.000\n" in build_gcode(fitted.layers, _profile(), (200.0, 200.0))
+
+
+def test_fit_layers_to_drawable_reserves_the_ramp_lead_at_the_edge() -> None:
+    profile = _profile(
+        pen={"z_up": 5.0, "z_down": 1.0, "z_touch": 2.0, "z_hover": 3.0, "ramp_mm": 1.0}
+    )
+    layers = _one_layer(((50.0, 50.0), (100.0, 50.0)))
+
+    assert lead_in_mm(profile) == 1.0
+    with pytest.raises(PointOutsideBedError):
+        build_gcode(layers, profile, (100.0, 100.0))
+
+    fitted = fit_layers_to_drawable(layers, profile, (100.0, 100.0))
+
+    assert fitted.changed
+    assert fitted.scale == 1.0
+    assert fitted.overshoot_mm == pytest.approx((1.0, 0.0))
+    assert fitted.offset_mm == pytest.approx((-1.0, 0.0))
+    produced = build_gcode(fitted.layers, profile, (100.0, 100.0))
+    assert "G1 X100.000 Y50.000 Z3.000\n" in produced
+
+
+def test_fit_layers_to_drawable_reports_an_empty_drawable_area() -> None:
+    profile = _profile(
+        bed={"size_mm": [10.0, 10.0], "margin_mm": 5.0},
+        pen={"z_up": 5.0, "z_down": 1.0, "z_touch": 2.0, "z_hover": 3.0, "ramp_mm": 1.0},
+    )
+
+    with pytest.raises(GcodeError, match="no drawable area left"):
+        fit_layers_to_drawable(_one_layer(((9.0, 9.0), (10.0, 9.0))), profile, (10.0, 10.0))
+
+
+@pytest.mark.parametrize(
+    ("x", "accepted"),
+    [(100.04, True), (100.06, False)],
+)
+def test_build_gcode_tolerates_float_rounding_at_the_drawable_edge(
+    x: float, accepted: bool
+) -> None:
+    layers = _one_layer(((x, 10.0), (x, 20.0)))
+
+    if accepted:
+        assert "G0 X100.040 Y90.000\n" in build_gcode(layers, _profile(), (100.0, 100.0))
+    else:
+        with pytest.raises(PointOutsideBedError, match=r"overshoot x=0\.060 mm"):
+            build_gcode(layers, _profile(), (100.0, 100.0))
+
+
+def test_build_gcode_error_names_per_axis_overshoot() -> None:
+    layers = _one_layer(((101.0, 105.0), (102.0, 105.0)))
+
+    with pytest.raises(PointOutsideBedError) as info:
+        build_gcode(layers, _profile(), (100.0, 100.0))
+
+    message = str(info.value)
+    assert "point (x=101.000, y=-5.000) mm" in message
+    assert "drawable area X 0.000..100.000, Y 0.000..100.000 mm" in message
+    assert "overshoot x=1.000 mm, y=5.000 mm" in message
+
+
+def test_fit_then_build_gcode_from_aquila_page_with_a_spill(tmp_path: Path) -> None:
+    drawing = tmp_path / "card.svg"
+    drawing.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
+        'width="190mm" height="190mm" viewBox="0 0 190 190">'
+        '<g inkscape:groupmode="layer" inkscape:label="ink">'
+        '<polyline points="10,10 190.13,10 190.13,20"/>'
+        "</g></svg>",
+        encoding="utf-8",
+    )
+    profile = load_profile("aquila", profiles_path=tmp_path / "profiles.yaml")
+    layers = parse_svg_layers(drawing)
+    page_size = get_svg_paper_size(drawing)
+    assert page_size is not None
+
+    with pytest.raises(PointOutsideBedError):
+        build_gcode(layers, profile, page_size)
+
+    fitted = fit_layers_to_drawable(layers, profile, page_size)
+    produced = build_gcode(fitted.layers, profile, page_size)
+
+    assert fitted.changed
+    assert fitted.scale == 1.0
+    assert fitted.layers[0].pen == "ink"
+    assert produced.startswith("; penpath gcode profile=aquila page=190.000x190.000 ")
