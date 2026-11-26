@@ -495,6 +495,19 @@ def test_fit_layers_to_drawable_inside_keeps_the_original_layers() -> None:
     assert fitted.overshoot_mm == (0.0, 0.0)
 
 
+def test_fit_layers_to_drawable_uses_the_supplied_tolerance() -> None:
+    layers = _one_layer(((99.7, 50.0), (100.3, 50.0)))
+    profile = _profile()
+
+    default_fit = fit_layers_to_drawable(layers, profile, (100.0, 100.0))
+    relaxed_fit = fit_layers_to_drawable(layers, profile, (100.0, 100.0), tolerance_mm=0.5)
+
+    assert default_fit.changed
+    assert default_fit.overshoot_mm == pytest.approx((0.3, 0.0))
+    assert not relaxed_fit.changed
+    assert relaxed_fit.layers is layers
+
+
 def test_fit_layers_to_drawable_shifts_a_page_spill_without_scaling() -> None:
     profile = _profile(bed={"size_mm": [190.0, 190.0]})
     layers = _one_layer(((190.13, 10.0), (190.13, 20.0)))
