@@ -199,6 +199,8 @@ README with the full set, sources and a rebuild command.
 | `basic/checkerboard.pbm` | 64×64 | Sharp edges, tests threshold |
 | `reference/gradient.png` | 600×400 | Smooth ramp, tests shading |
 | `reference/photo.jpg` | 1280×853 | Real photo, tests a detailed landscape |
+| `colour/colour_blocks.png` | 826×422 | Synthetic hue blocks, tests many-pen separation |
+| `colour/christmas_tree.jpg` | 920×1160 | CC0 colour photo, tests the 2% per-pen acceptance |
 
 The other basic shapes (`black_square.pbm`, `white_square.pbm`, `black_disc.pbm`,
 `horizontal_line.pbm`, `triangle.pbm`) and reference images (`circle.png`,
@@ -830,6 +832,65 @@ Every default floor and every existing override (light blue, brown, black) is
 unchanged: no floor was lowered. Widening the LUC-85 sparse-canvas PFM trigger
 (`_NEARLY_BLANK_MEAN`, `pfm_sketch_lines`) is a separate follow-up, out of scope
 here. Reproduce with `uv run pytest tests/integration/test_multi_pen_gate.py -s`.
+
+### Colour fixture acceptance (LUC-124, 2026-11-26)
+
+This is the end-to-end acceptance for LUC-115: palette separation must use many
+pens, not three. The committed set is
+`tests/fixtures/images/colour/` — `colour_blocks.png` (synthetic blocks with
+one clear region per Stabilo hue family) and `christmas_tree.jpg` (a CC0
+Wikimedia Commons crop). Sources, author, licence and exact fetch/crop commands
+are in [`tests/fixtures/images/colour/README.md`](../tests/fixtures/images/colour/README.md).
+The test is `tests/integration/test_colour_palette.py`; it uses the committed
+photo, so it never touches the network.
+
+```bash
+uv run pytest tests/integration/test_colour_palette.py -s
+```
+
+The exact conversion in both cases, with A4 (10 mm margin) defaults, is:
+
+```bash
+uv run penpath convert tests/fixtures/images/colour/colour_blocks.png \
+  -o /tmp/colour_blocks.svg --palette stabilo_88 -s seed=42 --no-vpype --quiet
+uv run penpath convert tests/fixtures/images/colour/christmas_tree.jpg \
+  -o /tmp/christmas_tree.svg --palette stabilo_88 -s seed=42 --no-vpype --quiet
+```
+
+`colour_blocks.png` yields **7 distinct used pens** (red, green, yellow,
+orange, blue, purple and black); the test requires at least 6. For the tree,
+the test computes each pen's share with `separate_palette` — the same
+assignment the drawing uses — and requires more than 2.0% for red, yellow and
+black, and for green as `stabilo_88_green` plus `stabilo_88_light_green`. It
+then requires a non-empty SVG layer for each of those pens, so a passing test
+proves drawn layers rather than assignment alone.
+
+| pen | share of tree pixels | 2.0% floor |
+|-----|---------------------:|-----------:|
+| `stabilo_88_red` | 3.87% | pass |
+| `stabilo_88_yellow` | 9.65% | pass |
+| `stabilo_88_black` | 6.10% | pass |
+| `stabilo_88_green` + `stabilo_88_light_green` | 7.85% | pass |
+
+Simulated-plot previews of both conversions are committed under
+[`docs/images/luc-124/`](../images/luc-124/):
+
+| fixture | preview | what it shows |
+|---------|---------|---------------|
+| `colour_blocks.png` | [blocks.jpg](../images/luc-124/blocks.jpg) | Seven hatched squares in red, green, yellow, orange, blue, purple and black, separated by white gaps. |
+| `christmas_tree.jpg` | [tree.jpg](../images/luc-124/tree.jpg) | A tree in many inks: green foliage, a large red tinsel region, gold and light-blue areas, and black wall and shadow detail. |
+
+The tree is the 1280 px Commons thumbnail cropped to `x=140..1060`,
+`y=120..1280` and saved as 920x1160 JPEG at quality 85 (426 KB). The crop was
+chosen to grow the red decorations' share; the 2.0% floor was **not** lowered
+and no pixels were faked. Rebuild the synthetic blocks with:
+
+```bash
+uv run python tests/fixtures/images/colour/generate_colour.py
+```
+
+It uses only NumPy and Pillow, takes no random input, and a unit test checks
+that the committed PNG matches a fresh regeneration.
 
 ### Machine Cost (LUC-27)
 
