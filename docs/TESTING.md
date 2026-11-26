@@ -115,7 +115,8 @@ exact file per built-in profile.
   shifted nozzle range rejects a point with its coordinates.
 - **Part 8 (LUC-65)**: `tests/fixtures/golden/gcode/aquila.gcode` pins the built-in
   `aquila` profile byte for byte from `tests/fixtures/svg/gcode/aquila_card.svg`,
-  a 190x190 mm page that fits the machine's 197.3 x 191.4 mm drawable area. A
+  a 170x170 mm page that fits the machine's 177.3 x 171.4 mm usable area (its
+  197.3 x 191.4 mm drawable area minus the 10 mm safety margin). A
   change to any reference number or verbatim block in `aquila.yaml` must be made
   in the profile and then regenerate the golden with `--update-golden`; unit
   tests in `tests/unit/core/test_aquila_profile.py` name each reference value,

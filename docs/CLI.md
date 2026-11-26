@@ -522,7 +522,7 @@ fit changes the drawing, one warning goes to stderr naming the overshoot, the
 scale and the applied pen-space shift, for example:
 
 ```
-Warning: drawing is 0.881 mm past the aquila drawable area; fitted with scale 1.000 and shift (-0.881, 0.000) mm
+Warning: drawing is 0.881 mm past the aquila usable area; fitted with scale 1.000 and shift (-0.881, 0.000) mm
 ```
 
 The overshoot includes the reserved ramp lead-in, so it can exceed the amount
@@ -537,7 +537,7 @@ drawable area minus `bed.margin_mm`) then fails with exit 3, naming its
 coordinates, the per-axis overshoot and the fix:
 
 ```
-Error: point (x=197.431, y=180.000) mm is outside the usable area X 0.000..197.300, Y 0.000..191.400 mm (drawable area minus a 0.000 mm margin); overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
+Error: point (x=187.431, y=170.000) mm is outside the usable area X 10.000..187.300, Y 10.000..181.400 mm (drawable area minus a 10.000 mm margin); overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
 ```
 
 #### Ramped landing
@@ -573,7 +573,7 @@ penpath gcode card.svg --profile my_plotter --profiles ./profiles.yaml
 # A palette SVG: one G-code layer per used pen, with a pen change between layers
 penpath gcode christmas_card.svg --profile generic -o card.gcode
 
-# The built-in aquila profile: page against the drawable corner, ramped landings,
+# The built-in aquila profile: page against the usable corner, ramped landings,
 # a pen set at the touch spot before every layer, and no M2 at the end
 penpath gcode card.svg --profile aquila -o card.gcode
 # A slightly oversized page is fitted with a warning on stderr
@@ -1059,10 +1059,13 @@ Y_pen = page_origin_y + y_svg                 # invert_y: false
 
 For the example above, the pen offset `[-22.7, -28.6]` on a 220 x 220 mm bed
 with a 0..220 nozzle range gives a drawable area of X 0..197.3 mm and Y
-0..191.4 mm, which `bed.margin_mm` insets to the usable area. Coordinates are
-written with three decimals (0.001 mm); a point outside the usable area fails
-the run with its coordinates instead of writing G-code the machine cannot
-follow.
+0..191.4 mm. The built-in `aquila` profile sets `bed.margin_mm: 10`, so its
+usable area is X 10..187.3 mm and Y 10..181.4 mm: the largest page that fits is
+about 177 x 171 mm, and a 170 x 170 mm page lands at pen (17.3, 10.0). The
+touch spot at pen (190, 12) sits in the safety margin and is not a drawing
+point, so it is never checked against the usable area. Coordinates are written
+with three decimals (0.001 mm); a point outside the usable area fails the run
+with its coordinates instead of writing G-code the machine cannot follow.
 
 ---
 
