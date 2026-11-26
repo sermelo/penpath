@@ -10,7 +10,7 @@ from typing import Final
 
 from penpath.core.output.gcode import page_origin_mm
 from penpath.core.profiles import MachineProfile
-from penpath.core.simulation import PenStroke
+from penpath.core.simulation import PenStroke, insert_pen_up_moves
 
 type PenStyle = tuple[str, float]
 
@@ -151,6 +151,7 @@ def gcode_to_strokes(
     profile: MachineProfile | None = None,
     pen_styles: Mapping[str, PenStyle] | None = None,
     pen_filter: str | None = None,
+    include_pen_up: bool = False,
 ) -> list[PenStroke]:
     """Turn penpath G-code into pen-down strokes in preview page millimetres.
 
@@ -162,6 +163,11 @@ def gcode_to_strokes(
     correctly. ``pen_styles`` maps pen names to ``(color, width_mm)``; unknown
     pens render black at 0.3 mm. Arcs and malformed coordinates raise
     :class:`GcodePreviewError`.
+
+    When ``include_pen_up`` is true, straight two-point travel strokes are
+    inserted between consecutive strokes whose endpoints are more than 0.01 mm
+    apart, using the following stroke's colour and width. Default is false,
+    which returns only pen-down strokes.
     """
     header = parse_gcode_header(text)
     page_size_mm = header.page or paper_size_mm
@@ -242,7 +248,7 @@ def gcode_to_strokes(
         draw_part(start, position, z, z_end)
         z = z_end
     finish()
-    return strokes
+    return insert_pen_up_moves(strokes) if include_pen_up else strokes
 
 
 __all__ = [

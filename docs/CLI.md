@@ -404,6 +404,7 @@ penpath preview DRAWING -o OUTPUT [OPTIONS]
 | `--dpi FLOAT` | — | `10.0` | Resolution in **pixels per millimetre** |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour (hex or named CSS colour) |
 | `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name) |
+| `--travel/--no-travel` | — | `false` | Draw pen-up travel moves as thin light lines |
 
 For an SVG the page size is read from `width`/`height` or `viewBox`; SVGs without
 one fall back to A4. For G-code the page is the `page=WIDTHxHEIGHT` value in the
@@ -427,17 +428,33 @@ uses `reachable_corner`. Layers use the width and colour of their pen from the
 built-in presets (`stabilo_88_*`, `red_fine`, ...); an unknown pen renders black
 at 0.3 mm because G-code carries no colours.
 
+#### Showing pen-up travel
+
+`--travel` adds thin light grey (0.1 mm, `#C8C8C8`) lines for pen-up moves, so
+long travels between strokes are easy to spot. For an SVG these are the gaps
+between consecutive strokes in document order; for G-code they are the gaps
+between the strokes the machine actually draws, in G-code order. Both use the
+same straight two-point travel rule with a 0.01 mm gap threshold as
+`penpath.core.svg_parse.parse_svg_strokes(..., include_pen_up=True)`. The travel
+lines are drawn **under** the ink, so every inked pixel is unchanged. The default
+is `--no-travel`, which renders ink only and produces byte-for-byte the same PNG
+as before. `--travel` also works with `--layer`, where only that pen's strokes
+and travels are shown.
+
 #### Examples
 
 ```bash
 penpath preview plot.svg -o preview.png
 penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
 penpath preview plot.svg -o fine.png --layer fine
+# Show pen-up travel as thin light lines under the ink (default: ink only)
+penpath preview plot.svg -o travel.png --travel
 
 # Check the G-code against the reviewed SVG (the two PNGs match)
 penpath gcode card.svg --profile generic -o card.gcode
 penpath preview card.gcode -o card.png
 penpath preview card.gcode -o red.png --layer stabilo_88_red
+penpath preview card.gcode -o card_travel.png --travel
 ```
 
 ---

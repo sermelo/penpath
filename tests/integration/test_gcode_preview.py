@@ -121,6 +121,37 @@ def test_ramped_gcode_png_equals_svg_png(
     assert ImageChops.difference(svg_image, gcode_image).getbbox() is None
 
 
+def test_preview_travel_changes_gcode_png_and_keeps_ink(runner: CliRunner, tmp_path: Path) -> None:
+    """The G-code preview can draw light pen-up travel under unchanged ink."""
+    drawing = tmp_path / "travel.svg"
+    drawing.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+        'viewBox="0 0 100 100">'
+        '<path d="M 10 10 L 90 10" fill="none" stroke="#000000" stroke-width="1"/>'
+        '<path d="M 10 40 L 90 40" fill="none" stroke="#000000" stroke-width="1"/></svg>',
+        encoding="utf-8",
+    )
+    gcode = drawing.with_suffix(".gcode")
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "generic", "-o", str(gcode)])
+    assert result.exit_code == 0, result.output
+
+    ink = _preview(runner, gcode, tmp_path / "ink.png")
+    travel = _preview(runner, gcode, tmp_path / "travel.png", "--travel")
+    no_travel = _preview(runner, gcode, tmp_path / "no-travel.png", "--no-travel")
+    ink_pixels = [
+        (x, y)
+        for y in range(ink.height)
+        for x in range(ink.width)
+        if ink.getpixel((x, y)) != (255, 255, 255)
+    ]
+
+    assert ink.tobytes() == no_travel.tobytes()
+    assert ink.tobytes() != travel.tobytes()
+    assert ink_pixels
+    assert all(travel.getpixel(pixel) == ink.getpixel(pixel) for pixel in ink_pixels)
+    assert any(pixel == (200, 200, 200) for pixel in travel.getdata())
+
+
 def test_preview_help_says_arcs_are_unsupported(runner: CliRunner) -> None:
     result = runner.invoke(main, ["preview", "--help"])
 
