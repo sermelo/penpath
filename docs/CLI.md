@@ -626,9 +626,10 @@ reference-versus-penpath equivalence check, are in
 Simulate the SVG at the chosen resolution, crop it to the recorded image
 placement, and compare it with the original using SSIM. Also reports machine
 cost (drawing length, pen-up travel, pen lifts, short segments and stroke
-count) plus ink coverage per pen layer and in total. Coverage is the share of
-the whole page inked by a layer's pen-down strokes at the chosen `--dpi`;
-per-layer shares may overlap, so they need not add up to the total.
+count) plus ink coverage and the pen name per pen layer and in total. Coverage
+is the share of the whole page inked by a layer's pen-down strokes at the
+chosen `--dpi`; per-layer shares may overlap, so they need not add up to the
+total.
 
 ```bash
 penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
@@ -655,11 +656,14 @@ For SVGs without placement metadata, the image is fitted to the page keeping
 its aspect ratio and centered — the same fallback used by
 `penpath.core.svg_parse.get_image_placement`.
 
-The human-readable machine-cost table has a `Coverage (%)` column. When a layer
-exceeds `--coverage-warn`, one warning per layer is written to stderr naming
-the layer and its percentage, and suggesting `--background-threshold` and
-`--saturation`. A warning changes neither the exit code nor the result; it is
-also printed in `--json` mode, where stdout stays pure JSON.
+In the human-readable machine-cost table, `Layer` is the stroke hex and `Pen`
+is the name of the Inkscape layer that uses it (the layer's `inkscape:label`,
+or its id when no label exists). A colour with no matching layer shows the hex
+again. The `TOTAL` row has no pen. When a layer exceeds `--coverage-warn`, one
+warning per layer is written to stderr naming the layer and its percentage,
+and suggesting `--background-threshold` and `--saturation`. A warning changes
+neither the exit code nor the result; it is also printed in `--json` mode,
+where stdout stays pure JSON.
 
 With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 
@@ -667,11 +671,28 @@ With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 {
   "likeness": 0.82,
   "machine_cost": {
-    "per_layer": {"#000000": {"drawing_length_mm": 123.4, "ink_coverage_pct": 12.3}},
-    "total": {"drawing_length_mm": 123.4, "ink_coverage_pct": 12.3}
+    "per_layer": {
+      "#8CCFE8": {
+        "drawing_length_mm": 123.4,
+        "ink_coverage_pct": 12.3,
+        "pen": "stabilo_88_light_blue"
+      },
+      "#000000": {
+        "drawing_length_mm": 45.6,
+        "ink_coverage_pct": 4.5,
+        "pen": "stabilo_88_black"
+      }
+    },
+    "total": {"drawing_length_mm": 169.0, "ink_coverage_pct": 16.8}
   }
 }
 ```
+
+Every per-layer entry keeps its existing numeric keys and gains `pen`; `total`
+is unchanged. The name comes from
+`penpath.core.svg_parse.get_layer_pen_names(svg_path)`, which maps each
+normalised `#RRGGBB` stroke colour to the first Inkscape layer using it; a
+colour with no layer falls back to its hex.
 
 #### Examples
 

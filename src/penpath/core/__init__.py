@@ -121,6 +121,7 @@ from penpath.core.simulation import (
 from penpath.core.svg_parse import (
     ImagePlacement,
     get_image_placement,
+    get_layer_pen_names,
     get_svg_paper_size,
     list_svg_layers,
     parse_svg_layers,
@@ -202,6 +203,7 @@ __all__ = [
     "gcode_to_strokes",
     "get_filter",
     "get_image_placement",
+    "get_layer_pen_names",
     "get_svg_paper_size",
     "get_user_profiles_path",
     "grayscale",
