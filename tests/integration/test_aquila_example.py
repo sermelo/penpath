@@ -38,7 +38,10 @@ def test_aquila_example_makefile_produces_svg_and_gcode(tmp_path: Path) -> None:
 
     text = gcode.read_text(encoding="ascii")
     assert text.startswith("; penpath gcode profile=aquila page=170.000x170.000 ")
-    assert "page_origin=17.300,10.000 usable_x=10.000..187.300 usable_y=10.000..181.400" in text
+    assert (
+        "place=front-right page_origin=17.300x10.000 "
+        "usable_x=10.000..187.300 usable_y=10.000..181.400"
+    ) in text
     assert "; ---- pen 1:" in text
     assert "G1 X212.700 Y40.600 F6000" in text
     assert "G1 Z80.000 F600" in text

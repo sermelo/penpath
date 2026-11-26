@@ -1,7 +1,8 @@
-"""Unit tests for the pure G-code emitter (LUC-51 parts 3 and 7, LUC-99)."""
+"""Unit tests for the pure G-code emitter (LUC-51 parts 3 and 7, LUC-99, LUC-117)."""
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -12,13 +13,18 @@ from penpath.core import (
     GcodeError,
     GcodeLayer,
     MachineProfile,
+    PagePlacement,
+    PlacementName,
     PointOutsideBedError,
     build_gcode,
     fit_layers_to_drawable,
     get_svg_paper_size,
     lead_in_mm,
     load_profile,
+    page_origin_mm,
     parse_svg_layers,
+    place_page,
+    usable_area,
 )
 
 
@@ -56,7 +62,7 @@ def test_build_gcode_emits_profile_values_and_pen_state_machine() -> None:
 
     assert produced == (
         "; penpath gcode profile=test_machine page=50.000x60.000 "
-        "page_origin=0.000,0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
+        "place=origin page_origin=0.000x0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
         "z_up=4.000 z_down=1.000\n"
         "G21\n"
         "G90\n"
@@ -223,7 +229,7 @@ def test_build_gcode_header_carries_z_touch_for_the_preview() -> None:
 
     assert produced.startswith(
         "; penpath gcode profile=test_machine page=20.000x20.000 "
-        "page_origin=0.000,0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
+        "place=origin page_origin=0.000x0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
         "z_up=12.500 z_touch=10.000 z_down=9.000\n"
     )
 
@@ -251,7 +257,7 @@ def test_build_gcode_generic_profile_comes_from_the_builtin_yaml(tmp_path: Path)
 
     assert produced.startswith(
         "; penpath gcode profile=generic page=210.000x297.000 "
-        "page_origin=0.000,0.000 usable_x=0.000..210.000 usable_y=0.000..297.000 "
+        "place=origin page_origin=0.000x0.000 usable_x=0.000..210.000 usable_y=0.000..297.000 "
         "z_up=5.000 z_down=0.000\n"
     )
     assert "G21\nG90\nG28\n" in produced
@@ -276,7 +282,7 @@ def test_build_gcode_with_no_drawn_layers_emits_only_wrapper() -> None:
 
     assert (
         produced == "; penpath gcode profile=test_machine page=10.000x10.000 "
-        "page_origin=0.000,0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
+        "place=origin page_origin=0.000x0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
         "z_up=4.000 z_down=1.000\nG21\nG90\nM2\n"
     )
 
@@ -445,7 +451,7 @@ def test_build_gcode_ramped_stroke_lands_and_lifts_while_moving() -> None:
 
     assert produced == (
         "; penpath gcode profile=test_machine page=100.000x100.000 "
-        "page_origin=0.000,0.000 usable_x=0.000..98.000 usable_y=0.000..97.000 "
+        "place=origin page_origin=0.000x0.000 usable_x=0.000..98.000 usable_y=0.000..97.000 "
         "z_up=5.000 z_touch=2.000 z_down=1.000\n"
         "G21\nG90\n"
         "; layer 1/1 pen=ink\n"
@@ -645,3 +651,281 @@ def test_fit_then_build_gcode_from_aquila_page_with_a_spill(tmp_path: Path) -> N
     assert fitted.scale == 1.0
     assert fitted.layers[0].pen == "ink"
     assert produced.startswith("; penpath gcode profile=aquila page=170.000x170.000 ")
+
+
+FIXTURES = Path(__file__).resolve().parents[3] / "fixtures"
+SIMPLE_SVG = FIXTURES / "svg" / "gcode" / "simple.svg"
+AQUILA_SVG = FIXTURES / "svg" / "gcode" / "aquila_card.svg"
+RAMPED_PROFILES = FIXTURES / "profiles" / "ramped.yaml"
+AQUILA_PAGE = (130.0, 73.0)
+NAMED_ORIGINS: tuple[tuple[PlacementName, tuple[float, float], bool], ...] = (
+    ("center", (33.65, 59.2), False),
+    ("front-right", (57.3, 10.0), False),
+    ("front-left", (10.0, 10.0), False),
+    ("back-right", (57.3, 108.4), False),
+    ("back-left", (10.0, 108.4), False),
+    ("origin", (10.0, 10.0), True),
+)
+
+
+def _aquila(tmp_path: Path) -> MachineProfile:
+    return load_profile("aquila", profiles_path=tmp_path / "profiles.yaml")
+
+
+def _pen_points(text: str, profile: MachineProfile) -> list[tuple[float, float]]:
+    """Stroke XY moves only, converted from nozzle space back to pen space."""
+    offset_x, offset_y = profile.bed.pen_offset_mm
+    points: list[tuple[float, float]] = []
+    in_layer = False
+    for line in text.splitlines():
+        if line.startswith("; layer "):
+            in_layer = True
+            continue
+        if not in_layer:
+            continue
+        match = re.match(r"^G[01] X(-?\d+\.\d+) Y(-?\d+\.\d+)", line)
+        if match is None:
+            if line.startswith("G1 Z") or line.startswith("M"):
+                in_layer = False
+            continue
+        points.append((float(match.group(1)) + offset_x, float(match.group(2)) + offset_y))
+    return points
+
+
+@pytest.mark.parametrize(("place", "expected", "shifted"), NAMED_ORIGINS)
+def test_place_page_named_placements_use_the_aquila_usable_area(
+    place: PlacementName,
+    expected: tuple[float, float],
+    shifted: bool,
+    tmp_path: Path,
+) -> None:
+    placement = place_page(_aquila(tmp_path), AQUILA_PAGE, place=place)
+
+    assert placement.place == place
+    assert placement.origin_mm == pytest.approx(expected)
+    assert placement.requested_origin_mm == pytest.approx(
+        (0.0, 0.0) if place == "origin" else expected
+    )
+    assert placement.shifted is shifted
+
+
+def test_place_page_center_of_a_130_by_73_page(tmp_path: Path) -> None:
+    placement = place_page(_aquila(tmp_path), AQUILA_PAGE, place="center")
+
+    assert placement.origin_mm == pytest.approx((33.65, 59.2))
+
+
+def test_place_page_without_place_follows_the_profile(tmp_path: Path) -> None:
+    aquila = place_page(_aquila(tmp_path), AQUILA_PAGE)
+    generic = place_page(
+        load_profile("generic", profiles_path=tmp_path / "profiles.yaml"), AQUILA_PAGE
+    )
+    ramped = place_page(load_profile("ramped", profiles_path=RAMPED_PROFILES), AQUILA_PAGE)
+
+    assert aquila.place == "front-right"
+    assert aquila.origin_mm == pytest.approx((57.3, 10.0))
+    assert not aquila.shifted
+    for placement in (generic, ramped):
+        assert placement.place == "origin"
+        assert placement.origin_mm == (0.0, 0.0)
+        assert not placement.shifted
+
+
+def test_place_page_fixed_profile_uses_its_configured_origin() -> None:
+    profile = _profile(bed={"size_mm": [100.0, 100.0], "page": {"origin_mm": [5.0, 7.0]}})
+
+    placement = place_page(profile, (50.0, 60.0))
+
+    assert placement.place == "origin"
+    assert placement.origin_mm == (5.0, 7.0)
+    assert not placement.shifted
+
+
+def test_place_page_at_sets_a_pen_space_origin(tmp_path: Path) -> None:
+    placement = place_page(_aquila(tmp_path), AQUILA_PAGE, at=(15.0, 20.0))
+
+    assert placement.place == "origin"
+    assert placement.requested_origin_mm == (15.0, 20.0)
+    assert placement.origin_mm == (15.0, 20.0)
+    assert not placement.shifted
+
+
+def test_place_page_at_outside_shifts_to_the_nearest_origin(tmp_path: Path) -> None:
+    placement = place_page(_aquila(tmp_path), AQUILA_PAGE, at=(250.0, 200.0))
+
+    assert placement.place == "origin"
+    assert placement.requested_origin_mm == (250.0, 200.0)
+    assert placement.origin_mm == pytest.approx((57.3, 108.4))
+    assert placement.shifted
+
+
+def test_place_page_fit_false_names_the_requested_origin_and_usable_limits(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(PointOutsideBedError) as info:
+        place_page(_aquila(tmp_path), AQUILA_PAGE, at=(250.0, 200.0), fit=False)
+
+    message = str(info.value)
+    assert "requested page origin (x=250.000, y=200.000) mm" in message
+    assert "usable area X 10.000..187.300, Y 10.000..181.400 mm" in message
+    assert "nearest origin is (x=57.300, y=108.400)" in message
+    assert "--fit" in message
+    assert "different placement" in message
+
+
+def test_place_page_rejects_place_and_at_together(tmp_path: Path) -> None:
+    with pytest.raises(GcodeError, match=r"either place=.* or at="):
+        place_page(_aquila(tmp_path), AQUILA_PAGE, place="center", at=(1.0, 2.0))
+
+
+def test_place_page_rejects_an_unknown_placement(tmp_path: Path) -> None:
+    with pytest.raises(GcodeError, match="Unknown page placement 'middle'"):
+        place_page(_aquila(tmp_path), AQUILA_PAGE, place="middle")  # type: ignore[arg-type]
+
+
+def test_place_page_clamps_a_page_larger_than_the_usable_area(tmp_path: Path) -> None:
+    placement = place_page(_aquila(tmp_path), (300.0, 300.0), place="center")
+
+    assert placement.origin_mm == (10.0, 10.0)
+    assert placement.shifted
+
+
+def test_place_page_named_positions_respect_the_bed_margin() -> None:
+    profile = _profile(bed={"size_mm": [100.0, 100.0], "margin_mm": 5.0})
+
+    placement = place_page(profile, (50.0, 50.0), place="front-right")
+
+    assert placement.origin_mm == (45.0, 5.0)
+    assert not placement.shifted
+
+
+def test_place_page_named_positions_respect_per_side_margins() -> None:
+    profile = _profile(bed={"size_mm": [100.0, 100.0], "margin_mm": [2.0, 3.0, 4.0, 5.0]})
+
+    placement = place_page(profile, (50.0, 50.0), place="front-right")
+
+    assert placement.origin_mm == (47.0, 4.0)
+    assert not placement.shifted
+
+
+def test_page_origin_mm_accepts_an_explicit_placement(tmp_path: Path) -> None:
+    profile = _aquila(tmp_path)
+    placement = place_page(profile, AQUILA_PAGE, place="center")
+
+    assert page_origin_mm(profile, AQUILA_PAGE) == pytest.approx((57.3, 10.0))
+    assert page_origin_mm(profile, AQUILA_PAGE, placement=placement) == pytest.approx((33.65, 59.2))
+    assert page_origin_mm(profile, AQUILA_PAGE, placement=placement) is placement.origin_mm
+
+
+def test_build_gcode_header_records_placement_and_page_origin(tmp_path: Path) -> None:
+    profile = _aquila(tmp_path)
+    placement = place_page(profile, AQUILA_PAGE, place="center")
+
+    produced = build_gcode(
+        _one_layer(((15.0, 20.0), (25.0, 20.0))), profile, AQUILA_PAGE, placement
+    )
+
+    assert produced.startswith(
+        "; penpath gcode profile=aquila page=130.000x73.000 place=center "
+        "page_origin=33.650x59.200 usable_x=10.000..187.300 usable_y=10.000..181.400 "
+        "z_up=12.500 z_touch=10.000 z_down=9.000\n"
+    )
+
+
+def test_build_gcode_header_uses_the_profile_placement_by_default(tmp_path: Path) -> None:
+    produced = build_gcode([], _aquila(tmp_path), AQUILA_PAGE)
+
+    assert produced.startswith(
+        "; penpath gcode profile=aquila page=130.000x73.000 "
+        "place=front-right page_origin=57.300x10.000 "
+    )
+
+
+def test_build_gcode_maps_strokes_through_an_explicit_placement() -> None:
+    profile = _profile(bed={"size_mm": [100.0, 100.0]})
+    placement = place_page(profile, (50.0, 50.0), place="center")
+
+    produced = build_gcode(
+        _one_layer(((10.0, 10.0), (20.0, 10.0))), profile, (50.0, 50.0), placement
+    )
+
+    assert placement.origin_mm == (25.0, 25.0)
+    assert "G0 X35.000 Y65.000 F3600\n" in produced
+    assert "G1 X45.000 Y65.000 F1800\n" in produced
+
+
+def test_fit_layers_to_drawable_uses_an_explicit_placement() -> None:
+    profile = _profile(
+        bed={"size_mm": [200.0, 200.0], "nozzle_range_mm": [[10.0, 190.0], [10.0, 190.0]]}
+    )
+    page = (100.0, 100.0)
+    placement = place_page(profile, page, place="center")
+
+    fitted = fit_layers_to_drawable(
+        _one_layer(((195.0, 5.0), (195.0, 15.0))), profile, page, placement=placement
+    )
+    produced = build_gcode(fitted.layers, profile, page, placement)
+
+    assert placement.origin_mm == (50.0, 50.0)
+    assert fitted.changed
+    assert fitted.offset_mm == pytest.approx((-55.0, 0.0))
+    assert "G0 X190.000 Y145.000 F3600\n" in produced
+    assert "G1 X190.000 Y135.000 F1800\n" in produced
+
+
+@pytest.mark.parametrize("place", [name for name, _, _ in NAMED_ORIGINS])
+def test_build_gcode_keeps_strokes_inside_the_aquila_usable_area_for_every_placement(
+    place: PlacementName,
+    tmp_path: Path,
+) -> None:
+    profile = _aquila(tmp_path)
+    placement = place_page(profile, AQUILA_PAGE, place=place)
+
+    produced = build_gcode(
+        _one_layer(((50.0, 30.0), (60.0, 30.0))), profile, AQUILA_PAGE, placement
+    )
+    points = _pen_points(produced, profile)
+    (x_lo, y_lo), (x_hi, y_hi) = usable_area(profile)
+
+    assert points
+    assert all(x_lo - FIT_TOLERANCE_MM <= x <= x_hi + FIT_TOLERANCE_MM for x, _ in points)
+    assert all(y_lo - FIT_TOLERANCE_MM <= y <= y_hi + FIT_TOLERANCE_MM for _, y in points)
+
+
+def test_generic_and_ramped_output_keeps_the_origin_placement(tmp_path: Path) -> None:
+    page = get_svg_paper_size(SIMPLE_SVG)
+    assert page is not None
+    layers = parse_svg_layers(SIMPLE_SVG)
+
+    for profile in (
+        load_profile("generic", profiles_path=tmp_path / "profiles.yaml"),
+        load_profile("ramped", profiles_path=RAMPED_PROFILES),
+    ):
+        produced = build_gcode(layers, profile, page)
+        assert "place=origin page_origin=0.000x0.000" in produced
+
+    generic = build_gcode(
+        layers, load_profile("generic", profiles_path=tmp_path / "profiles.yaml"), page
+    )
+    assert "G0 X10.000 Y287.000 F6000\n" in generic
+
+
+def test_end_to_end_placement_flow_from_an_svg_file(tmp_path: Path) -> None:
+    profile = _aquila(tmp_path)
+    page = get_svg_paper_size(AQUILA_SVG)
+    assert page == (170.0, 170.0)
+    placement = place_page(profile, page, place="center")
+    fitted = fit_layers_to_drawable(
+        parse_svg_layers(AQUILA_SVG), profile, page, placement=placement
+    )
+
+    produced = build_gcode(fitted.layers, profile, page, placement)
+    points = _pen_points(produced, profile)
+    (x_lo, y_lo), (x_hi, y_hi) = usable_area(profile)
+
+    assert isinstance(placement, PagePlacement)
+    assert placement.origin_mm == pytest.approx((13.65, 10.7))
+    assert "place=center page_origin=13.650x10.700" in produced
+    assert points
+    assert all(x_lo - FIT_TOLERANCE_MM <= x <= x_hi + FIT_TOLERANCE_MM for x, _ in points)
+    assert all(y_lo - FIT_TOLERANCE_MM <= y <= y_hi + FIT_TOLERANCE_MM for _, y in points)

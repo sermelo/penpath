@@ -79,6 +79,16 @@ def _pair(text: str, separator: str) -> tuple[float, float] | None:
     return (first, second)
 
 
+def _origin(text: str) -> tuple[float, float] | None:
+    """Parse a pen-space origin written with ``x`` or the older ``,`` separator."""
+    match = PAGE_RE.match(text)
+    if match is not None:
+        x, y = _number(match.group(1)), _number(match.group(2))
+        if x is not None and y is not None:
+            return (x, y)
+    return _pair(text, ",")
+
+
 def parse_gcode_header(text: str) -> GcodeHeader:
     """Return the penpath header fields, empty when the file has no header."""
     for line in text.splitlines():
@@ -91,7 +101,7 @@ def parse_gcode_header(text: str) -> GcodeHeader:
         return GcodeHeader(
             profile=fields.get("profile"),
             page=_page_size(fields["page"]) if "page" in fields else None,
-            page_origin=_pair(fields["page_origin"], ",") if "page_origin" in fields else None,
+            page_origin=_origin(fields["page_origin"]) if "page_origin" in fields else None,
             usable_x=_pair(fields["usable_x"], "..") if "usable_x" in fields else None,
             usable_y=_pair(fields["usable_y"], "..") if "usable_y" in fields else None,
             z_up=_number(fields["z_up"]) if "z_up" in fields else None,

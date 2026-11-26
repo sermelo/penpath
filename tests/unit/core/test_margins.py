@@ -135,7 +135,8 @@ def test_build_gcode_header_reports_usable_area_and_page_origin() -> None:
 
     assert produced.startswith(
         "; penpath gcode profile=asymmetric page=100.000x100.000 "
-        "page_origin=-2.000,3.000 usable_x=4.000..98.000 usable_y=3.000..99.000 "
+        "place=front-right page_origin=-2.000x3.000 "
+        "usable_x=4.000..98.000 usable_y=3.000..99.000 "
         "z_up=5.000 z_down=1.000\n"
     )
     header = parse_gcode_header(produced)

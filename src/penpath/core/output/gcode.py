@@ -12,17 +12,29 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import pairwise
-from typing import Final
+from typing import Final, Literal
 
 from penpath.core.profiles import MachineProfile
 
 type Coordinate = tuple[float, float]
 type Polyline = Sequence[Coordinate]
 type Bounds = tuple[Coordinate, Coordinate]
+type PlacementName = Literal[
+    "center", "front-right", "front-left", "back-right", "back-left", "origin"
+]
 
 COORDINATE_DECIMALS: Final = 3
 SECONDS_PER_MINUTE: Final = 60
 FIT_TOLERANCE_MM: Final = 0.05
+PLACEMENT_EPSILON_MM: Final = 1e-6
+PLACEMENT_NAMES: Final = (
+    "center",
+    "front-right",
+    "front-left",
+    "back-right",
+    "back-left",
+    "origin",
+)
 
 
 class GcodeError(ValueError):
@@ -47,6 +59,29 @@ class GcodeLayer:
 
     pen: str
     polylines: Sequence[Polyline]
+
+
+@dataclass(frozen=True, slots=True)
+class PagePlacement:
+    """Where a page sits on the machine bed, in pen-space millimetres.
+
+    Parameters
+    ----------
+    place : PlacementName
+        Effective placement name: one of the five named positions relative to
+        the usable area, or ``origin`` for a fixed or explicit origin.
+    origin_mm : Coordinate
+        Final pen-space lower-left corner of the page, after clamping.
+    requested_origin_mm : Coordinate
+        Lower-left corner asked for before clamping to the usable area.
+    shifted : bool
+        Whether clamping moved the requested origin beyond float noise.
+    """
+
+    place: PlacementName
+    origin_mm: Coordinate
+    requested_origin_mm: Coordinate
+    shifted: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,28 +156,126 @@ def usable_area(profile: MachineProfile) -> Bounds:
     return ((xmin + left, ymin + bottom), (xmax - right, ymax - top))
 
 
-def _page_origin(
+def place_page(
     profile: MachineProfile,
     page_size_mm: Coordinate,
-    area: Bounds,
-) -> Coordinate:
-    """Return the pen-space origin of the page's lower-left corner."""
-    page = profile.bed.page
-    if page.placement == "fixed":
-        return page.origin_mm
-    return (area[1][0] - page_size_mm[0], area[0][1])
+    *,
+    place: PlacementName | None = None,
+    at: Coordinate | None = None,
+    fit: bool = True,
+) -> PagePlacement:
+    """Place a page in the profile's usable area, in pen-space millimetres.
+
+    When neither ``place`` nor ``at`` is given, the profile's own placement is
+    used verbatim, so profiles with a fixed or reachable-corner page keep the
+    coordinates they had before placement was configurable. Explicit requests
+    are clamped into the usable area (the drawable area minus the per-side
+    ``bed.margin_mm`` values).
+
+    Parameters
+    ----------
+    profile : MachineProfile
+        Validated machine profile; the only source of bed and margin values.
+    page_size_mm : Coordinate
+        SVG page width and height in millimetres.
+    place : PlacementName | None
+        Effective placement name. When omitted, the profile decides: ``fixed``
+        uses ``bed.page.origin_mm`` as ``origin``, and ``reachable_corner`` uses
+        ``front-right``. The five named positions other than ``origin`` are
+        relative to the usable area; ``origin`` puts the page lower-left at
+        pen-space (0, 0) unless the profile is fixed.
+    at : Coordinate | None
+        Explicit pen-space page lower-left; mutually exclusive with ``place``
+        and reported with the effective name ``origin``.
+    fit : bool
+        Clamp a page that falls outside the usable area. With ``False``, raise
+        :class:`PointOutsideBedError` instead.
+
+    Returns
+    -------
+    PagePlacement
+        The effective name, requested origin, final origin and whether it moved.
+
+    Raises
+    ------
+    GcodeError
+        Both ``place`` and ``at`` were given, or ``place`` is not a known name.
+    PointOutsideBedError
+        ``fit=False`` and the requested page falls outside the usable area.
+    """
+    if place is not None and at is not None:
+        raise GcodeError("pass either place=... or at=(x, y) to place a page, not both")
+    if place is not None and place not in PLACEMENT_NAMES:
+        raise GcodeError(
+            f"Unknown page placement {place!r}; choose one of {', '.join(PLACEMENT_NAMES)}"
+        )
+
+    page_width, page_height = page_size_mm
+    (x_lo, y_lo), (x_hi, y_hi) = usable_area(profile)
+    if at is not None:
+        effective: PlacementName = "origin"
+        requested = (at[0], at[1])
+    else:
+        effective = (
+            place
+            if place is not None
+            else ("origin" if profile.bed.page.placement == "fixed" else "front-right")
+        )
+        if effective == "origin":
+            requested = (0.0, 0.0) if place is not None else profile.bed.page.origin_mm
+        elif effective == "center":
+            requested = (
+                x_lo + (x_hi - x_lo - page_width) / 2,
+                y_lo + (y_hi - y_lo - page_height) / 2,
+            )
+        elif effective == "front-right":
+            requested = (x_hi - page_width, y_lo)
+        elif effective == "front-left":
+            requested = (x_lo, y_lo)
+        elif effective == "back-right":
+            requested = (x_hi - page_width, y_hi - page_height)
+        else:
+            requested = (x_lo, y_hi - page_height)
+
+    if place is None and at is None:
+        return PagePlacement(effective, requested, requested, False)
+
+    raw_shift_x = _shortest_shift(requested[0], requested[0] + page_width, x_lo, x_hi)
+    raw_shift_y = _shortest_shift(requested[1], requested[1] + page_height, y_lo, y_hi)
+    shifted_x = abs(raw_shift_x) > PLACEMENT_EPSILON_MM
+    shifted_y = abs(raw_shift_y) > PLACEMENT_EPSILON_MM
+    shift_x = raw_shift_x if shifted_x else 0.0
+    shift_y = raw_shift_y if shifted_y else 0.0
+    origin = (requested[0] + shift_x, requested[1] + shift_y)
+    shifted = shifted_x or shifted_y
+    if not fit and shifted:
+        raise PointOutsideBedError(
+            f"requested page origin (x={_format_mm(requested[0])}, "
+            f"y={_format_mm(requested[1])}) mm puts the page outside the usable area "
+            f"X {_format_mm(x_lo)}..{_format_mm(x_hi)}, "
+            f"Y {_format_mm(y_lo)}..{_format_mm(y_hi)} mm; "
+            f"nearest origin is (x={_format_mm(origin[0])}, y={_format_mm(origin[1])}); "
+            "use --fit (the default) or choose a different placement"
+        )
+    return PagePlacement(effective, origin, requested, shifted)
 
 
 def page_origin_mm(
     profile: MachineProfile,
     page_size_mm: Coordinate,
+    *,
+    placement: PagePlacement | None = None,
 ) -> Coordinate:
-    """Return the pen-space page origin for a profile and source page size.
+    """Return the final pen-space page origin for a profile and source page size.
 
-    Both the emitter and the preview use this helper, so ``reachable_corner``
-    placement inverts with the same usable-area corner origin the emitter used.
+    An explicit ``placement`` supplies the origin the emitter used; otherwise
+    it is computed from the profile with :func:`place_page`. The emitter and the
+    preview both use this helper, so ``reachable_corner`` inverts with the same
+    usable-area corner origin the emitter used.
     """
-    return _page_origin(profile, page_size_mm, usable_area(profile))
+    if placement is not None:
+        return placement.origin_mm
+    return place_page(profile, page_size_mm).origin_mm
 
 
 def _profile_values(profile: MachineProfile) -> dict[str, str]:
@@ -173,14 +306,19 @@ def _block(text: str, values: dict[str, str]) -> list[str]:
     return [line.format_map(values) for line in text.strip("\n").splitlines()]
 
 
-def _header(profile: MachineProfile, page_size_mm: Coordinate) -> str:
+def _header(
+    profile: MachineProfile,
+    page_size_mm: Coordinate,
+    placement: PagePlacement,
+) -> str:
     """Build the header comment carrying page placement, usable area and Z semantics."""
-    origin = page_origin_mm(profile, page_size_mm)
+    origin = placement.origin_mm
     (usable_xmin, usable_ymin), (usable_xmax, usable_ymax) = usable_area(profile)
     fields = [
         f"profile={profile.name}",
         f"page={_format_mm(page_size_mm[0])}x{_format_mm(page_size_mm[1])}",
-        f"page_origin={_format_mm(origin[0])},{_format_mm(origin[1])}",
+        f"place={placement.place}",
+        f"page_origin={_format_mm(origin[0])}x{_format_mm(origin[1])}",
         f"usable_x={_format_mm(usable_xmin)}..{_format_mm(usable_xmax)}",
         f"usable_y={_format_mm(usable_ymin)}..{_format_mm(usable_ymax)}",
         f"z_up={_format_mm(profile.pen.z_up)}",
@@ -423,6 +561,7 @@ def fit_layers_to_drawable(
     profile: MachineProfile,
     page_size_mm: Coordinate,
     tolerance_mm: float = FIT_TOLERANCE_MM,
+    placement: PagePlacement | None = None,
 ) -> FitResult:
     """Fit a drawing into the profile's usable area without distorting it.
 
@@ -445,6 +584,8 @@ def fit_layers_to_drawable(
         SVG page width and height in millimetres, used for the Y flip and page origin.
     tolerance_mm : float
         Slop allowed at the usable-area boundary, by default ``FIT_TOLERANCE_MM``.
+    placement : PagePlacement | None
+        Page placement to map through. Computed from the profile when omitted.
 
     Returns
     -------
@@ -457,7 +598,8 @@ def fit_layers_to_drawable(
         The profile has no usable area left after the margins and ramp lead-in.
     """
     (xmin, ymin), (xmax, ymax) = usable_area(profile)
-    origin = page_origin_mm(profile, page_size_mm)
+    final_placement = placement if placement is not None else place_page(profile, page_size_mm)
+    origin = final_placement.origin_mm
     page_height = page_size_mm[1]
     lead = lead_in_mm(profile) or 0.0
     x_lo, x_hi = xmin + lead, xmax - lead
@@ -520,6 +662,7 @@ def build_gcode(
     layers: Sequence[GcodeLayer],
     profile: MachineProfile,
     page_size_mm: Coordinate,
+    placement: PagePlacement | None = None,
 ) -> str:
     """Build G-code text from one or more pen layers and a machine profile.
 
@@ -533,8 +676,11 @@ def build_gcode(
     profile : MachineProfile
         Validated machine profile; the only source of machine values.
     page_size_mm : tuple[float, float]
-        SVG page width and height in millimetres, used for the Y flip and for
-        ``reachable_corner`` placement. Paper size comes from the reviewed SVG.
+        SVG page width and height in millimetres, used for the Y flip. Paper
+        size comes from the reviewed SVG.
+    placement : PagePlacement | None
+        Page placement to map through and record in the header. Computed from
+        the profile with :func:`place_page` when omitted.
 
     A profile with ``ramp_mm`` uses the ramped landing of D7: each stroke gains
     a lead-in before its first point and a lead-out after its last, and Z falls
@@ -558,7 +704,8 @@ def build_gcode(
     layer_count = len(used_layers)
     usable = usable_area(profile)
     lead = lead_in_mm(profile)
-    origin = page_origin_mm(profile, page_size_mm)
+    final_placement = placement if placement is not None else place_page(profile, page_size_mm)
+    origin = final_placement.origin_mm
     line_values = _profile_values(profile)
     feed_travel = f" F{line_values['feed_travel']}"
     feed_z = f" F{line_values['feed_z']}"
@@ -571,7 +718,7 @@ def build_gcode(
     }
     prefix = profile.gcode.comment_prefix
 
-    lines = [_header(profile, page_size_mm)]
+    lines = [_header(profile, page_size_mm, final_placement)]
     lines.extend(_block(profile.gcode.start, common_values))
     pen_is_down = True
     for index, layer in enumerate(used_layers, start=1):
@@ -629,10 +776,13 @@ __all__ = [
     "FitResult",
     "GcodeError",
     "GcodeLayer",
+    "PagePlacement",
+    "PlacementName",
     "PointOutsideBedError",
     "build_gcode",
     "fit_layers_to_drawable",
     "lead_in_mm",
     "page_origin_mm",
+    "place_page",
     "usable_area",
 ]
