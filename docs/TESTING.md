@@ -730,10 +730,17 @@ carry the rejection of that baseline instead.
 | `stabilo_88_light_blue` | 0.30 | 0.05 | 0.60 | 0.60 | 0.40 | 0.75 |
 | `stabilo_88_brown` | 0.30 | 0.50 | 0.60 | 0.30 | 0.30 | 0.40 |
 | `stabilo_88_black` | 0.55 | 0.60 | 0.60 | 0.60 | 0.40 | 0.75 |
+| `stabilo_88_blue` | 0.30 | 0.10 | 0.60 | 0.60 | 0.40 | 0.75 |
+| `stabilo_88_light_green` | 0.30 | 0.50 | 0.60 | 0.45 | 0.40 | 0.50 |
+| `stabilo_88_purple` | 0.30 | 0.50 | 0.60 | 0.12 | 0.10 | 0.30 |
 
-A blank page fails recall and precision for all three pens; a random scribble
-fails both for light blue and brown and recall for black. The example floors
-in the task (recall 0.30, precision 0.50, extent 0.60, bbox 0.40, cell 0.75)
+The last three rows are LUC-123's derived floors for new sparse layers; their
+derivation is recorded in "Palette colour choice and the LUC-123 re-measurement"
+below. A blank page fails recall and precision for every pen; a random scribble
+fails both for light blue and brown and recall for black, and recall or
+precision rejects it for the LUC-123 pens whose extent/bbox/cell scores are high.
+The example floors in the task (recall 0.30, precision 0.50, extent 0.60, bbox
+0.40, cell 0.75)
 cannot all be used here: light blue's dark region is only 2.4% of the source,
 so even the ideal channel scores 0.0939 precision and its drawing 0.0746;
 brown's five strokes before LUC-85 spanned only 0.373 / 0.333 / 0.455 of extent
@@ -744,6 +751,85 @@ lowered to let a blank or random page pass. LUC-85 closes brown's gap (extent H
 0.973, bbox 0.915, cell recall 0.700) without changing these floors. The
 light-blue precision gap and the black random baseline stay recorded as
 limitations, out of scope here.
+
+### Palette colour choice and the LUC-123 re-measurement (2026-11-26)
+
+Hue-led separation changes which pen draws a colour region, not the ink density
+inside it. On `tests/fixtures/images/saturation/muted_landscape.png` with
+`--palette stabilo_88`, seed 42 and direct SVG export:
+
+| run | `stabilo_88_light_green` | `stabilo_88_light_blue` | saturation report |
+|-----|-------------------------:|------------------------:|-------------------|
+| default | 10 strokes | 0 | none |
+| `--palette-adapt` (factor 3.00) | 12 strokes | 0 | `Saturation factor: 3.00 (palette-adapted)` |
+| `--saturation 2.0` | 12 strokes | 0 | `Saturation factor: 2.00 (manual)` |
+
+Before LUC-123 the default field went to `stabilo_88_light_blue` and only an
+opt-in boost moved it to green; the boost now still reports its factor and
+still helps pixels below the C* 8 neutral cut-off. With `--no-auto-equalize`, a
+C* 7 green swatch goes to `light_blue` by default and to `light_green` with
+`--saturation 3.0`. Reproduce with
+`uv run pytest tests/integration/test_saturation_boost.py -s`.
+
+Re-measuring `photo.jpg` with `-s seed=42` on the LUC-86 harness gives:
+
+| layer | mode | SSIM* | recall | prec | ext W | ext H | bbox | cell | strokes |
+|-------|------|------:|-------:|-----:|------:|------:|-----:|-----:|--------:|
+| `stabilo_88_blue` | algorithm | 0.7627 | 1.3189 | 0.2116 | 1.000 | 0.996 | 0.989 | 0.929 | 62 |
+| `stabilo_88_blue` | blank | 0.7603 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 62 |
+| `stabilo_88_blue` | random | 0.2695 | 0.2271 | 0.0583 | 1.001 | 0.992 | 0.992 | 1.000 | 62 |
+| `stabilo_88_blue` | ideal | 0.9970 | 1.0035 | 0.1330 | 1.000 | 1.000 | 1.000 | 1.000 | 62 |
+| `stabilo_88_light_green` | algorithm | 0.9536 | 0.8458 | 0.9647 | 1.003 | 0.584 | 0.584 | 0.636 | 20 |
+| `stabilo_88_light_green` | blank | 0.8912 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 20 |
+| `stabilo_88_light_green` | random | 0.6257 | 0.0652 | 0.0591 | 0.965 | 1.132 | 0.935 | 0.909 | 20 |
+| `stabilo_88_light_green` | ideal | 0.9992 | 0.7963 | 0.9894 | 1.000 | 0.998 | 0.998 | 1.000 | 20 |
+| `stabilo_88_purple` | algorithm | 0.9563 | 0.6667 | 0.5699 | 0.803 | 0.191 | 0.153 | 0.444 | 10 |
+| `stabilo_88_purple` | blank | 0.9250 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 10 |
+| `stabilo_88_purple` | random | 0.7366 | 0.0000 | 0.0000 | 1.009 | 1.301 | 0.937 | 0.556 | 10 |
+| `stabilo_88_purple` | ideal | 0.9993 | 0.6157 | 0.6157 | 0.998 | 1.000 | 0.998 | 1.000 | 10 |
+| `stabilo_88_black` | algorithm | 0.8012 | 0.9826 | 0.9944 | 1.003 | 1.004 | 1.000 | 1.000 | 282 |
+| `stabilo_88_black` | blank | 0.5400 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 282 |
+| `stabilo_88_black` | random | 0.1005 | 0.3861 | 0.4923 | 1.003 | 0.998 | 0.996 | 1.000 | 282 |
+| `stabilo_88_black` | ideal | 0.9959 | 0.8536 | 0.9984 | 1.000 | 1.000 | 1.000 | 1.000 | 282 |
+
+The union now clears every LUC-47 floor: SSIM 0.5116, covered W/H 0.999/0.998,
+bbox 0.997, ink per cell 0.0007 and tone ratio 45.32. `KNOWN_UNION_FAILURES` is
+therefore empty; the recorded tone failure is gone and a new union failure now
+fails the test. Brown and light blue no longer own pixels and draw no layer;
+blue, light green and purple are new used layers. Blue misses the *default*
+precision floor (0.2116 < 0.50), and light green and purple miss the default
+extent-H / bbox / cell floors. Their regions are sparse (2.6% and 3.8% of the
+source), so the PFM draws only 20 and 10 strokes on their canvases.
+
+The Architect's 2026-11-26 decision is to derive per-pen floors for these three
+genuinely new layers with the existing LUC-86 rule (above both the blank and
+random baselines, below the measured drawing, and no more than about 70% of the
+gap from the higher baseline to the ideal), with recall and precision carrying
+the rejection of a random scribble where the random baseline already scores
+above a floor. Blue's own ideal channel only reaches 0.1330 precision, below
+the 0.50 default, so that default was never attainable for it; light green's
+and purple's ideal channels clear the defaults but their sparse drawings do
+not. The derived floors are:
+
+| pen | measure | default | random | ideal | algorithm | derived floor |
+|-----|---------|--------:|-------:|------:|----------:|--------------:|
+| `stabilo_88_blue` | precision | 0.50 | 0.0583 | 0.1330 | 0.2116 | **0.10** |
+| `stabilo_88_light_green` | extent H | 0.60 | 1.132 | 0.998 | 0.5844 | **0.45** |
+| `stabilo_88_light_green` | cell recall | 0.75 | 0.909 | 1.000 | 0.6364 | **0.50** |
+| `stabilo_88_purple` | extent H | 0.60 | 1.301 | 1.000 | 0.1910 | **0.12** |
+| `stabilo_88_purple` | bbox area | 0.40 | 0.937 | 0.998 | 0.1528 | **0.10** |
+| `stabilo_88_purple` | cell recall | 0.75 | 0.556 | 1.000 | 0.4444 | **0.30** |
+
+Blue's precision floor is capped by `random + 0.7 x (ideal - random) = 0.1106`;
+0.10 is below that cap and above random's 0.0583. For light green and purple
+the random baseline already exceeds the new extent/bbox/cell floors, so recall
+and precision reject it (light green random 0.0652 / 0.0591, purple 0.0000 /
+0.0000). A test asserts that every pen's ideal baseline clears every floor
+enforced on that pen, so no floor can sit above what its own channel can reach.
+Every default floor and every existing override (light blue, brown, black) is
+unchanged: no floor was lowered. Widening the LUC-85 sparse-canvas PFM trigger
+(`_NEARLY_BLANK_MEAN`, `pfm_sketch_lines`) is a separate follow-up, out of scope
+here. Reproduce with `uv run pytest tests/integration/test_multi_pen_gate.py -s`.
 
 ### Machine Cost (LUC-27)
 

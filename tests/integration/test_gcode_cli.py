@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -203,7 +206,7 @@ pen:
     )
 
     assert result.exit_code == 3
-    assert "outside the drawable area" in result.stderr
+    assert "outside the usable area" in result.stderr
     assert "x=10.000, y=287.000" in result.stderr
 
 
@@ -420,7 +423,7 @@ def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    assert "outside the drawable area" in result.stderr
+    assert "outside the usable area" in result.stderr
     assert "X 0.000..197.300, Y 0.000..191.400" in result.stderr
     assert not drawing.with_suffix(".gcode").exists()
 
@@ -471,9 +474,218 @@ pen:
     assert "X 10.000..100.000" in result.stderr
 
 
-def test_gcode_help_lists_its_options(runner: CliRunner) -> None:
+def test_gcode_uses_a_user_profiles_asymmetric_margin(
+    runner: CliRunner, card: Path, tmp_path: Path
+) -> None:
+    """A user profile's per-side margin shapes the header and the reachable check."""
+    profiles = _user_profile(
+        tmp_path,
+        "asymmetric",
+        """version: 1
+name: asymmetric
+bed:
+  size_mm: [210.0, 297.0]
+  margin_mm: [1.0, 2.0, 3.0, 4.0]
+feed:
+  travel_mm_s: 100.0
+  draw_mm_s: 50.0
+pen:
+  z_up: 5.0
+  z_down: 0.0
+gcode:
+  end: M2
+""",
+    )
+
+    result = runner.invoke(
+        main,
+        ["gcode", str(card), "--profile", "asymmetric", "--profiles", str(profiles), "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.startswith(
+        "; penpath gcode profile=asymmetric page=210.000x297.000 "
+        "page_origin=0.000,0.000 usable_x=4.000..208.000 usable_y=3.000..296.000 "
+        "z_up=5.000 z_down=0.000\n"
+    )
+    assert "G0 X10.000 Y287.000 F6000\n" in result.stdout
+    assert result.stdout.endswith("M2\n")
+
+
+def _margin_profile(tmp_path: Path) -> Path:
+    """Write a synthetic 30x30 machine with a 10 mm safety margin."""
+    return _user_profile(
+        tmp_path,
+        "margin10",
+        """version: 1
+name: margin10
+bed:
+  size_mm: [30.0, 30.0]
+  margin_mm: 10.0
+feed:
+  travel_mm_s: 100.0
+  draw_mm_s: 50.0
+pen:
+  z_up: 5.0
+  z_down: 0.0
+gcode:
+  end: M2
+""",
+    )
+
+
+def _edge_page(tmp_path: Path) -> Path:
+    """A 30x30 page whose stroke needs the full bed: no 10 mm margin fits it."""
+    drawing = tmp_path / "edge.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  width="30mm" height="30mm" viewBox="0 0 30 30">
+<g inkscape:groupmode="layer" inkscape:label="black" id="layer1"
+  fill="none" stroke="#000000" stroke-width="0.3"><polyline points="5,5 8,5"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+    return drawing
+
+
+def _margin_args(profiles: Path, drawing: Path, *extra: str) -> list[str]:
+    return [
+        "gcode",
+        str(drawing),
+        "--profile",
+        "margin10",
+        "--profiles",
+        str(profiles),
+        "--dry-run",
+        *extra,
+    ]
+
+
+def test_gcode_margin_zero_uses_the_full_bed(runner: CliRunner, tmp_path: Path) -> None:
+    """--margin 0 makes a page that needs the full bed plot with --no-fit."""
+    profiles = _margin_profile(tmp_path)
+    drawing = _edge_page(tmp_path)
+
+    without_override = runner.invoke(main, _margin_args(profiles, drawing, "--no-fit"))
+    assert without_override.exit_code == 3
+    assert "outside the usable area" in without_override.stderr
+
+    result = runner.invoke(main, _margin_args(profiles, drawing, "--no-fit", "--margin", "0"))
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.startswith("; penpath gcode profile=margin10 page=30.000x30.000 ")
+    assert "usable_x=0.000..30.000 usable_y=0.000..30.000" in result.stdout
+    assert "X5.000 Y25.000" in result.stdout
+    assert "X8.000 Y25.000" in result.stdout
+    assert "Warning:" not in result.stderr
+
+
+def test_gcode_margin_zero_skips_the_fit_warning(runner: CliRunner, tmp_path: Path) -> None:
+    """The override is applied before the default --fit path runs."""
+    profiles = _margin_profile(tmp_path)
+    drawing = _edge_page(tmp_path)
+
+    fitted = runner.invoke(main, _margin_args(profiles, drawing))
+    overridden = runner.invoke(main, _margin_args(profiles, drawing, "--margin", "0"))
+
+    assert fitted.exit_code == 0, fitted.stderr
+    assert "Warning: drawing is" in fitted.stderr
+    assert overridden.exit_code == 0, overridden.stderr
+    assert "Warning:" not in overridden.stderr
+    assert "usable_x=0.000..30.000" in overridden.stdout
+    assert "X5.000 Y25.000" in overridden.stdout
+
+
+def test_gcode_margin_changes_the_usable_area(runner: CliRunner, tmp_path: Path) -> None:
+    """A smaller override shrinks the header's usable area without moving the ink."""
+    profiles = _margin_profile(tmp_path)
+    drawing = tmp_path / "inside.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  width="30mm" height="30mm" viewBox="0 0 30 30">
+<g inkscape:groupmode="layer" inkscape:label="black" id="layer1"
+  fill="none" stroke="#000000" stroke-width="0.3"><polyline points="12,12 16,12"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+
+    baseline = runner.invoke(main, _margin_args(profiles, drawing))
+    overridden = runner.invoke(main, _margin_args(profiles, drawing, "--margin", "5"))
+
+    assert baseline.exit_code == 0, baseline.stderr
+    assert overridden.exit_code == 0, overridden.stderr
+    assert "usable_x=10.000..20.000 usable_y=10.000..20.000" in baseline.stdout
+    assert "usable_x=5.000..25.000 usable_y=5.000..25.000" in overridden.stdout
+    assert "X12.000 Y18.000" in baseline.stdout
+    assert "X12.000 Y18.000" in overridden.stdout
+
+
+def test_gcode_margin_override_applies_to_a_builtin_profile(
+    runner: CliRunner,
+) -> None:
+    """--margin also overrides a built-in profile, not just a user file."""
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(SIMPLE_SVG),
+            "--profile",
+            "generic",
+            "--dry-run",
+            "--margin",
+            "10",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert "usable_x=10.000..200.000 usable_y=10.000..287.000" in result.stdout
+
+
+def test_gcode_negative_margin_exits_2(runner: CliRunner, tmp_path: Path) -> None:
+    profiles = _margin_profile(tmp_path)
+    drawing = _edge_page(tmp_path)
+
+    result = runner.invoke(main, _margin_args(profiles, drawing, "--margin", "-1"))
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--margin'" in result.stderr
+    assert result.stdout == ""
+
+
+def test_gcode_margin_help_names_the_option(runner: CliRunner) -> None:
     result = runner.invoke(main, ["gcode", "--help"])
 
     assert result.exit_code == 0
-    for option in ("--profile", "--profiles", "--dry-run", "--fit", "--no-fit", "-o, --output"):
-        assert option in result.stdout
+    assert "--margin" in result.stdout
+    assert "is allowed but not recommended on the Aquila" in result.stdout
+
+
+def test_gcode_margin_end_to_end_from_the_shell(tmp_path: Path) -> None:
+    """A user runs `python -m penpath gcode ... --margin 0` and pipes G-code out."""
+    profiles = _margin_profile(tmp_path)
+    drawing = _edge_page(tmp_path)
+    env = dict(os.environ)
+    env["XDG_CONFIG_HOME"] = str(tmp_path / "xdg")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "penpath",
+            *_margin_args(profiles, drawing, "--no-fit", "--margin", "0"),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "usable_x=0.000..30.000 usable_y=0.000..30.000" in result.stdout
+    assert "X5.000 Y25.000" in result.stdout
+    assert all(
+        line.startswith((";", "G", "M")) for line in result.stdout.splitlines() if line.strip()
+    )
+    assert not drawing.with_suffix(".gcode").exists()

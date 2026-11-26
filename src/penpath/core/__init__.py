@@ -28,6 +28,8 @@ from penpath.core.image import (
     FilterStep,
     GrayscaleMethod,
     ImageLoadError,
+    PaletteMatch,
+    PalettePenShare,
     UnsupportedFormatError,
     WorkingResolution,
     adapt_saturation,
@@ -46,6 +48,7 @@ from penpath.core.image import (
     list_filters,
     load_image,
     mask_background,
+    palette_match,
     plan_working_resolution,
     posterize,
     remove_background,
@@ -76,6 +79,7 @@ from penpath.core.output import (
     fit_layers_to_drawable,
     lead_in_mm,
     page_origin_mm,
+    usable_area,
 )
 from penpath.core.profiles import (
     PROFILE_FILE_VERSION,
@@ -96,6 +100,7 @@ from penpath.core.profiles import (
     list_profile_sources,
     list_profiles,
     load_profile,
+    with_margin_mm,
 )
 from penpath.core.project import (
     PROJECT_FILE_VERSION,
@@ -157,6 +162,8 @@ __all__ = [
     "PFMSettingsUnion",
     "PageProfile",
     "Palette",
+    "PaletteMatch",
+    "PalettePenShare",
     "Paper",
     "Pen",
     "PenChangeProfile",
@@ -208,6 +215,7 @@ __all__ = [
     "merge_lines",
     "mm_to_pixels",
     "page_origin_mm",
+    "palette_match",
     "parse_gcode_header",
     "parse_svg_layers",
     "parse_svg_strokes",
@@ -223,4 +231,6 @@ __all__ = [
     "simplify_line",
     "simulate_plot",
     "threshold",
+    "usable_area",
+    "with_margin_mm",
 ]

@@ -63,7 +63,7 @@ class FitResult:
     offset_mm : tuple[float, float]
         Pen-space translation applied after scaling, in millimetres.
     overshoot_mm : tuple[float, float]
-        Per-axis distance the original drawing exceeded the drawable area, in mm.
+        Per-axis distance the original drawing exceeded the usable area, in mm.
     changed : bool
         Whether the layers were transformed.
     """
@@ -108,16 +108,29 @@ def _drawable_area(profile: MachineProfile) -> Bounds:
     )
 
 
+def usable_area(profile: MachineProfile) -> Bounds:
+    """Return the drawable rectangle inset by the four bed margins.
+
+    The bounds are in pen space, with ``bed.margins_mm`` in
+    ``(top, right, bottom, left)`` order: top reduces maximum Y, right reduces
+    maximum X, bottom increases minimum Y and left increases minimum X. The
+    unreduced rectangle stays available from :func:`_drawable_area`.
+    """
+    (xmin, ymin), (xmax, ymax) = _drawable_area(profile)
+    top, right, bottom, left = profile.bed.margins_mm
+    return ((xmin + left, ymin + bottom), (xmax - right, ymax - top))
+
+
 def _page_origin(
     profile: MachineProfile,
     page_size_mm: Coordinate,
-    drawable: Bounds,
+    area: Bounds,
 ) -> Coordinate:
     """Return the pen-space origin of the page's lower-left corner."""
     page = profile.bed.page
     if page.placement == "fixed":
         return page.origin_mm
-    return (drawable[1][0] - page_size_mm[0], drawable[0][1])
+    return (area[1][0] - page_size_mm[0], area[0][1])
 
 
 def page_origin_mm(
@@ -127,9 +140,9 @@ def page_origin_mm(
     """Return the pen-space page origin for a profile and source page size.
 
     Both the emitter and the preview use this helper, so ``reachable_corner``
-    placement inverts with the same drawable-corner origin the emitter used.
+    placement inverts with the same usable-area corner origin the emitter used.
     """
-    return _page_origin(profile, page_size_mm, _drawable_area(profile))
+    return _page_origin(profile, page_size_mm, usable_area(profile))
 
 
 def _profile_values(profile: MachineProfile) -> dict[str, str]:
@@ -161,10 +174,15 @@ def _block(text: str, values: dict[str, str]) -> list[str]:
 
 
 def _header(profile: MachineProfile, page_size_mm: Coordinate) -> str:
-    """Build the header comment carrying the page size and Z semantics."""
+    """Build the header comment carrying page placement, usable area and Z semantics."""
+    origin = page_origin_mm(profile, page_size_mm)
+    (usable_xmin, usable_ymin), (usable_xmax, usable_ymax) = usable_area(profile)
     fields = [
         f"profile={profile.name}",
         f"page={_format_mm(page_size_mm[0])}x{_format_mm(page_size_mm[1])}",
+        f"page_origin={_format_mm(origin[0])},{_format_mm(origin[1])}",
+        f"usable_x={_format_mm(usable_xmin)}..{_format_mm(usable_xmax)}",
+        f"usable_y={_format_mm(usable_ymin)}..{_format_mm(usable_ymax)}",
         f"z_up={_format_mm(profile.pen.z_up)}",
     ]
     if profile.pen.z_touch is not None:
@@ -249,27 +267,33 @@ def _pen_change_lines(profile: MachineProfile, values: dict[str, str]) -> list[s
     return lines
 
 
-def _check_pen_point(point: Coordinate, profile: MachineProfile, drawable: Bounds) -> None:
-    """Reject a pen-space point outside the drawable area minus the bed margin.
+def _check_pen_point(point: Coordinate, profile: MachineProfile, usable: Bounds) -> None:
+    """Reject a pen-space point outside the profile's usable area.
 
     The fit tolerance absorbs float rounding at the edge; a point further out
-    reports how far past each axis it lies.
+    reports how far past each axis it lies and how the margins shaped the area.
     """
-    margin = profile.bed.margin_mm
-    (xmin, ymin), (xmax, ymax) = drawable
+    (x_lo, y_lo), (x_hi, y_hi) = usable
     x_pen, y_pen = point
-    x_lo, x_hi = xmin + margin, xmax - margin
-    y_lo, y_hi = ymin + margin, ymax - margin
     if not (
         x_lo - FIT_TOLERANCE_MM <= x_pen <= x_hi + FIT_TOLERANCE_MM
         and y_lo - FIT_TOLERANCE_MM <= y_pen <= y_hi + FIT_TOLERANCE_MM
     ):
         x_past = max(0.0, x_lo - x_pen, x_pen - x_hi)
         y_past = max(0.0, y_lo - y_pen, y_pen - y_hi)
+        top, right, bottom, left = profile.bed.margins_mm
+        if len({top, right, bottom, left}) == 1:
+            margin_note = f"a {_format_mm(top)} mm margin"
+        else:
+            margin_note = (
+                f"margins top={_format_mm(top)} right={_format_mm(right)} "
+                f"bottom={_format_mm(bottom)} left={_format_mm(left)} mm"
+            )
         raise PointOutsideBedError(
             f"point (x={_format_mm(x_pen)}, y={_format_mm(y_pen)}) mm is outside "
-            f"the drawable area X {_format_mm(x_lo)}..{_format_mm(x_hi)}, "
-            f"Y {_format_mm(y_lo)}..{_format_mm(y_hi)} mm; "
+            f"the usable area X {_format_mm(x_lo)}..{_format_mm(x_hi)}, "
+            f"Y {_format_mm(y_lo)}..{_format_mm(y_hi)} mm "
+            f"(drawable area minus {margin_note}); "
             f"overshoot x={_format_mm(x_past)} mm, y={_format_mm(y_past)} mm"
         )
 
@@ -305,13 +329,13 @@ def _pen_points(
     profile: MachineProfile,
     page_height_mm: float,
     origin: Coordinate,
-    drawable: Bounds,
+    usable: Bounds,
 ) -> list[Coordinate]:
     """Map a page polyline to checked pen-space points."""
     result: list[Coordinate] = []
     for point in polyline:
         pen_point = _svg_to_pen(point, page_height_mm, origin, profile)
-        _check_pen_point(pen_point, profile, drawable)
+        _check_pen_point(pen_point, profile, usable)
         result.append(pen_point)
     return result
 
@@ -400,16 +424,16 @@ def fit_layers_to_drawable(
     page_size_mm: Coordinate,
     tolerance_mm: float = FIT_TOLERANCE_MM,
 ) -> FitResult:
-    """Fit a drawing into the profile's drawable area without distorting it.
+    """Fit a drawing into the profile's usable area without distorting it.
 
     Page points are mapped to pen space exactly as :func:`build_gcode` maps
-    them, then confined to the drawable area minus ``bed.margin_mm`` and minus
-    the ramp's lead-in on every side, so a ramped stroke's lead-in and lead-out
-    stay reachable too. A drawing already inside that area (within
-    ``tolerance_mm``) is returned untouched. Otherwise it is shifted the
-    shortest way that fits, or uniformly scaled down and shifted when it is
-    larger than the available area. Scaling happens in pen space: the profile's
-    lead distance itself is never scaled.
+    them, then confined to the usable area (the drawable area minus the four
+    per-side ``bed.margin_mm`` values) and minus the ramp's lead-in on every
+    side, so a ramped stroke's lead-in and lead-out stay reachable too. A
+    drawing already inside that area (within ``tolerance_mm``) is returned
+    untouched. Otherwise it is shifted the shortest way that fits, or uniformly
+    scaled down and shifted when it is larger than the available area. Scaling
+    happens in pen space: the profile's lead distance itself is never scaled.
 
     Parameters
     ----------
@@ -420,7 +444,7 @@ def fit_layers_to_drawable(
     page_size_mm : tuple[float, float]
         SVG page width and height in millimetres, used for the Y flip and page origin.
     tolerance_mm : float
-        Slop allowed at the drawable boundary, by default ``FIT_TOLERANCE_MM``.
+        Slop allowed at the usable-area boundary, by default ``FIT_TOLERANCE_MM``.
 
     Returns
     -------
@@ -430,15 +454,14 @@ def fit_layers_to_drawable(
     Raises
     ------
     GcodeError
-        The profile has no drawable area left after the margin and ramp lead-in.
+        The profile has no usable area left after the margins and ramp lead-in.
     """
-    drawable = _drawable_area(profile)
+    (xmin, ymin), (xmax, ymax) = usable_area(profile)
     origin = page_origin_mm(profile, page_size_mm)
     page_height = page_size_mm[1]
-    inset = profile.bed.margin_mm + (lead_in_mm(profile) or 0.0)
-    (xmin, ymin), (xmax, ymax) = drawable
-    x_lo, x_hi = xmin + inset, xmax - inset
-    y_lo, y_hi = ymin + inset, ymax - inset
+    lead = lead_in_mm(profile) or 0.0
+    x_lo, x_hi = xmin + lead, xmax - lead
+    y_lo, y_hi = ymin + lead, ymax - lead
     unchanged = FitResult(layers, 1.0, (0.0, 0.0), (0.0, 0.0), False)
 
     pen_points = [
@@ -527,13 +550,13 @@ def build_gcode(
     Raises
     ------
     PointOutsideBedError
-        A point is more than ``FIT_TOLERANCE_MM`` outside the drawable area
-        (minus the profile margin); the error names the point, the limits and
-        the per-axis overshoot.
+        A point is more than ``FIT_TOLERANCE_MM`` outside the usable area
+        (the drawable area minus the profile margins); the error names the
+        point, the limits and the per-axis overshoot.
     """
     used_layers = [layer for layer in layers if any(len(line) >= 2 for line in layer.polylines)]
     layer_count = len(used_layers)
-    drawable = _drawable_area(profile)
+    usable = usable_area(profile)
     lead = lead_in_mm(profile)
     origin = page_origin_mm(profile, page_size_mm)
     line_values = _profile_values(profile)
@@ -564,7 +587,7 @@ def build_gcode(
         for polyline in layer.polylines:
             if len(polyline) < 2:
                 continue
-            pen_points = _pen_points(polyline, profile, page_size_mm[1], origin, drawable)
+            pen_points = _pen_points(polyline, profile, page_size_mm[1], origin, usable)
             if pen_is_down:
                 lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}{feed_z}")
                 pen_is_down = False
@@ -574,7 +597,7 @@ def build_gcode(
                 if not ramp_path:
                     continue
                 for point, _ in ramp_path:
-                    _check_pen_point(point, profile, drawable)
+                    _check_pen_point(point, profile, usable)
                 first, first_z = ramp_path[0]
                 first_x, first_y = _nozzle(first, profile)
                 lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}{feed_travel}")
@@ -611,4 +634,5 @@ __all__ = [
     "fit_layers_to_drawable",
     "lead_in_mm",
     "page_origin_mm",
+    "usable_area",
 ]

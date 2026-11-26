@@ -429,10 +429,21 @@ penpath convert photo.jpg -o card.svg --palette stabilo_88 -s seed=42
 penpath info palettes
 penpath info palettes --format json
 
+# See which pens the colour separation picks and each pen's pixel share
+penpath info palette-match photo.jpg
+penpath info palette-match photo.jpg --palette stabilo_88 --format json
+penpath info palette-match photo.jpg --palette "red=0.4,#FF0000;blue=0.4,#0000FF"
+
 # Check the result before plotting
 penpath preview card.svg -o card.png --dpi 10
 penpath evaluate photo.jpg card.svg
 ```
+
+`penpath info palette-match` reports one row per palette pen (including unused
+pens) and an unassigned share. It measures the raw separation on the loaded
+image: no filters, background masking or saturation boost, and pixels in regions
+smaller than 8 px count as unassigned. Percentages are of all image pixels, not
+of the finished drawing.
 
 A project file can use `palette: stabilo_88` or an explicit ordered `pens:` list
 instead of `pen:`. Palette order is drawing order and the layer order. An
@@ -532,8 +543,10 @@ ship: `generic` (a plain Z-lifted plotter) and `aquila` (the Voxelab Aquila with
 a pen offset, a ramped landing and a touch-spot pen change; its numbers come
 from sergio's `aquila-gcode-reference` script). The Aquila profile pauses for
 each pen with `M0`; never use `M25` to pause on this firmware. List the built-ins
-and your own machines with `penpath info profiles`; the file format and an
-example are in [docs/CLI.md](docs/CLI.md#machine-profile-format).
+and your own machines with `penpath info profiles`, which now shows each
+machine's safety margin; `penpath gcode --margin MM` overrides that margin for
+one run. The file format and an example are in
+[docs/CLI.md](docs/CLI.md#machine-profile-format).
 
 For the full image → SVG → reviewed preview → G-code → SD card → plot operator
 path on the Aquila, including the machine checklist and the equivalence check

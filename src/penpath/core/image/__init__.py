@@ -36,7 +36,12 @@ from penpath.core.image.resolution import (
     plan_working_resolution,
 )
 from penpath.core.image.saturation import adapt_saturation, boost_saturation
-from penpath.core.image.separate import separate_palette
+from penpath.core.image.separate import (
+    PaletteMatch,
+    PalettePenShare,
+    palette_match,
+    separate_palette,
+)
 
 __all__ = [
     "DEFAULT_BACKGROUND_THRESHOLD",
@@ -48,6 +53,8 @@ __all__ = [
     "FilterStep",
     "GrayscaleMethod",
     "ImageLoadError",
+    "PaletteMatch",
+    "PalettePenShare",
     "UnsupportedFormatError",
     "WorkingResolution",
     "adapt_saturation",
@@ -66,6 +73,7 @@ __all__ = [
     "list_filters",
     "load_image",
     "mask_background",
+    "palette_match",
     "plan_working_resolution",
     "posterize",
     "remove_background",

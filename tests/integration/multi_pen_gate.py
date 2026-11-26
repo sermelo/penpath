@@ -83,12 +83,19 @@ REGION_FLOOR_OVERRIDES: dict[str, dict[str, float]] = {
         "cell recall": 0.40,
     },
     "stabilo_88_black": {"recall": 0.55, "precision": 0.60},
+    "stabilo_88_blue": {"precision": 0.10},
+    "stabilo_88_light_green": {"extent height": 0.45, "cell recall": 0.50},
+    "stabilo_88_purple": {
+        "extent height": 0.12,
+        "bbox area": 0.10,
+        "cell recall": 0.30,
+    },
 }
 
 ENFORCED_FLOORS = tuple(DEFAULT_REGION_FLOORS)
 UNION_ENFORCED_FLOORS = tuple(UNION_FLOORS)
 
-KNOWN_UNION_FAILURES = {"tone ratio": 1.6074}
+KNOWN_UNION_FAILURES: dict[str, float] = {}
 
 
 @dataclass(frozen=True, slots=True)

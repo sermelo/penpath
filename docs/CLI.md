@@ -158,18 +158,20 @@ Working resolution: 475x358 px (source 4080x3072 px, scale 0.116)
 `penpath info image` shows the resolution penpath would plan for an image,
 using the paper and pen from the config defaults.
 
-`--palette NAME|LIST` splits the loaded colour image before filtering: each
-pixel goes to the pen whose colour is nearest in CIE Lab space, and that pen
-receives a full-size greyscale image holding the luminance of its own pixels
-and white elsewhere. The filters and the drawing algorithm then run once per
-pen, and geometry is simplified, merged and sorted **within that pen only**.
-Paper masking is on by default in palette mode so pale paper never becomes a
-light pen's drawing; `--no-background` turns it off, `--background` forces it
-on for a single pen, `--background-threshold` tunes the cut-off, and
-`--background-method global` switches back to the old single-colour estimate. A
-muted image can be boosted before the split with `--saturation` or `--palette-adapt`,
-so its pixels land on a colour pen instead of a neutral one; the report of the
-factor used is described under **Image Options**.
+`--palette NAME|LIST` splits the loaded colour image before filtering: a pixel
+with meaningful chroma goes to the pen with the closest hue angle, with chroma
+and lightness only breaking ties, while a near-neutral pixel keeps the plain
+nearest-in-CIE-Lab choice. That pen receives a full-size greyscale image
+holding the luminance of its own pixels and white elsewhere. The filters and
+the drawing algorithm then run once per pen, and geometry is simplified,
+merged and sorted **within that pen only**. Paper masking is on by default in
+palette mode so pale paper never becomes a light pen's drawing;
+`--no-background` turns it off, `--background` forces it on for a single pen,
+`--background-threshold` tunes the cut-off, and `--background-method global`
+switches back to the old single-colour estimate. A very muted image can be
+boosted before the split with `--saturation` or `--palette-adapt` so pixels
+below the neutral cut-off join their hue family; the report of the factor used
+is described under **Image Options**.
 
 The palette's order is the drawing order and the order of the SVG layers. Each
 pen that produced strokes becomes one Inkscape layer named `layerN`, where `N`
@@ -478,8 +480,9 @@ penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
 | `--profile NAME` | — | — | Machine profile name (required; see `penpath info profiles`) |
 | `--output PATH` | `-o` | `<input>.gcode` | Output file, beside the input SVG |
 | `--profiles PATH` | — | user config | Alternate user profiles YAML file for this run |
+| `--margin MM` | — | profile value | Override the profile safety margin for this run in mm; `0` is allowed but not recommended on the Aquila |
 | `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
-| `--fit/--no-fit` | — | `--fit` | Fit a drawing past the drawable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
+| `--fit/--no-fit` | — | `--fit` | Fit a drawing past the usable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
 
 Each Inkscape pen layer (`<g inkscape:groupmode="layer">`) becomes a G-code
 layer in document order, which is the drawing order of the pens. Strokes inside
@@ -503,19 +506,34 @@ can be piped to a printer or captured by a script. Without it, stdout stays
 empty. Every message, including the output path and the summary, goes to
 stderr in both cases.
 
+`--margin MM` replaces the loaded profile's safety margin with one non-negative
+value on all four sides for this run, before the fit, the strict check and the
+G-code are built. The G-code header then reports the overridden usable area, so
+`penpath preview` renders the same placement. `--margin 0` removes the margin;
+it is allowed but not recommended on the Aquila, where the margin keeps strokes
+away from the edges of the paper. The option works with `--fit`, `--no-fit` and
+`--dry-run`, and the original profile file is never changed.
+
 The stderr summary reports the number of layers, drawing length, pen-up travel
 and pen lifts measured from the SVG's strokes, plus an estimated plot time
 from the profile's draw, travel and Z feeds (one down and one up per stroke plus
 a final lift).
 
+The first G-code line is a header comment written for `penpath preview`. It
+carries the profile name, page size, the page origin that was used, the usable
+area bounds and the Z heights, for example
+`; penpath gcode profile=aquila page=170.000x170.000 page_origin=17.300,10.000 usable_x=10.000..187.300 usable_y=10.000..181.400 z_up=12.500 ...`.
+The preview reads `page_origin` so a one-run margin override placed through the
+profile is inverted with the same origin the emitter used.
+
 #### Fitting an oversized page
 
 By default `penpath gcode` fits a reviewed page that reaches past the machine's
-drawable area instead of refusing it. `penpath.core.fit_layers_to_drawable`
-maps the strokes into pen space the same way the emitter does, reserves
-`bed.margin_mm` plus the ramp lead-in on every side so ramped landings stay
-reachable, then shifts the drawing the shortest way that fits. It scales the
-drawing down uniformly only when it is larger than the available area. When the
+usable area instead of refusing it. `penpath.core.fit_layers_to_drawable`
+maps the strokes into pen space the same way the emitter does, reserves the four
+per-side `bed.margin_mm` values plus the ramp lead-in on every side so ramped
+landings stay reachable, then shifts the drawing the shortest way that fits. It
+scales the drawing down uniformly only when it is larger than the available area. When the
 fit changes the drawing, one warning goes to stderr naming the overshoot, the
 scale and the applied pen-space shift, for example:
 
@@ -530,12 +548,12 @@ warning is printed. The warning never goes to stdout, so `--dry-run` output is
 still G-code only. No `.gcode` file is written unless the complete document was
 built successfully.
 
-Pass `--no-fit` to keep the strict check: a point outside the drawable area
-(minus `bed.margin_mm`) then fails with exit 3, naming its coordinates, the
-per-axis overshoot and the fix:
+Pass `--no-fit` to keep the strict check: a point outside the usable area (the
+drawable area minus `bed.margin_mm`) then fails with exit 3, naming its
+coordinates, the per-axis overshoot and the fix:
 
 ```
-Error: point (x=197.431, y=180.000) mm is outside the drawable area X 0.000..197.300, Y 0.000..191.400 mm; overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
+Error: point (x=197.431, y=180.000) mm is outside the usable area X 0.000..197.300, Y 0.000..191.400 mm (drawable area minus a 0.000 mm margin); overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
 ```
 
 #### Ramped landing
@@ -550,14 +568,14 @@ stroke start. The lead-in and lead-out are above the paper and are not previewed
 as ink: `penpath preview` clips Z-interpolated moves at `z_touch`, so the G-code
 PNG still matches the reviewed SVG. The G-code is written in nozzle coordinates
 (`nozzle = pen - bed.pen_offset_mm`) and every emitted point, including the
-lead-in and lead-out, is checked against the drawable area. A profile without
+lead-in and lead-out, is checked against the usable area. A profile without
 `ramp_mm` keeps the plain travel → pen-down → draw → pen-up stroke and produces
 exactly the same G-code as before. `pen.z_touch` must be above `pen.z_down` and
 `pen.z_hover` must not be below `pen.z_touch` when ramping.
 
 Exit codes: **2** for a missing or unknown `--profile` (the message lists the
 available profiles), **3** for an unreadable or invalid profile file, a drawing
-that cannot be fitted, or (with `--no-fit`) a point outside the drawable area,
+that cannot be fitted, or (with `--no-fit`) a point outside the usable area,
 and 1 for other file errors.
 
 #### Examples
@@ -667,6 +685,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `profiles` | List built-in and user machine profiles (source, description, bed size, feeds) |
 | `filters` | List available filters with parameters |
 | `image PATH` | Show image info (size, mode, EXIF, DPI, planned working resolution) |
+| `palette-match PATH` | Show which palette pens raw colour separation picks and each pen's pixel share |
 | `config` | Show resolved config (config + project + defaults) |
 
 #### Options
@@ -680,8 +699,38 @@ Every `info` subcommand writes to stdout: a rich table by default (colours are
 disabled when stdout is not a terminal) or one machine-readable document with
 `--format json` / `--format yaml`. `penpath info profiles --format json` prints
 one object with a `profiles` array, whose rows have `name`, `source`,
-`description`, `bed_width_mm`, `bed_height_mm`, `travel_mm_s`, `draw_mm_s` and
-`z_mm_s` (the Z feed falls back to the travel feed when the profile omits it).
+`description`, `bed_width_mm`, `bed_height_mm`, `margin_mm`, `travel_mm_s`,
+`draw_mm_s` and `z_mm_s` (the Z feed falls back to the travel feed when the
+profile omits it). `margin_mm` is the profile's raw value: a scalar for a
+uniform margin or `[top, right, bottom, left]` for a per-side margin. The table
+shows a `Margin (mm)` column with the same value, printing `10` or `10/5/10/5`.
+
+#### `penpath info palette-match`
+
+```bash
+penpath info palette-match IMAGE_PATH [OPTIONS]
+```
+
+Measures the **raw, pre-drawing** colour separation of the loaded image: it
+runs the same `separate_palette` as `convert` and counts the pixels each pen's
+layer actually inks (a layer pixel below 255). No filters, background masking,
+auto equalization or saturation boost is applied, and nothing is drawn, so the
+numbers describe the pixels before the convert pipeline changes them. Pixels in
+connected regions smaller than 8 px are dropped by separation and count as
+unassigned, together with paper pixels. Percentages are of all image pixels;
+unused pens are kept with a zero count so they are easy to spot.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--palette NAME\|LIST` | `stabilo_88` | Built-in palette name or inline `name=width,#hex;...` (same parser as `convert --palette`) |
+| `--format json\|yaml\|table` | `table` | Output format; table columns are Order, Pen name, Colour, Pixels, Percent and end with an unassigned row |
+
+JSON and YAML contain `path`, `palette`, `width`, `height`, a `rows` array with
+`order`, `name`, `color`, `pixels` and full-precision `percent` for every palette
+pen in drawing order, plus `unassigned_pixels` and `unassigned_percent`. The
+percentages in the table are rounded to one decimal. An invalid palette is a
+usage error (exit 2); an unreadable image is reported as a click error naming
+the image problem (exit 1).
 
 #### Examples
 
@@ -696,6 +745,9 @@ penpath info profiles --format json
 penpath info filters
 penpath info image photo.jpg
 penpath info image photo.jpg --format json
+penpath info palette-match photo.jpg
+penpath info palette-match photo.jpg --palette "red=0.4,#FF0000;blue=0.4,#0000FF"
+penpath info palette-match photo.jpg --palette stabilo_88 --format json
 penpath info config --project project.yaml
 ```
 
@@ -972,8 +1024,8 @@ optional; the shipped `generic.yaml` is a smaller, complete profile.
 | `bed.size_mm` | Physical bed `[X, Y]` in millimetres; both must be positive. |
 | `bed.pen_offset_mm` | Pen position relative to the nozzle; the emitted G-code uses `nozzle = pen - offset`. Defaults to `[0, 0]`. |
 | `bed.nozzle_range_mm` | Optional `[[xmin, xmax], [ymin, ymax]]` for where the nozzle may travel. The drawable area is this range shifted by the pen offset and clipped to the bed; without it the bed itself is drawable. |
-| `bed.margin_mm` | Keep every point this far inside the drawable area. Defaults to `0`. |
-| `bed.page.placement` | `fixed` puts the page bottom-left at `origin_mm`; `reachable_corner` puts the page bottom-right at the drawable area's front-right corner. |
+| `bed.margin_mm` | Safety margin inside the drawable area: one non-negative number for all four sides, or `[top, right, bottom, left]` (four non-negative numbers). In pen space top is the back/max Y, right is max X, bottom is the front/min Y and left is min X. Defaults to `0`. The drawable area inset by these margins is the **usable area**, used by fitting, `reachable_corner` placement, the strict point check and the G-code header. |
+| `bed.page.placement` | `fixed` puts the page bottom-left at `origin_mm`; `reachable_corner` puts the page bottom-right at the usable area's front-right corner. |
 | `bed.page.origin_mm` | Pen-space page origin used with `placement: fixed`. |
 | `bed.invert_y` | `true` when machine Y grows up while SVG Y grows down. Defaults to `true`. |
 | `feed.travel_mm_s` / `feed.draw_mm_s` | G0 / G1 speed in mm per second; both must be positive. |
@@ -1016,8 +1068,8 @@ come from the profile's pen-space fields instead.
 
 With `placement: fixed`, the page's bottom-left corner sits at
 `bed.page.origin_mm`. With `placement: reachable_corner`, the page's
-bottom-right corner sits at the drawable area's front-right corner
-(`x = drawable_x_max - page_width`, `y = drawable_y_min`). Stroke points map as:
+bottom-right corner sits at the usable area's front-right corner
+(`x = usable_x_max - page_width`, `y = usable_y_min`). Stroke points map as:
 
 ```
 X_pen = page_origin_x + x_svg
@@ -1027,9 +1079,10 @@ Y_pen = page_origin_y + y_svg                 # invert_y: false
 
 For the example above, the pen offset `[-22.7, -28.6]` on a 220 x 220 mm bed
 with a 0..220 nozzle range gives a drawable area of X 0..197.3 mm and Y
-0..191.4 mm. Coordinates are written with three decimals (0.001 mm); a point
-outside the drawable area (minus `margin_mm`) fails the run with its
-coordinates instead of writing G-code the machine cannot follow.
+0..191.4 mm, which `bed.margin_mm` insets to the usable area. Coordinates are
+written with three decimals (0.001 mm); a point outside the usable area fails
+the run with its coordinates instead of writing G-code the machine cannot
+follow.
 
 ---
 
