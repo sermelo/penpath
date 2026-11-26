@@ -777,3 +777,10 @@ class TestCommandHelp:
         assert result.exit_code == 0
         assert "--travel" in result.output
         assert "thin light lines" in result.output
+
+    def test_evaluate_help_describes_both_ssim_scores(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["evaluate", "--help"])
+
+        assert result.exit_code == 0
+        assert "greyscale SSIM" in result.output
+        assert "edge SSIM" in result.output
