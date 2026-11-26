@@ -216,9 +216,54 @@ check removes it so the historical comparison stays meaningful.
 
 ## First real plot with a penpath-generated `.gcode`
 
-**Not confirmed yet (2026-11-26).** This is operator evidence, not a CI result,
-and must be filled in by someone who plots it. The reference's test 4 on
+**Confirmed on 2026-11-26.** sergio plotted a Santa image on the Aquila from
+`santa_130.gcode`, written by `penpath gcode --profile aquila` from a penpath
+SVG. The size and position were as expected. This is operator evidence, not a
+CI result: the photo is attached to LUC-112. The reference's test 4 on
 2026-11-18 used sergio's `svg_plot.py`, not penpath's G-code, so it does not
-count. To record it, fill in: date, source image and SVG, exact penpath commands
-(including `--profile aquila`), paper and pen, and what was observed at each
-`M0` and at the end. The request for this evidence is on LUC-95.
+count.
+
+- **Date and commit.** Plotted 2026-11-26 (photo taken 14:35). The files were
+  generated about 14:00–14:11 with `uv run` from a clone of `main` at `2f7db3f`.
+- **Source image and SVG.** `santa.jpg`, a 588 × 330 px mono JPEG (one pen, no
+  palette). Two page sizes were generated; the 130 × 73 mm one was plotted,
+  replacing the 190 × 107 mm `santa.gcode` of the same name on the SD card at
+  `/santa.gcode`. The reviewed SVG was `santa_130.svg`.
+- **Commands**, all with the built-in `aquila` profile:
+
+  ```sh
+  penpath convert santa.jpg -o santa_130.svg --paper 130x73,0 --pen 0.4,#000000,fineliner -s seed=42
+  penpath gcode santa_130.svg --profile aquila -o santa_130.gcode
+  penpath preview santa_130.gcode -o santa_130.png
+  penpath evaluate santa.jpg santa_130.svg
+  ```
+
+  `evaluate` reported SSIM 0.46 and coverage 51.5 %. The G-code was 121,917
+  bytes: one layer, drawing 14,371 mm, pen-up 501 mm, 69 lifts, estimated 629 s.
+  In pen coordinates the ink spans X 66.6..196.9, Y 0.8..73.3 mm — front-right
+  of the reachable area, 0.8 mm from the front bed edge.
+- **Paper and pen.** Stabilo Point 88, 0.4 mm, blue ink, on the magnetic bed
+  (paper type not recorded).
+- **`M0` and end.** There was one `M0`, at the touch spot: nozzle X212.7 Y40.6
+  (pen 190, 12 plus the pen offset). The pen was fitted there as in the
+  checklist; sergio reports it worked. The start block showed the pen-out
+  warning and homed with `G28`; the end block ran `G1 Z80`, then X0 Y220, with
+  no `M25` and no `M2`, and the head parked as documented.
+
+### Gaps found in this run
+
+These were filed as separate follow-up tickets; no fixes were bundled into the
+validation run.
+
+- The page is always parked at the front-right corner, with no way to centre
+  it: LUC-117.
+- There is no margin, so the plot came 0.8 mm from the front bed edge: LUC-119.
+- There is no frame to preview the plotted size: LUC-118.
+- Travel and Z moves were emitted as bare `G0` with no feedrate, so they ran at
+  the last draw speed F1500: LUC-97 (fixed on `main` after this run).
+- Dark, high-contrast photos became a solid scribble with an unreadable face:
+  LUC-96.
+- Not yet tickets: the G-code preview shows no bed or page; the 130 mm drawing
+  is not a scaled copy of the 190 mm one because the working resolution depends
+  on the paper size; there is no outline/contour mode for portraits; and the
+  `M0` text should be checked for inline pens.
