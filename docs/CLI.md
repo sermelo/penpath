@@ -575,7 +575,9 @@ reference-versus-penpath equivalence check, are in
 Simulate the SVG at the chosen resolution, crop it to the recorded image
 placement, and compare it with the original using SSIM. Also reports machine
 cost (drawing length, pen-up travel, pen lifts, short segments and stroke
-count) per pen layer and in total.
+count) plus ink coverage per pen layer and in total. Coverage is the share of
+the whole page inked by a layer's pen-down strokes at the chosen `--dpi`;
+per-layer shares may overlap, so they need not add up to the total.
 
 ```bash
 penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
@@ -596,10 +598,17 @@ penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
 | `--dpi FLOAT` | — | `96/25.4` | Resolution in **pixels per millimetre**, shared by simulation and likeness |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour |
 | `--layer LABEL` | — | all | Only evaluate this pen layer |
+| `--coverage-warn PCT` | — | `50` | Warn on stderr when a layer covers more than this percentage of the page; `0` disables the warning |
 
 For SVGs without placement metadata, the image is fitted to the page keeping
 its aspect ratio and centered — the same fallback used by
 `penpath.core.svg_parse.get_image_placement`.
+
+The human-readable machine-cost table has a `Coverage (%)` column. When a layer
+exceeds `--coverage-warn`, one warning per layer is written to stderr naming
+the layer and its percentage, and suggesting `--background-threshold` and
+`--saturation`. A warning changes neither the exit code nor the result; it is
+also printed in `--json` mode, where stdout stays pure JSON.
 
 With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 
@@ -607,8 +616,8 @@ With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 {
   "likeness": 0.82,
   "machine_cost": {
-    "per_layer": {"#000000": {"drawing_length_mm": 123.4}},
-    "total": {"drawing_length_mm": 123.4}
+    "per_layer": {"#000000": {"drawing_length_mm": 123.4, "ink_coverage_pct": 12.3}},
+    "total": {"drawing_length_mm": 123.4, "ink_coverage_pct": 12.3}
   }
 }
 ```
@@ -619,6 +628,8 @@ With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 penpath evaluate photo.jpg plot.svg --dpi 5 --layer fine
+penpath evaluate photo.jpg plot.svg --coverage-warn 75
+penpath evaluate photo.jpg plot.svg --coverage-warn 0
 ```
 
 ---

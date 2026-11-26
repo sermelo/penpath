@@ -1,7 +1,8 @@
 """Plot simulation and machine cost computation.
 
-This module provides core functions for simulating a pen plot and computing
-machine costs (pen-up travel, lifts, short segments) from a list of pen strokes.
+This module provides core functions for simulating a pen plot, computing
+machine costs (pen-up travel, lifts, short segments), and measuring the share
+of the paper inked by each layer from a list of pen strokes.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 from math import hypot
 from typing import TYPE_CHECKING
 
+import numpy as np
 from PIL import Image, ImageDraw
 
 if TYPE_CHECKING:
@@ -19,6 +21,22 @@ if TYPE_CHECKING:
 # Type aliases for machine cost metrics
 type LayerMetrics = dict[str, float | int]
 type MachineCostResult = dict[str, dict[str, LayerMetrics] | LayerMetrics]
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageResult:
+    """Ink coverage as percentages of the whole paper area.
+
+    Attributes
+    ----------
+    per_layer : dict[str, float]
+        Percentage of the paper inked by each layer, keyed by stroke colour.
+    total : float
+        Percentage of the paper inked by at least one layer (the union).
+    """
+
+    per_layer: dict[str, float]
+    total: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +162,65 @@ def compute_machine_cost(
     return {"per_layer": per_layer, "total": total}
 
 
+def compute_layer_coverage(
+    strokes: Sequence[PenStroke],
+    paper_width_mm: float,
+    paper_height_mm: float,
+    dpi_px_per_mm: float = 96 / 25.4,
+) -> CoverageResult:
+    """Rasterise each layer and report the share of the paper it inks.
+
+    Parameters
+    ----------
+    strokes : Sequence[PenStroke]
+        Strokes to rasterise. Only pen-down strokes add ink.
+    paper_width_mm : float
+        Paper width in millimetres.
+    paper_height_mm : float
+        Paper height in millimetres.
+    dpi_px_per_mm : float, optional
+        Rasterisation resolution in pixels per millimetre. Default is 96 DPI.
+
+    Returns
+    -------
+    CoverageResult
+        Percentage of the full paper inked by each layer (keyed by stroke
+        colour) and the union percentage inked by any layer.
+
+    Notes
+    -----
+    Layers are grouped by stroke colour, as in ``compute_machine_cost``. Each
+    layer is drawn on its own image at the same resolution and pen width as
+    ``simulate_plot``, then inked pixels are counted against the whole page,
+    not the image placement. Per-layer percentages may overlap, so they do not
+    add up to the total; pen-up travel moves never add ink.
+    """
+    width_px = max(1, round(paper_width_mm * dpi_px_per_mm))
+    height_px = max(1, round(paper_height_mm * dpi_px_per_mm))
+    area_px = width_px * height_px
+
+    by_layer: dict[str, list[PenStroke]] = {}
+    for stroke in strokes:
+        if not stroke.pen_up:
+            by_layer.setdefault(stroke.color, []).append(stroke)
+
+    union = np.zeros((height_px, width_px), dtype=bool)
+    per_layer: dict[str, float] = {}
+    for color, layer_strokes in by_layer.items():
+        mask = Image.new("L", (width_px, height_px), 0)
+        draw = ImageDraw.Draw(mask)
+        for stroke in layer_strokes:
+            coords_px = [(x * dpi_px_per_mm, y * dpi_px_per_mm) for x, y in stroke.polyline]
+            stroke_width_px = max(1, round(stroke.width_mm * dpi_px_per_mm))
+            draw.line(coords_px, fill=255, width=stroke_width_px, joint="curve")
+        ink = np.asarray(mask) > 0
+        per_layer[color] = 100.0 * float(np.count_nonzero(ink)) / area_px
+        union |= ink
+
+    total = 100.0 * float(np.count_nonzero(union)) / area_px
+    return CoverageResult(per_layer=per_layer, total=total)
+
+
 def simulate_plot(
     strokes: Sequence[PenStroke],
     paper_width_mm: float,
@@ -210,7 +287,9 @@ def simulate_plot(
 
 
 __all__ = [
+    "CoverageResult",
     "PenStroke",
+    "compute_layer_coverage",
     "compute_machine_cost",
     "simulate_plot",
 ]

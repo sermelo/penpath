@@ -142,7 +142,7 @@ penpath convert photo.jpg --no-vpype
 # Preview the simulated plot as an image
 penpath preview plot.svg -o preview.png --dpi 10
 
-# Evaluate likeness and machine cost (JSON for scripts)
+# Evaluate likeness, machine cost and ink coverage (JSON for scripts)
 penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 
@@ -334,6 +334,12 @@ penpath evaluate photo.jpg plot.svg
 # Machine-readable output for scripts and agents
 penpath evaluate photo.jpg plot.svg --json | jq '{likeness, total: .machine_cost.total}'
 ```
+
+The machine-cost table includes a `Coverage (%)` column and the JSON output
+includes `ink_coverage_pct` per layer and in `total`. A layer covering more
+than 50% of the page warns on stderr (naming the layer and suggesting
+`--background-threshold` / `--saturation`); `--coverage-warn 0` silences it.
+Warnings never change the exit code or the JSON on stdout.
 
 ### Worked Example: Photo → SVG → Preview
 
