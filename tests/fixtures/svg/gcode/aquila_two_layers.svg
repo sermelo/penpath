@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="190mm" height="190mm" viewBox="0 0 190 190">
+  <g inkscape:groupmode="layer" inkscape:label="stabilo_88_yellow" id="layer1"
+     fill="none" stroke="#FFFF00" stroke-width="0.4">
+    <polyline points="10,10 40,10 40,40"/>
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="stabilo_88_red" id="layer2"
+     fill="none" stroke="#FF0000" stroke-width="0.4">
+    <polyline points="60,60 90,60"/>
+  </g>
+</svg>
