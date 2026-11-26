@@ -115,6 +115,14 @@ penpath's source tree). The input was
 pen layers in document order. The same check was run on the larger, generated
 `examples/aquila/circle.svg` to cover a many-stroke drawing.
 
+The circle counts below assume that SVG was produced by the `convert` in
+`examples/aquila/Makefile` with vpype on `PATH`: vpype optimises the strokes and
+yields 843 XY points and Z 9.0 ×793. If vpype is not on `PATH`, `convert` warns
+`vpype not found, falling back to direct SVG export` and writes two extra
+points; the same comparison on that SVG gives 845 XY points and Z 9.0 ×795 in
+both outputs. Reference and penpath agree in either case — only the input SVG
+differs — so check which path `convert` took before comparing these numbers.
+
 ```sh
 python /tmp/aquila-ref/svg_plot.py tests/fixtures/svg/gcode/aquila_two_layers.svg /tmp/reference.gcode
 python -m penpath gcode tests/fixtures/svg/gcode/aquila_two_layers.svg --profile aquila -o /tmp/penpath.gcode
