@@ -501,13 +501,31 @@ class TestInfoCommand:
         assert "user" in result.output
         assert "small" in result.output
 
+    def test_info_profiles_table_shows_margin(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        (temp_config_dir / "profiles.yaml").write_text(
+            "shop_plotter:\n"
+            "  description: The small plotter\n"
+            "  bed:\n    size_mm: [300.0, 210.0]\n    margin_mm: 10\n"
+            "  feed:\n    travel_mm_s: 80.0\n    draw_mm_s: 30.0\n    z_mm_s: 12.0\n"
+            "  pen:\n    z_up: 6.0\n    z_down: 0.5\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(main, ["info", "profiles"])
+        assert result.exit_code == 0, result.output
+        assert "Margin (mm)" in result.output
+        shop_row = next(line for line in result.output.splitlines() if "shop_plotter" in line)
+        assert "10" in shop_row
+
     def test_info_profiles_json_reports_bed_feeds_and_user_override(
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:
         (temp_config_dir / "profiles.yaml").write_text(
             "generic:\n"
             "  description: My own generic machine\n"
-            "  bed:\n    size_mm: [300.0, 200.0]\n"
+            "  bed:\n    size_mm: [300.0, 200.0]\n    margin_mm: 10\n"
             "  feed:\n    travel_mm_s: 120.0\n    draw_mm_s: 40.0\n"
             "  pen:\n    z_up: 7.0\n    z_down: 1.0\n"
             + "shop_plotter:\n  description: The small plotter\n"
@@ -522,14 +540,53 @@ class TestInfoCommand:
         data = json.loads(result.output)
         rows = {row["name"]: row for row in data["profiles"]}
         assert list(rows) == ["aquila", "generic", "shop_plotter"]
+        assert "margin_mm" in rows["aquila"]
         assert rows["generic"]["source"] == "user"
         assert rows["generic"]["description"] == "My own generic machine"
         assert rows["generic"]["bed_width_mm"] == 300.0
         assert rows["generic"]["bed_height_mm"] == 200.0
+        assert rows["generic"]["margin_mm"] == 10
         assert rows["generic"]["travel_mm_s"] == 120.0
         assert rows["shop_plotter"]["source"] == "user"
         assert rows["shop_plotter"]["bed_height_mm"] == 210.0
         assert rows["shop_plotter"]["z_mm_s"] == 12.0
+        assert rows["shop_plotter"]["margin_mm"] == 0
+
+    def test_info_profiles_yaml_includes_margin(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        (temp_config_dir / "profiles.yaml").write_text(
+            "shop_plotter:\n"
+            "  bed:\n    size_mm: [300.0, 210.0]\n    margin_mm: 10\n"
+            "  feed:\n    travel_mm_s: 80.0\n    draw_mm_s: 30.0\n"
+            "  pen:\n    z_up: 6.0\n    z_down: 0.5\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(main, ["info", "profiles", "--format", "yaml"])
+        assert result.exit_code == 0, result.output
+        import yaml
+
+        rows = {row["name"]: row for row in yaml.safe_load(result.output)["profiles"]}
+        assert rows["shop_plotter"]["margin_mm"] == 10
+
+    def test_info_profiles_json_reports_raw_per_side_margin(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        (temp_config_dir / "profiles.yaml").write_text(
+            "shop_plotter:\n"
+            "  bed:\n    size_mm: [300.0, 210.0]\n    margin_mm: [10, 5, 10, 5]\n"
+            "  feed:\n    travel_mm_s: 80.0\n    draw_mm_s: 30.0\n"
+            "  pen:\n    z_up: 6.0\n    z_down: 0.5\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(main, ["info", "profiles", "--format", "json"])
+        assert result.exit_code == 0, result.output
+        import json
+
+        rows = {row["name"]: row for row in json.loads(result.output)["profiles"]}
+        assert rows["shop_plotter"]["margin_mm"] == [10, 5, 10, 5]
 
     def test_info_profiles_broken_user_file_reports_error(
         self, runner: CliRunner, temp_config_dir: Path

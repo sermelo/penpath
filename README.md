@@ -537,8 +537,10 @@ ship: `generic` (a plain Z-lifted plotter) and `aquila` (the Voxelab Aquila with
 a pen offset, a ramped landing and a touch-spot pen change; its numbers come
 from sergio's `aquila-gcode-reference` script). The Aquila profile pauses for
 each pen with `M0`; never use `M25` to pause on this firmware. List the built-ins
-and your own machines with `penpath info profiles`; the file format and an
-example are in [docs/CLI.md](docs/CLI.md#machine-profile-format).
+and your own machines with `penpath info profiles`, which now shows each
+machine's safety margin; `penpath gcode --margin MM` overrides that margin for
+one run. The file format and an example are in
+[docs/CLI.md](docs/CLI.md#machine-profile-format).
 
 For the full image → SVG → reviewed preview → G-code → SD card → plot operator
 path on the Aquila, including the machine checklist and the equivalence check
