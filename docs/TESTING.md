@@ -738,6 +738,59 @@ lowered to let a blank or random page pass. LUC-85 closes brown's gap (extent H
 light-blue precision gap and the black random baseline stay recorded as
 limitations, out of scope here.
 
+### Palette colour choice and the LUC-123 re-measurement (2026-11-26)
+
+Hue-led separation changes which pen draws a colour region, not the ink density
+inside it. On `tests/fixtures/images/saturation/muted_landscape.png` with
+`--palette stabilo_88`, seed 42 and direct SVG export:
+
+| run | `stabilo_88_light_green` | `stabilo_88_light_blue` | saturation report |
+|-----|-------------------------:|------------------------:|-------------------|
+| default | 10 strokes | 0 | none |
+| `--palette-adapt` (factor 3.00) | 12 strokes | 0 | `Saturation factor: 3.00 (palette-adapted)` |
+| `--saturation 2.0` | 12 strokes | 0 | `Saturation factor: 2.00 (manual)` |
+
+Before LUC-123 the default field went to `stabilo_88_light_blue` and only an
+opt-in boost moved it to green; the boost now still reports its factor and
+still helps pixels below the C* 8 neutral cut-off. With `--no-auto-equalize`, a
+C* 7 green swatch goes to `light_blue` by default and to `light_green` with
+`--saturation 3.0`. Reproduce with
+`uv run pytest tests/integration/test_saturation_boost.py -s`.
+
+Re-measuring `photo.jpg` with `-s seed=42` on the LUC-86 harness gives:
+
+| layer | mode | SSIM* | recall | prec | ext W | ext H | bbox | cell | strokes |
+|-------|------|------:|-------:|-----:|------:|------:|-----:|-----:|--------:|
+| `stabilo_88_blue` | algorithm | 0.7627 | 1.3189 | 0.2116 | 1.000 | 0.996 | 0.989 | 0.929 | 62 |
+| `stabilo_88_blue` | blank | 0.7603 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 62 |
+| `stabilo_88_blue` | random | 0.2695 | 0.2271 | 0.0583 | 1.001 | 0.992 | 0.992 | 1.000 | 62 |
+| `stabilo_88_blue` | ideal | 0.9970 | 1.0035 | 0.1330 | 1.000 | 1.000 | 1.000 | 1.000 | 62 |
+| `stabilo_88_light_green` | algorithm | 0.9536 | 0.8458 | 0.9647 | 1.003 | 0.584 | 0.584 | 0.636 | 20 |
+| `stabilo_88_light_green` | blank | 0.8912 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 20 |
+| `stabilo_88_light_green` | random | 0.6257 | 0.0652 | 0.0591 | 0.965 | 1.132 | 0.935 | 0.909 | 20 |
+| `stabilo_88_light_green` | ideal | 0.9992 | 0.7963 | 0.9894 | 1.000 | 0.998 | 0.998 | 1.000 | 20 |
+| `stabilo_88_purple` | algorithm | 0.9563 | 0.6667 | 0.5699 | 0.803 | 0.191 | 0.153 | 0.444 | 10 |
+| `stabilo_88_purple` | blank | 0.9250 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 10 |
+| `stabilo_88_purple` | random | 0.7366 | 0.0000 | 0.0000 | 1.009 | 1.301 | 0.937 | 0.556 | 10 |
+| `stabilo_88_purple` | ideal | 0.9993 | 0.6157 | 0.6157 | 0.998 | 1.000 | 0.998 | 1.000 | 10 |
+| `stabilo_88_black` | algorithm | 0.8012 | 0.9826 | 0.9944 | 1.003 | 1.004 | 1.000 | 1.000 | 282 |
+| `stabilo_88_black` | blank | 0.5400 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 0.000 | 282 |
+| `stabilo_88_black` | random | 0.1005 | 0.3861 | 0.4923 | 1.003 | 0.998 | 0.996 | 1.000 | 282 |
+| `stabilo_88_black` | ideal | 0.9959 | 0.8536 | 0.9984 | 1.000 | 1.000 | 1.000 | 1.000 | 282 |
+
+The union now clears every LUC-47 floor: SSIM 0.5116, covered W/H 0.999/0.998,
+bbox 0.997, ink per cell 0.0007 and tone ratio 45.32, so the recorded tone
+failure is gone. Brown no longer receives pixels; blue, light green and purple
+are new used layers. Three of them miss the *existing* region floors: blue
+precision 0.2116 < 0.50, light green extent H 0.5844 < 0.60 and cell recall
+0.6364 < 0.75, and purple extent H 0.1910 < 0.60, bbox 0.1528 < 0.40 and cell
+recall 0.4444 < 0.75. The light-green and purple regions are sparse (2.6% and
+3.8% of the source), so the PFM draws only 20 and 10 strokes on their canvases.
+No floor was lowered and no per-pen override was invented for them: the
+measured table and the decision on how to handle genuinely new sparse layers
+are with the Architect. Reproduce with
+`uv run pytest tests/integration/test_multi_pen_gate.py -s`.
+
 ### Machine Cost (LUC-27)
 
 Machine cost measures how much work the plotter does, independently of how the

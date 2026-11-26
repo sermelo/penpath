@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 from click.testing import CliRunner, Result
+from PIL import Image
+from skimage.color import lab2rgb
 
 from penpath.cli.main import main
 from penpath.core.svg_parse import list_svg_layers, parse_svg_strokes
@@ -50,16 +53,16 @@ def _stroke_count(svg: Path, label: str) -> int:
 
 
 class TestBoostAtTheCLI:
-    """A muted landscape only reaches a green pen after an opt-in boost."""
+    """A muted landscape picks a green pen by hue; the boost still reports its factor."""
 
-    def test_defaults_keep_the_prechange_colour_choice(
+    def test_defaults_pick_green_without_reporting_a_factor(
         self, runner: CliRunner, tmp_path: Path
     ) -> None:
         output = tmp_path / "default.svg"
         result = _convert(runner, output, tmp_path)
         assert result.exit_code == 0, result.output
-        assert _stroke_count(output, BLUE) > 0
-        assert _stroke_count(output, GREEN) == 0
+        assert _stroke_count(output, GREEN) > 0
+        assert _stroke_count(output, BLUE) == 0
         assert "Saturation factor" not in result.output
 
     def test_palette_adapt_uses_green_and_reports_the_factor(
@@ -86,11 +89,12 @@ class TestBoostAtTheCLI:
     def test_explicit_saturation_wins_over_palette_adapt(
         self, runner: CliRunner, tmp_path: Path
     ) -> None:
+        plain = tmp_path / "plain.svg"
         output = tmp_path / "explicit.svg"
+        assert _convert(runner, plain, tmp_path).exit_code == 0
         result = _convert(runner, output, tmp_path, "--palette-adapt", "--saturation", "1.0")
         assert result.exit_code == 0, result.output
-        assert _stroke_count(output, BLUE) > 0
-        assert _stroke_count(output, GREEN) == 0
+        assert output.read_bytes() == plain.read_bytes()
         assert "Saturation factor" not in result.output
 
     def test_quiet_suppresses_the_report(self, runner: CliRunner, tmp_path: Path) -> None:
@@ -99,6 +103,55 @@ class TestBoostAtTheCLI:
         assert result.exit_code == 0, result.output
         assert result.output == ""
         assert _stroke_count(output, GREEN) > 0
+
+    def test_boost_lifts_below_threshold_chroma_into_the_hue_rule(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """A near-neutral green uses the Lab rule until boosting makes it chromatic."""
+        chroma = 7.0
+        a = chroma * np.cos(np.radians(131.0))
+        b = chroma * np.sin(np.radians(131.0))
+        rgb = tuple(
+            int(value)
+            for value in np.clip(
+                np.rint(lab2rgb(np.array([[[60.0, a, b]]], dtype=np.float64))[0, 0] * 255.0),
+                0,
+                255,
+            ).astype(np.uint8)
+        )
+        image = Image.new("RGB", (60, 60), "white")
+        for y in range(2, 58):
+            for x in range(2, 58):
+                image.putpixel((x, y), rgb)
+        source = tmp_path / "low_chroma.png"
+        image.save(source)
+
+        plain = tmp_path / "plain.svg"
+        boosted = tmp_path / "boosted.svg"
+        for output, flags in ((plain, []), (boosted, ["--saturation", "3.0"])):
+            result = runner.invoke(
+                main,
+                [
+                    "convert",
+                    str(source),
+                    "-o",
+                    str(output),
+                    "-s",
+                    "seed=42",
+                    "--no-vpype",
+                    "--palette",
+                    "stabilo_88",
+                    "--no-auto-equalize",
+                    *flags,
+                ],
+                env={"XDG_CONFIG_HOME": str(tmp_path / "config")},
+            )
+            assert result.exit_code == 0, result.output
+
+        assert _stroke_count(plain, BLUE) > 0
+        assert _stroke_count(plain, GREEN) == 0
+        assert _stroke_count(boosted, GREEN) > 0
+        assert _stroke_count(boosted, BLUE) == 0
 
     def test_single_pen_is_a_noop(self, runner: CliRunner, tmp_path: Path) -> None:
         plain = tmp_path / "plain.svg"
@@ -191,5 +244,5 @@ output_path: "{output}"
             env={"XDG_CONFIG_HOME": str(tmp_path / "config")},
         )
         assert result.exit_code == 0, result.output
-        assert _stroke_count(output, GREEN) == 0
+        assert _stroke_count(output, GREEN) > 0
         assert "Saturation factor" not in result.output
