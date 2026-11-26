@@ -98,12 +98,12 @@ def _cost_table(cost: MachineCostResult) -> Table:
 @click.option(
     "--coverage-warn",
     "coverage_warn_pct",
-    type=float,
+    type=click.FloatRange(min=0),
     default=50.0,
     show_default=True,
     metavar="PCT",
     help="Warn on stderr when a layer covers more than this percentage of the page "
-    "(0 disables the warning).",
+    "(0 disables the warning; must be >= 0).",
 )
 def evaluate_cmd(
     image: Path,

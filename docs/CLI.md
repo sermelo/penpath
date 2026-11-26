@@ -598,7 +598,7 @@ penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
 | `--dpi FLOAT` | — | `96/25.4` | Resolution in **pixels per millimetre**, shared by simulation and likeness |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour |
 | `--layer LABEL` | — | all | Only evaluate this pen layer |
-| `--coverage-warn PCT` | — | `50` | Warn on stderr when a layer covers more than this percentage of the page; `0` disables the warning |
+| `--coverage-warn PCT` | — | `50` | Warn on stderr when a layer covers more than this percentage of the page; `0` disables the warning; value must be `>= 0` |
 
 For SVGs without placement metadata, the image is fitted to the page keeping
 its aspect ratio and centered — the same fallback used by

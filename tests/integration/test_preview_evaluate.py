@@ -538,6 +538,19 @@ class TestEvaluateCoverage:
         assert result.exit_code == 0, result.output
         assert "Warning" in result.stderr
 
+    def test_coverage_warn_rejects_negative_value(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            ["evaluate", str(reference), str(drawing), "--json", "--coverage-warn", "-5"],
+        )
+
+        assert result.exit_code == 2
+        assert "--coverage-warn" in result.output
+        assert "Traceback" not in result.output
+        assert result.stdout.strip() == ""
+
     def test_coverage_warn_zero_disables_the_warning(
         self, runner: CliRunner, filled_drawing: Path, reference: Path
     ) -> None:
