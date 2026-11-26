@@ -466,6 +466,10 @@ penpath gcode card.svg --profile my_plotter --profiles ./profiles.yaml
 
 # A palette SVG: one G-code layer per used pen, with a pen change between layers
 penpath gcode christmas_card.svg --profile generic -o card.gcode
+
+# The built-in aquila profile: page against the drawable corner, ramped landings,
+# a pen set at the touch spot before every layer, and no M2 at the end
+penpath gcode card.svg --profile aquila -o card.gcode
 ```
 
 ---
@@ -725,7 +729,12 @@ pen colours and pen widths stay in the reviewed SVG.
 ### Where profiles live
 
 - **Built-in**: one YAML file per machine in `src/penpath/presets/profiles/`.
-  `generic` ships today. The profile name is the file name.
+  `generic` (plain Z-lifted plotter) and `aquila` (Voxelab Aquila with a pen
+  offset, ramped landing and touch-spot pen change) ship today. The profile
+  name is the file name. The Aquila's numbers come from sergio's reference
+  script on the read-only `aquila-gcode-reference` branch
+  (`reference/aquila_gcode/aquila_plot.py`); its start, pen-change and end
+  blocks are verbatim from that script.
 - **User**: `$XDG_CONFIG_HOME/penpath/profiles.yaml`, or
   `~/.config/penpath/profiles.yaml` when `XDG_CONFIG_HOME` is unset. One file
   holds several machines as a mapping of names to profiles; a profile with a
