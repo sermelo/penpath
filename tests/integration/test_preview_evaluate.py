@@ -547,6 +547,75 @@ class TestEvaluate:
         assert result.stdout.strip() == ""
 
 
+class TestEvaluatePenNames:
+    """Each colour row carries the Inkscape layer's pen name, human and JSON."""
+
+    def test_two_layers_report_pen_names_in_json_and_table(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        json_result = runner.invoke(main, ["evaluate", str(reference), str(drawing), "--json"])
+
+        assert json_result.exit_code == 0, json_result.output
+        cost = json.loads(json_result.stdout)["machine_cost"]
+        assert cost["per_layer"]["#000000"]["pen"] == "Pen: fine"
+        assert cost["per_layer"]["#FF0000"]["pen"] == "Pen: bold"
+        assert "pen" not in cost["total"]
+
+        human = runner.invoke(
+            main, ["evaluate", str(reference), str(drawing)], env={"COLUMNS": "200"}
+        )
+
+        assert human.exit_code == 0, human.output
+        assert "Pen" in human.output
+        assert "Pen: fine" in human.output
+        assert "Pen: bold" in human.output
+        assert "#000000" in human.output
+        assert "#FF0000" in human.output
+        assert "TOTAL" in human.output
+
+    def test_long_pen_names_are_readable_at_narrow_width(self, runner: CliRunner) -> None:
+        """Underscore pen names fold at 80 columns instead of truncating (LUC-134 QA)."""
+        fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+        image = fixtures / "images/background/pencil_on_pale_grey.png"
+        svg = fixtures / "golden/svg/pencil_palette_before_background.svg"
+
+        result = runner.invoke(
+            main, ["evaluate", str(image), str(svg), "--coverage-warn", "0"], env={"COLUMNS": "80"}
+        )
+
+        assert result.exit_code == 0, result.output
+        machine_cost = result.output.split("Machine Cost", 1)[1]
+        pen_column = "".join(
+            line.split("│")[2].replace(" ", "")
+            for line in machine_cost.splitlines()
+            if line.startswith("│")
+        )
+        assert "stabilo_88_light_blue" in pen_column
+        assert "stabilo_88_black" in pen_column
+        assert "…" not in pen_column
+
+    def test_svg_without_layers_falls_back_to_hex(
+        self, runner: CliRunner, hand_drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(main, ["evaluate", str(reference), str(hand_drawing), "--json"])
+
+        assert result.exit_code == 0, result.output
+        per_layer = json.loads(result.stdout)["machine_cost"]["per_layer"]
+        assert per_layer["#000000"]["pen"] == "#000000"
+
+    def test_layer_filter_keeps_the_pen_name(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main, ["evaluate", str(reference), str(drawing), "--layer", "Pen: bold", "--json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        per_layer = json.loads(result.stdout)["machine_cost"]["per_layer"]
+        assert list(per_layer) == ["#FF0000"]
+        assert per_layer["#FF0000"]["pen"] == "Pen: bold"
+
+
 class TestEvaluateCoverage:
     """Ink coverage is reported per layer and warns on stderr when a page fills up."""
 
@@ -662,6 +731,8 @@ class TestEvaluateCoverage:
 
         assert result.exit_code == 0, result.output
         per_layer = json.loads(result.stdout)["machine_cost"]["per_layer"]
+        assert per_layer["#8CCFE8"]["pen"] == "stabilo_88_light_blue"
+        assert per_layer["#000000"]["pen"] == "stabilo_88_black"
         assert per_layer["#8CCFE8"]["ink_coverage_pct"] > 5.0
         assert per_layer["#8CCFE8"]["ink_coverage_pct"] > per_layer["#000000"]["ink_coverage_pct"]
         assert "#8CCFE8" in result.stderr

@@ -570,6 +570,50 @@ def list_svg_layers(svg_path: str | Path) -> list[tuple[str, str]]:
     return layers
 
 
+def get_layer_pen_names(svg_path: str | Path) -> dict[str, str]:
+    """Map normalised stroke colours to the names of the Inkscape layers using them.
+
+    Each ``<g inkscape:groupmode="layer">`` group contributes one entry. Its
+    stroke is the group's ``stroke`` attribute, or the first descendant that
+    has one, normalised by :func:`_parse_color` into the same ``#RRGGBB`` key
+    that :func:`parse_svg_strokes` reports. The name is the group's
+    ``inkscape:label``, falling back to its id. Groups without a readable
+    stroke or name are skipped; when two layers share a colour, the first in
+    document order wins.
+
+    Parameters
+    ----------
+    svg_path : str | Path
+        Path to the SVG file.
+
+    Returns
+    -------
+    dict[str, str]
+        Stroke colour to pen/layer name, in document order.
+    """
+    root = ET.parse(Path(svg_path)).getroot()
+    names: dict[str, str] = {}
+    for element in root.iter():
+        if _local_name(element.tag).lower() != "g":
+            continue
+        if _inkscape_attr(element, "groupmode") != "layer":
+            continue
+
+        stroke = element.get("stroke")
+        if stroke is None:
+            for descendant in element.iter():
+                if descendant is element:
+                    continue
+                stroke = descendant.get("stroke")
+                if stroke is not None:
+                    break
+        color = _parse_color(stroke, "")
+        name = _inkscape_attr(element, "label") or element.get("id")
+        if color and name:
+            names.setdefault(color, name)
+    return names
+
+
 def _sorted_polylines(strokes: list[PenStroke]) -> list[tuple[tuple[float, float], ...]]:
     """Order a layer's strokes by pen-up travel using the shared line sorter."""
     drawn = [stroke for stroke in strokes if not stroke.pen_up and len(stroke.polyline) >= 2]
@@ -634,6 +678,7 @@ def parse_svg_layers(svg_path: str | Path) -> list[GcodeLayer]:
 __all__ = [
     "ImagePlacement",
     "get_image_placement",
+    "get_layer_pen_names",
     "get_svg_paper_size",
     "list_svg_layers",
     "parse_svg_layers",
