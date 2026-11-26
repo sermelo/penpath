@@ -275,12 +275,20 @@ def info_pfms(fmt: str) -> None:
     _output_format(data, fmt)
 
 
+def _format_margin_mm(margin: float | tuple[float, ...] | list[float]) -> str:
+    """Format a raw profile margin as ``10`` or ``10/5/10/5``."""
+    if isinstance(margin, (tuple, list)):
+        return "/".join(f"{value:g}" for value in margin)
+    return f"{margin:g}"
+
+
 def _print_profile_table(profiles: list[dict[str, Any]]) -> None:
     """Print profile rows as a compact table with readable descriptions."""
     table = Table(title="Machine Profiles")
     table.add_column("Name", no_wrap=True)
     table.add_column("Source", no_wrap=True)
     table.add_column("Bed (mm)", no_wrap=True)
+    table.add_column("Margin (mm)", no_wrap=True)
     table.add_column("Travel", no_wrap=True)
     table.add_column("Draw", no_wrap=True)
     table.add_column("Z", no_wrap=True)
@@ -290,23 +298,25 @@ def _print_profile_table(profiles: list[dict[str, Any]]) -> None:
             row["name"],
             row["source"],
             f"{row['bed_width_mm']:g} x {row['bed_height_mm']:g}",
+            _format_margin_mm(row["margin_mm"]),
             f"{row['travel_mm_s']:g}",
             f"{row['draw_mm_s']:g}",
             f"{row['z_mm_s']:g}",
             row["description"],
         )
-    console.print(table)
+    Console(width=max(console.width, 120)).print(table)
 
 
 @info_group.command(name="profiles")
 @click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 def info_profiles(fmt: str) -> None:
-    """List built-in and user machine profiles with their bed and feeds."""
+    """List built-in and user machine profiles with their bed, margin and feeds."""
     try:
         sources = list_profile_sources()
         profile_data = []
         for name, source in sources.items():
             profile = load_profile(name)
+            margin = profile.bed.margin_mm
             profile_data.append(
                 {
                     "name": name,
@@ -314,6 +324,7 @@ def info_profiles(fmt: str) -> None:
                     "description": profile.description,
                     "bed_width_mm": profile.bed.size_mm[0],
                     "bed_height_mm": profile.bed.size_mm[1],
+                    "margin_mm": list(margin) if isinstance(margin, tuple) else margin,
                     "travel_mm_s": profile.feed.travel_mm_s,
                     "draw_mm_s": profile.feed.draw_mm_s,
                     "z_mm_s": profile.feed.effective_z_mm_s,

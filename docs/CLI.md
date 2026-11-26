@@ -462,6 +462,7 @@ penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
 | `--profile NAME` | — | — | Machine profile name (required; see `penpath info profiles`) |
 | `--output PATH` | `-o` | `<input>.gcode` | Output file, beside the input SVG |
 | `--profiles PATH` | — | user config | Alternate user profiles YAML file for this run |
+| `--margin MM` | — | profile value | Override the profile safety margin for this run in mm; `0` is allowed but not recommended on the Aquila |
 | `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
 | `--fit/--no-fit` | — | `--fit` | Fit a drawing past the usable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
 
@@ -486,6 +487,14 @@ With `--dry-run`, stdout carries only G-code (no file is written), so the output
 can be piped to a printer or captured by a script. Without it, stdout stays
 empty. Every message, including the output path and the summary, goes to
 stderr in both cases.
+
+`--margin MM` replaces the loaded profile's safety margin with one non-negative
+value on all four sides for this run, before the fit, the strict check and the
+G-code are built. The G-code header then reports the overridden usable area, so
+`penpath preview` renders the same placement. `--margin 0` removes the margin;
+it is allowed but not recommended on the Aquila, where the margin keeps strokes
+away from the edges of the paper. The option works with `--fit`, `--no-fit` and
+`--dry-run`, and the original profile file is never changed.
 
 The stderr summary reports the number of layers, drawing length, pen-up travel
 and pen lifts measured from the SVG's strokes, plus an estimated plot time
@@ -672,8 +681,11 @@ Every `info` subcommand writes to stdout: a rich table by default (colours are
 disabled when stdout is not a terminal) or one machine-readable document with
 `--format json` / `--format yaml`. `penpath info profiles --format json` prints
 one object with a `profiles` array, whose rows have `name`, `source`,
-`description`, `bed_width_mm`, `bed_height_mm`, `travel_mm_s`, `draw_mm_s` and
-`z_mm_s` (the Z feed falls back to the travel feed when the profile omits it).
+`description`, `bed_width_mm`, `bed_height_mm`, `margin_mm`, `travel_mm_s`,
+`draw_mm_s` and `z_mm_s` (the Z feed falls back to the travel feed when the
+profile omits it). `margin_mm` is the profile's raw value: a scalar for a
+uniform margin or `[top, right, bottom, left]` for a per-side margin. The table
+shows a `Margin (mm)` column with the same value, printing `10` or `10/5/10/5`.
 
 #### `penpath info palette-match`
 

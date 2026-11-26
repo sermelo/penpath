@@ -23,6 +23,7 @@ from penpath.core import (
     load_profile,
     parse_svg_layers,
     parse_svg_strokes,
+    with_margin_mm,
 )
 from penpath.core.simulation import LayerMetrics
 
@@ -68,6 +69,16 @@ def _estimate_plot_seconds(profile: MachineProfile, total: LayerMetrics) -> floa
     help="Machine profile name (required). Run 'penpath info profiles' to list them.",
 )
 @click.option(
+    "--margin",
+    "margin_mm",
+    type=click.FloatRange(min=0),
+    default=None,
+    help=(
+        "Override the profile safety margin for this run in mm; "
+        "0 is allowed but not recommended on the Aquila."
+    ),
+)
+@click.option(
     "-o",
     "--output",
     "output_path",
@@ -98,6 +109,7 @@ def _estimate_plot_seconds(profile: MachineProfile, total: LayerMetrics) -> floa
 def gcode_cmd(
     drawing_svg: Path,
     profile_name: str | None,
+    margin_mm: float | None,
     output_path: Path | None,
     profiles_path: Path | None,
     dry_run: bool,
@@ -114,7 +126,9 @@ def gcode_cmd(
     An unreadable or invalid profile file is a validation error (exit 3). A
     drawing outside the machine's drawable area is fitted by default, with a
     warning on stderr naming the change; --no-fit keeps it an exit-3 error.
-    With --dry-run, stdout holds only G-code; every message goes to stderr.
+    --margin overrides the profile's safety margin for this run before fitting
+    and emission. With --dry-run, stdout holds only G-code; every message goes
+    to stderr.
     """
     if profile_name is None:
         raise click.UsageError(f"Missing option '--profile'. {_available_hint(profiles_path)}")
@@ -131,6 +145,9 @@ def gcode_cmd(
         raise click.UsageError(str(exc)) from exc
     except ProfileError as exc:
         raise ProfileValidationError(str(exc)) from exc
+
+    if margin_mm is not None:
+        profile = with_margin_mm(profile, margin_mm)
 
     try:
         strokes = parse_svg_strokes(drawing_svg)
