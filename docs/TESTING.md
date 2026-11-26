@@ -190,25 +190,30 @@ GNU-compatible binary with `PENPATH_NIGHTLY_TIME=gtime bash scripts/nightly.sh`.
 ## Test Data
 
 ### Images (`tests/fixtures/images/`)
+
+Only files that are committed are listed here. Each fixture directory has a
+README with the full set, sources and a rebuild command.
+
 | File | Size | Purpose |
 |------|------|---------|
-| `gradient.png` | 100×100 | Smooth ramp, tests shading |
-| `checkerboard.png` | 64×64 | Sharp edges, tests threshold |
-| `noise.png` | 200×200 | Gaussian noise, tests blur |
-| `photo_small.jpg` | 400×300 | Real photo, EXIF orient=1 |
-| `photo_exif_6.jpg` | 300×400 | Real photo, EXIF orient=6 (rotated) |
-| `transparent.png` | 100×100 | Alpha channel, tests background |
+| `basic/checkerboard.pbm` | 64×64 | Sharp edges, tests threshold |
+| `reference/gradient.png` | 600×400 | Smooth ramp, tests shading |
+| `reference/photo.jpg` | 1280×853 | Real photo, tests a detailed landscape |
+
+The other basic shapes (`black_square.pbm`, `white_square.pbm`, `black_disc.pbm`,
+`horizontal_line.pbm`, `triangle.pbm`) and reference images (`circle.png`,
+`sphere.png`, `face.jpg`) are listed in `tests/fixtures/images/basic/README.md`
+and `tests/fixtures/images/reference/README.md`.
 
 **Max size**: 500KB each. Committed to repo.
 
-### Golden SVGs (`tests/fixtures/golden/`)
-| File | Pipeline Config |
-|------|-----------------|
-| `basic_sketch_lines.svg` | Default settings, A4, 0.3mm pen |
-| `high_density.svg` | Line density 0.5, shading on |
-| `threshold_binary.svg` | Threshold 2 levels, no shading |
-| `multi_pen.svg` | Two pens (0.3mm, 0.5mm), same PFM |
-| `a3_landscape.svg` | A3 paper, landscape, custom margins |
+### Golden files (`tests/fixtures/golden/`)
+
+No golden SVG files are committed. The directory holds only G-code goldens in
+`tests/fixtures/golden/gcode/`: `aquila.gcode`,
+`aquila_reference_two_layers.gcode`, `generic.gcode`, `multi_pen.gcode` and
+`ramped.gcode`. "Golden G-code files" above describes how they are generated and
+compared; the input SVGs for those tests are in `tests/fixtures/svg/gcode/`.
 
 ### Project Files (`tests/fixtures/projects/`)
 | File | Description |
@@ -980,7 +985,7 @@ repos:
 Before tagging a release:
 1. All CI green on `main`
 2. `uv run pytest tests/ -xvs --tb=short`
-3. Manual smoke test: `penpath convert tests/fixtures/images/photo_small.jpg -o /tmp/test.svg`
+3. Manual smoke test: `penpath convert tests/fixtures/images/reference/photo.jpg -o /tmp/test.svg`
 4. Verify `/tmp/test.svg` opens in Inkscape, plots on hardware (if available)
 5. Check `CHANGELOG.md` updated
 6. Tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"` → `git push origin vX.Y.Z`
