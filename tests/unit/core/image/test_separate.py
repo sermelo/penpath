@@ -32,6 +32,19 @@ def _region_mask(size: int, start: int, end: int) -> np.ndarray:
     return mask
 
 
+def _swatch_owner(colour: tuple[int, int, int], pens: list[Pen]) -> str:
+    """Return the pen that owns a large uniform swatch of one colour."""
+    image = Image.new("RGB", (30, 30), "white")
+    for y in range(2, 28):
+        for x in range(2, 28):
+            image.putpixel((x, y), colour)
+    owners = [
+        pen.name for pen, layer in separate_palette(image, pens) if np.any(np.asarray(layer) < 255)
+    ]
+    assert len(owners) == 1
+    return owners[0]
+
+
 def test_separate_palette_regions_are_dark_only_for_own_pen() -> None:
     image = _three_region_image()
     pens = [RED, BLUE, WHITE]
@@ -165,3 +178,63 @@ def test_separate_palette_handles_non_rgb_input(mode: str) -> None:
     assert all(layer.mode == "L" and layer.size == image.size for _, layer in separated)
     dark_in_layers = sum(int(np.count_nonzero(np.asarray(layer) < 128)) for _, layer in separated)
     assert dark_in_layers == int(np.count_nonzero(np.asarray(grayscale(image)) < 128))
+
+
+STABILO = get_palette("stabilo_88").pens
+
+
+@pytest.mark.parametrize(
+    ("colour", "expected"),
+    [
+        ((138, 149, 133), "stabilo_88_light_green"),
+        ((128, 169, 102), "stabilo_88_light_green"),
+    ],
+)
+def test_separate_palette_muted_green_field_picks_a_green_pen(
+    colour: tuple[int, int, int], expected: str
+) -> None:
+    """A muted landscape field is green by hue, never light blue."""
+    assert _swatch_owner(colour, STABILO) == expected
+
+
+@pytest.mark.parametrize(
+    ("colour", "expected"),
+    [
+        ((225, 133, 123), "stabilo_88_red"),
+        ((172, 158, 85), "stabilo_88_yellow"),
+        ((213, 141, 100), "stabilo_88_orange"),
+    ],
+)
+def test_separate_palette_muted_swatches_pick_their_hue_family(
+    colour: tuple[int, int, int], expected: str
+) -> None:
+    """Hue decides first, so muted red, yellow and orange do not collapse."""
+    owner = _swatch_owner(colour, STABILO)
+    assert owner == expected
+    assert owner not in {"stabilo_88_brown", "stabilo_88_light_blue", "stabilo_88_black"}
+
+
+def test_separate_palette_saturated_green_is_not_stolen_by_black() -> None:
+    """A vivid green keeps a green pen even though black has zero chroma."""
+    assert _swatch_owner((0, 150, 62), STABILO) == "stabilo_88_green"
+
+
+def test_separate_palette_dark_neutral_picks_black_and_pale_neutral_keeps_light_pen() -> None:
+    """Near-neutral pixels keep the old lightness-led Lab assignment."""
+    assert _swatch_owner((40, 40, 40), STABILO) == "stabilo_88_black"
+    assert _swatch_owner((230, 230, 230), STABILO) == "stabilo_88_light_blue"
+
+
+def test_separate_palette_pure_red_and_blue_stay_on_distinct_chromatic_pens() -> None:
+    """Pure colours still separate into distinct, non-neutral regions."""
+    image = _three_region_image()
+    layers = [np.asarray(layer) for _, layer in separate_palette(image, STABILO)]
+    red_mask = _region_mask(30, 2, 13)
+    blue_mask = _region_mask(30, 16, 27)
+    red_owners = [index for index, layer in enumerate(layers) if np.any(layer[red_mask] < 128)]
+    blue_owners = [index for index, layer in enumerate(layers) if np.any(layer[blue_mask] < 128)]
+
+    assert len(red_owners) == len(blue_owners) == 1
+    assert red_owners != blue_owners
+    assert STABILO[red_owners[0]].color != "#000000"
+    assert STABILO[blue_owners[0]].color != "#000000"
