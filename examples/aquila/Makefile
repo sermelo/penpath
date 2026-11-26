@@ -9,7 +9,7 @@ PREVIEWS := circle.svg.png circle.gcode.png
 all: $(SVG) $(GCODE) $(PREVIEWS)
 
 $(SVG): $(IMAGE)
-	$(PENPATH) convert $(IMAGE) -o $(SVG) --paper 190x190,10 -s seed=42 --quiet
+	$(PENPATH) convert $(IMAGE) -o $(SVG) --paper 170x170,10 -s seed=42 --quiet
 
 $(GCODE): $(SVG)
 	$(PENPATH) gcode $(SVG) --profile aquila -o $(GCODE)

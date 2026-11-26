@@ -160,11 +160,12 @@ penpath gcode plot.svg --profile generic --dry-run > plot.gcode
 penpath convert photo.jpg -o palette_plot.svg --palette stabilo_88 -s seed=42
 penpath gcode palette_plot.svg --profile generic -o palette_plot.gcode
 # The built-in aquila profile drives sergio's Voxelab Aquila: it parks the page
-# against the drawable corner, ramps each landing and pauses to set every pen.
-# Lay the card out on a 190x190 mm page so it fits the Aquila bed:
-penpath convert photo.jpg -o card.svg --paper 190x190 -s seed=42
+# against the usable corner, ramps each landing and pauses to set every pen.
+# Its 10 mm safety margin leaves about 177 x 171 mm of usable area, so lay the
+# card out on a 170x170 mm page:
+penpath convert photo.jpg -o card.svg --paper 170x170 -s seed=42
 penpath gcode card.svg --profile aquila -o card.gcode
-# A page slightly past the drawable area is fitted by default, with a warning on
+# A page slightly past the usable area is fitted by default, with a warning on
 # stderr; add --no-fit to keep the strict error instead
 penpath gcode card.svg --profile aquila
 
@@ -540,12 +541,13 @@ penpath config edit      # Open in $EDITOR
 
 Machine profiles hold bed, feed and pen values for a plotter. Two built-ins
 ship: `generic` (a plain Z-lifted plotter) and `aquila` (the Voxelab Aquila with
-a pen offset, a ramped landing and a touch-spot pen change; its numbers come
-from sergio's `aquila-gcode-reference` script). The Aquila profile pauses for
-each pen with `M0`; never use `M25` to pause on this firmware. List the built-ins
-and your own machines with `penpath info profiles`, which now shows each
-machine's safety margin; `penpath gcode --margin MM` overrides that margin for
-one run. The file format and an example are in
+a pen offset, a ramped landing and a touch-spot pen change; its machine numbers
+come from sergio's `aquila-gcode-reference` script, plus penpath's own 10 mm
+safety margin). The Aquila profile pauses for each pen with `M0`; never use
+`M25` to pause on this firmware. List the built-ins
+and your own machines with `penpath info profiles`, which shows each machine's
+safety margin; `penpath gcode --margin MM` overrides that margin for one run.
+The file format and an example are in
 [docs/CLI.md](docs/CLI.md#machine-profile-format).
 
 For the full image → SVG → reviewed preview → G-code → SD card → plot operator

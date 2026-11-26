@@ -12,9 +12,11 @@ are provenance, not a second implementation and not part of this package.
   `convert`, the optional vpype (`pip install "penpath[vpype]"`). From a source
   checkout, `uv sync --extra vpype` and use `python -m penpath`.
 - A saved CR Touch mesh is required: the start block runs `M420 S1 Z0` (no fade).
-- The paper must fit the pen's drawable area: X 0..197.3 mm, Y 0..191.4 mm (bed
-  220 × 220 mm, pen offset (-22.7, -28.6) mm). A 190 × 190 mm page with a
-  10 mm margin is used below and in `examples/aquila/`.
+- The paper must fit the pen's usable area: X 10..187.3 mm, Y 10..181.4 mm (bed
+  220 × 220 mm, pen offset (-22.7, -28.6) mm, and a 10 mm safety margin inside
+  the drawable edges). The largest page that fits is about 177 × 171 mm; a
+  170 × 170 mm page is used below and in `examples/aquila/`. Its page origin is
+  pen (17.3, 10.0), with the page's lower-right corner at (187.3, 10.0).
 
 ## The path, command by command
 
@@ -22,12 +24,15 @@ are provenance, not a second implementation and not part of this package.
    stays in the SVG and is what `gcode` uses, so pick one that fits the Aquila:
 
    ```sh
-   penpath convert photo.jpg -o card.svg --paper 190x190,10 -s seed=42
+   penpath convert photo.jpg -o card.svg --paper 170x170,10 -s seed=42
    ```
 
-   `--paper 190x190,10` means a 190 × 190 mm page with a 10 mm margin. The seed
-   makes the drawing reproducible. With a palette (`--palette stabilo_88`) each
-   used pen becomes one SVG layer.
+   `--paper 170x170,10` means a 170 × 170 mm page with a 10 mm page margin. The
+   `aquila` profile keeps a further 10 mm safety margin from the pen's reach, so
+   the usable area is X 10..187.3 and Y 10..181.4 mm and the largest page that
+   fits unchanged is about 177 × 171 mm. A larger page is fitted with a warning
+   by default; `--no-fit` rejects it. The seed makes the drawing reproducible.
+   With a palette (`--palette stabilo_88`) each used pen becomes one SVG layer.
 
 2. **Review the SVG.** Look at it in Inkscape or render it with penpath:
 
@@ -47,10 +52,10 @@ are provenance, not a second implementation and not part of this package.
    penpath gcode card.svg --profile aquila -o card.gcode
    ```
 
-   The stderr summary reports layers, drawing length, pen-up travel, pen lifts
-   and an estimated time. A point outside the drawable area is an error with its
-   coordinates; no partial G-code is written. With `--dry-run` the G-code goes to
-   stdout and every message goes to stderr.
+    The stderr summary reports layers, drawing length, pen-up travel, pen lifts
+    and an estimated time. A point outside the usable area is an error naming its
+    coordinates and the usable limits; no partial G-code is written. With
+    `--dry-run` the G-code goes to stdout and every message goes to stderr.
 
 4. **Review the G-code as a plot.** This uses penpath's G-code interpreter, which
    reads `G0`/`G1`, applies the same page origin and pen offset as the emitter,
@@ -60,8 +65,8 @@ are provenance, not a second implementation and not part of this package.
    penpath preview card.gcode -o card.gcode.png
    ```
 
-   `card.gcode.png` should match `card.svg.png` (the example differs in about
-   0.09% of pixels, at stroke ends). Check the start warning, one `M0` pause per
+   `card.gcode.png` should match `card.svg.png` (the 170 mm example differs in
+   about 0.01% of pixels, at stroke ends). Check the start warning, one `M0` pause per
    pen layer, and the end block with `grep -nE 'M0|M117|M2|G28'` before copying
    the file to the SD card.
 
@@ -76,7 +81,7 @@ Taken from `reference/aquila_gcode/README.md` and `aquila_plot.py`
 (`Plot.start`, `Plot.pen`, `Plot.end`), proven on the machine in test 4 on
 2026-11-18:
 
-- [ ] The paper is held down, against the drawable area's **right and front
+- [ ] The paper is held down, against the usable area's **right and front
       edges** (pen-space origin at the front-left corner of the bed).
 - [ ] The pen is **OUT of the clamp** before `G28`. The start block beeps and
       waits 10 seconds (`M117 Pen OUT? Homing in 10s`, `G4 S10`) so you can abort.
@@ -88,6 +93,9 @@ Taken from `reference/aquila_gcode/README.md` and `aquila_plot.py`
       plastic under the tip avoids a dot; pull it out once the pen has lifted
       and started moving), tighten the clamp, and press the knob. Sometimes two
       presses are needed. The first pen is set here too, not just colour changes.
+      **The spot sits inside the 10 mm safety margin on purpose**: paper and
+      magnets must not cover it. It is not a drawing point and is not checked
+      against the usable area.
 - [ ] **Never use `M25` on this firmware**; the pen-change pauses are `M0`.
 - [ ] The end sequence has **no `M2`**: Z 80 → X0 Y220 → two beeps → `M84 S120`,
       `M84` → `M117 Plot done`. The head parks at **X0 Y220 Z80**, left of the
@@ -112,11 +120,17 @@ Run on 2026-11-26 with vpype 1.15 and the read-only scripts from
 `origin/aquila-gcode-reference` (extracted to a temporary directory, never into
 penpath's source tree). The input was
 `tests/fixtures/svg/gcode/aquila_two_layers.svg`: a 190 × 190 mm SVG with two
-pen layers in document order. The same check was run on the larger, generated
-`examples/aquila/circle.svg` to cover a many-stroke drawing.
+pen layers in document order. Sergio's script ran without a safety margin, so
+the regression test generates penpath's side with
+`with_margin_mm(load_profile("aquila"), 0.0)`; the shipped profile keeps its
+10 mm margin and would fit or reject that 190 mm page. The same check was run on
+the larger, generated `examples/aquila/circle.svg` to cover a many-stroke
+drawing.
 
-The circle counts below assume that SVG was produced by the `convert` in
-`examples/aquila/Makefile` with vpype on `PATH`: vpype optimises the strokes and
+The circle counts below are from that historical run on the earlier 190 × 190 mm
+example page; the current example uses 170 × 170 mm. They assume that SVG was
+produced by the `convert` in `examples/aquila/Makefile` with vpype on `PATH`:
+vpype optimises the strokes and
 yields 843 XY points and Z 9.0 ×793. If vpype is not on `PATH`, `convert` warns
 `vpype not found, falling back to direct SVG export` and writes two extra
 points; the same comparison on that SVG gives 845 XY points and Z 9.0 ×795 in
@@ -125,20 +139,19 @@ differs — so check which path `convert` took before comparing these numbers.
 
 ```sh
 python /tmp/aquila-ref/svg_plot.py tests/fixtures/svg/gcode/aquila_two_layers.svg /tmp/reference.gcode
-python -m penpath gcode tests/fixtures/svg/gcode/aquila_two_layers.svg --profile aquila -o /tmp/penpath.gcode
 ```
 
 `sergio`'s output is kept verbatim in
 `tests/fixtures/golden/gcode/aquila_reference_two_layers.gcode`; the regression
-test `tests/integration/test_aquila_equivalence.py` compares it with penpath's
-output on every run.
+test `tests/integration/test_aquila_equivalence.py` compares it on every run
+with penpath's output from the same SVG and the margin-0 profile copy.
 
 | Check | Reference `svg_plot.py` | `penpath gcode --profile aquila` |
 |---|---|---|
 | Start block (`G21` … `G1 Z12.5 F600`) | identical | identical after the 3-decimal formatting below |
 | Pen change (first and second pen) | `; ---- pen N: name ----`, lift, travel to (190, 12), touch, beeps, `M0`, messages, lift | same lines in the same order, plus `; pen change` and `; layer N/2 pen=…` comments |
 | End block (Z80 → X0 Y220 → beeps → `M84 S120`, `M84` → done) | identical, no `M2` | identical after formatting, no `M2` |
-| Page placement | page at pen (7.3, 0.0); right/front edges of the drawable area | same origin from `reachable_corner` |
+| Page placement | page at pen (7.3, 0.0); right/front edges of the drawable area | same origin from `reachable_corner` with the margin-0 override |
 | Coordinates | 16 XY points (two-layer SVG); 843 on the generated circle SVG | same 16 / 843 points; largest difference 0.001 mm |
 | Z sequence | per stroke: 12.5 → 10.5 → 10.0 → 9.0 ×n → 10.0 → 10.5 → 12.5; end 80 | same sequence, with one extra 12.5 lift before the first stroke |
 | Feeds | F600 (Z), F6000 (travel), F1500 (draw) | same three values; fewer repeated clauses (see below) |
@@ -153,10 +166,11 @@ stroke; it is a state change, not a different landing.
 
 1. **Header comment.** The reference writes
    `; <input path>: N layer(s), page W x H mm at (X, Y) (pen_holder_aquila/scripts/…)`.
-   Penpath writes `; penpath gcode profile=aquila page=190.000x190.000
+   Penpath writes `; penpath gcode profile=aquila page=170.000x170.000
+   page_origin=17.300,10.000 usable_x=10.000..187.300 usable_y=10.000..181.400
    z_up=12.500 z_touch=10.000 z_down=9.000`: no source path (a file can move),
-   and the page size and Z heights that `penpath preview` needs to invert the
-   mapping.
+   and the page placement, usable area and Z heights that `penpath preview` needs
+   to invert the mapping.
 2. **Layer comments.** Penpath adds `; pen change` before every used layer and
    `; layer N/M pen=<name>` after it. The reference only has the
    `; ---- pen N: name ----` line. Comments do not affect the machine.
@@ -170,12 +184,14 @@ stroke; it is a state change, not a different landing.
    otherwise identical (F6000 appears 5 times in both outputs on the two-layer
    SVG); the remaining spelling difference is `G0` where the reference writes
    `G1`, which Marlin treats the same. The XY path and Z heights are the same.
-4. **Page placement.** Both put a 190 mm page at pen (7.3, 0.0). The reference
-   derives this from vpype's pixel sizes (96 px/in) and its default `at`;
-   penpath reads millimetres from the reviewed SVG's `width`/`height` and places
-   the page's bottom-right corner at the drawable area's front-right corner
-   (`reachable_corner`). An SVG without a millimetre page size is an error in
-   penpath instead of being guessed from pixels.
+4. **Page placement.** With the margin-0 override used for this check, both put
+   a 190 mm page at pen (7.3, 0.0). The reference derives this from vpype's pixel
+   sizes (96 px/in) and its default `at`; penpath reads millimetres from the
+   reviewed SVG's `width`/`height` and places the page's bottom-right corner at
+   the usable area's front-right corner (`reachable_corner`). With the shipped
+   10 mm margin a 170 mm page goes at pen (17.3, 10.0). An SVG without a
+   millimetre page size is an error in penpath instead of being guessed from
+   pixels.
 5. **Number formatting.** The reference mixes Python's short float spelling
    (`Z12.5`, `Z80.0`, `X0.0`) with three decimals on interpolated points;
    penpath always uses three decimals (`Z12.500`, `Z80.000`, `X0.000`). Values
@@ -187,20 +203,67 @@ stroke; it is a state change, not a different landing.
    is document order in both.
 7. **Reach checks.** The reference checks every point against the page rectangle
    (and its optional `--margin`) before applying the pen offset; penpath checks
-   pen-space points, including the ramped lead-in and lead-out, against the
-   drawable area minus `bed.margin_mm`. A page that does not fit fails in both,
-   with different messages.
+   pen-space drawing points, including the ramped lead-in and lead-out, against
+   the usable area (drawable area minus `bed.margin_mm`, 10 mm in the shipped
+   profile). The pen-change touch spot is not a drawing point and is not checked.
+   A page that does not fit fails in both, with different messages.
 
 None of these differences changes the machine values: bed, offset, Z heights,
 ramp, feeds, touch spot, start, pen-change and end blocks all come from the
 built-in `aquila` profile, whose numbers were copied from the reference script
-(LUC-65).
+(LUC-65). The 10 mm safety margin is penpath's own addition; the equivalence
+check removes it so the historical comparison stays meaningful.
 
 ## First real plot with a penpath-generated `.gcode`
 
-**Not confirmed yet (2026-11-26).** This is operator evidence, not a CI result,
-and must be filled in by someone who plots it. The reference's test 4 on
+**Confirmed on 2026-11-26.** sergio plotted a Santa image on the Aquila from
+`santa_130.gcode`, written by `penpath gcode --profile aquila` from a penpath
+SVG. The size and position were as expected. This is operator evidence, not a
+CI result: the photo is attached to LUC-112. The reference's test 4 on
 2026-11-18 used sergio's `svg_plot.py`, not penpath's G-code, so it does not
-count. To record it, fill in: date, source image and SVG, exact penpath commands
-(including `--profile aquila`), paper and pen, and what was observed at each
-`M0` and at the end. The request for this evidence is on LUC-95.
+count.
+
+- **Date and commit.** Plotted 2026-11-26 (photo taken 14:35). The files were
+  generated about 14:00–14:11 with `uv run` from a clone of `main` at `2f7db3f`.
+- **Source image and SVG.** `santa.jpg`, a 588 × 330 px mono JPEG (one pen, no
+  palette). Two page sizes were generated; the 130 × 73 mm one was plotted,
+  replacing the 190 × 107 mm `santa.gcode` of the same name on the SD card at
+  `/santa.gcode`. The reviewed SVG was `santa_130.svg`.
+- **Commands**, all with the built-in `aquila` profile:
+
+  ```sh
+  penpath convert santa.jpg -o santa_130.svg --paper 130x73,0 --pen 0.4,#000000,fineliner -s seed=42
+  penpath gcode santa_130.svg --profile aquila -o santa_130.gcode
+  penpath preview santa_130.gcode -o santa_130.png
+  penpath evaluate santa.jpg santa_130.svg
+  ```
+
+  `evaluate` reported SSIM 0.46 and coverage 51.5 %. The G-code was 121,917
+  bytes: one layer, drawing 14,371 mm, pen-up 501 mm, 69 lifts, estimated 629 s.
+  In pen coordinates the ink spans X 66.6..196.9, Y 0.8..73.3 mm — front-right
+  of the reachable area, 0.8 mm from the front bed edge.
+- **Paper and pen.** Stabilo Point 88, 0.4 mm, blue ink, on the magnetic bed
+  (paper type not recorded).
+- **`M0` and end.** There was one `M0`, at the touch spot: nozzle X212.7 Y40.6
+  (pen 190, 12 plus the pen offset). The pen was fitted there as in the
+  checklist; sergio reports it worked. The start block showed the pen-out
+  warning and homed with `G28`; the end block ran `G1 Z80`, then X0 Y220, with
+  no `M25` and no `M2`, and the head parked as documented.
+
+### Gaps found in this run
+
+These were filed as separate follow-up tickets; no fixes were bundled into the
+validation run.
+
+- The page is always parked at the front-right corner, with no way to centre
+  it: LUC-117.
+- There is no margin, so the plot came 0.8 mm from the front bed edge: LUC-119.
+- There is no frame to preview the plotted size: LUC-118.
+- Travel and Z moves were emitted as bare `G0` with no feedrate, so they ran at
+  the last draw speed F1500: LUC-97 (fixed on `main` after this run).
+- Dark, high-contrast photos became a solid scribble with an unreadable face:
+  LUC-96.
+- Not yet tickets: the G-code preview shows no bed or page; the 130 mm drawing
+  is not a scaled copy of the 190 mm one because the working resolution depends
+  on the paper size; there is no outline/contour mode for portraits; and the
+  `M0` text should be checked for inline pens.

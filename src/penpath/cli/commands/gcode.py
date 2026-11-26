@@ -102,7 +102,7 @@ def _estimate_plot_seconds(profile: MachineProfile, total: LayerMetrics) -> floa
     "--fit/--no-fit",
     default=True,
     help=(
-        "Fit a drawing that exceeds the machine's drawable area (default). "
+        "Fit a drawing that exceeds the machine's usable area (default). "
         "With --no-fit, a point outside the area is an error (exit 3)."
     ),
 )
@@ -124,7 +124,7 @@ def gcode_cmd(
     Penpath does not guess the machine: --profile is required, and a missing or
     unknown name is a usage error (exit 2) that lists the available profiles.
     An unreadable or invalid profile file is a validation error (exit 3). A
-    drawing outside the machine's drawable area is fitted by default, with a
+    drawing outside the machine's usable area is fitted by default, with a
     warning on stderr naming the change; --no-fit keeps it an exit-3 error.
     --margin overrides the profile's safety margin for this run before fitting
     and emission. With --dry-run, stdout holds only G-code; every message goes
@@ -186,7 +186,7 @@ def gcode_cmd(
         shift_x, shift_y = fit_result.offset_mm
         console.print(
             f"Warning: drawing is {max(overshoot_x, overshoot_y):.3f} mm past the "
-            f"{profile.name} drawable area; fitted with scale {fit_result.scale:.3f} "
+            f"{profile.name} usable area; fitted with scale {fit_result.scale:.3f} "
             f"and shift ({shift_x:.3f}, {shift_y:.3f}) mm"
         )
 

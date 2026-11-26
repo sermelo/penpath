@@ -1,8 +1,9 @@
 # Aquila end-to-end example
 
-A 128x128 PNG, a 190x190 mm page that fits the Aquila's drawable area, and the
-commands that take it all the way to G-code. See `docs/AQUILA.md` for the
-operator checklist before you plot.
+A 128x128 PNG, a 170x170 mm page that fits the Aquila's usable area (the
+drawable area minus its 10 mm safety margin), and the commands that take it all
+the way to G-code. See `docs/AQUILA.md` for the operator checklist before you
+plot.
 
 From a clean checkout, with penpath installed (and `vpype` for the SVG export):
 
@@ -15,7 +16,7 @@ make PENPATH="python -m penpath"
 commands, if you prefer to run them one at a time:
 
 ```sh
-penpath convert circle.png -o circle.svg --paper 190x190,10 -s seed=42 --quiet
+penpath convert circle.png -o circle.svg --paper 170x170,10 -s seed=42 --quiet
 penpath preview circle.svg -o circle.svg.png
 penpath gcode circle.svg --profile aquila -o circle.gcode
 penpath preview circle.gcode -o circle.gcode.png
