@@ -152,6 +152,12 @@ class ImageRef(BaseModel):
     background_threshold : float
         Maximum CIE Lab distance from the detected paper colour treated as no
         ink. Documented default 10.0; old project files load with it.
+    saturation : float
+        CIE Lab chroma multiplier applied to the working image before palette
+        separation. 1.0 (the default) is off; old project files load as 1.0.
+    palette_adapt : bool
+        Choose the multiplier automatically from the image and the palette.
+        False by default; an explicit ``saturation`` takes precedence.
     """
 
     path: Path
@@ -162,6 +168,8 @@ class ImageRef(BaseModel):
     background_threshold: float = Field(
         default=DEFAULT_BACKGROUND_THRESHOLD, ge=0.0, allow_inf_nan=False
     )
+    saturation: float = Field(default=1.0, ge=0.0, le=3.0, allow_inf_nan=False)
+    palette_adapt: bool = False
 
     @field_validator("path")
     @classmethod

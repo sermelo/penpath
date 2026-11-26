@@ -193,6 +193,26 @@ class TestImageRef:
         img_ref = ImageRef(path=img_path, filters=FilterPipeline(), dpi=300, auto_equalize=False)
         assert img_ref.auto_equalize is False
 
+    def test_image_ref_saturation_defaults(self, tmp_path):
+        """The boost is off by default and adaptation is disabled."""
+        img_path = tmp_path / "test.png"
+        img_path.write_bytes(b"fake png")
+        from penpath.core.image.pipeline import FilterPipeline
+
+        image = ImageRef(path=img_path, filters=FilterPipeline())
+        assert image.saturation == 1.0
+        assert image.palette_adapt is False
+
+    @pytest.mark.parametrize("value", [-0.1, 3.1, float("nan"), float("inf")])
+    def test_image_ref_rejects_out_of_range_saturation(self, tmp_path, value):
+        """Saturation must be a finite multiplier in [0, 3]."""
+        img_path = tmp_path / "test.png"
+        img_path.write_bytes(b"fake png")
+        from penpath.core.image.pipeline import FilterPipeline
+
+        with pytest.raises(ValidationError):
+            ImageRef(path=img_path, filters=FilterPipeline(), saturation=value)
+
     def test_image_ref_missing_file(self):
         """Test that missing file raises error."""
         from penpath.core.image.pipeline import FilterPipeline
