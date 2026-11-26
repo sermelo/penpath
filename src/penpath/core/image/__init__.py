@@ -1,5 +1,12 @@
 """Image loading and filtering for penpath."""
 
+from penpath.core.image.background import (
+    DEFAULT_BACKGROUND_THRESHOLD,
+    BackgroundResult,
+    detect_paper_color,
+    mask_background,
+    remove_background,
+)
 from penpath.core.image.filters import (
     DitherMethod,
     GrayscaleMethod,
@@ -31,8 +38,10 @@ from penpath.core.image.resolution import (
 from penpath.core.image.separate import separate_palette
 
 __all__ = [
+    "DEFAULT_BACKGROUND_THRESHOLD",
     "MAX_WORKING_LONGEST_PX",
     "MIN_WORKING_LONGEST_PX",
+    "BackgroundResult",
     "DitherMethod",
     "FilterPipeline",
     "FilterStep",
@@ -45,6 +54,7 @@ __all__ = [
     "box_blur",
     "brightness",
     "contrast",
+    "detect_paper_color",
     "gamma",
     "gaussian_blur",
     "get_filter",
@@ -52,8 +62,10 @@ __all__ = [
     "invert",
     "list_filters",
     "load_image",
+    "mask_background",
     "plan_working_resolution",
     "posterize",
+    "remove_background",
     "separate_palette",
     "threshold",
 ]

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
 
 if TYPE_CHECKING:
     from penpath.core.image.pipeline import FilterPipeline
@@ -143,12 +144,23 @@ class ImageRef(BaseModel):
     auto_equalize : bool
         Stretch the working image's luminance range to 0-255 once, before
         palette separation. True by default; old project files load as true.
+    background : bool | None
+        Mask paper-level pixels before palette separation. ``None`` follows
+        the mode: on for a palette, off for a single pen, so old project files
+        keep today's single-pen output.
+    background_threshold : float
+        Maximum CIE Lab distance from the detected paper colour treated as no
+        ink. Documented default 10.0; old project files load with it.
     """
 
     path: Path
     filters: FilterPipeline
     dpi: int = Field(default=300, ge=72, le=2400)
     auto_equalize: bool = True
+    background: bool | None = None
+    background_threshold: float = Field(
+        default=DEFAULT_BACKGROUND_THRESHOLD, ge=0.0, allow_inf_nan=False
+    )
 
     @field_validator("path")
     @classmethod
