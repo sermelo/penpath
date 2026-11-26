@@ -148,17 +148,19 @@ Working resolution: 475x358 px (source 4080x3072 px, scale 0.116)
 `penpath info image` shows the resolution penpath would plan for an image,
 using the paper and pen from the config defaults.
 
-`--palette NAME|LIST` splits the loaded colour image before filtering: each
-pixel goes to the pen whose colour is nearest in CIE Lab space, and that pen
-receives a full-size greyscale image holding the luminance of its own pixels
-and white elsewhere. The filters and the drawing algorithm then run once per
-pen, and geometry is simplified, merged and sorted **within that pen only**.
-Paper masking is on by default in palette mode so pale paper never becomes a
-light pen's drawing; `--no-background` turns it off, `--background` forces it
-on for a single pen, and `--background-threshold` tunes the cut-off. A muted
-image can be boosted before the split with `--saturation` or `--palette-adapt`,
-so its pixels land on a colour pen instead of a neutral one; the report of the
-factor used is described under **Image Options**.
+`--palette NAME|LIST` splits the loaded colour image before filtering: a pixel
+with meaningful chroma goes to the pen with the closest hue angle, with chroma
+and lightness only breaking ties, while a near-neutral pixel keeps the plain
+nearest-in-CIE-Lab choice. That pen receives a full-size greyscale image
+holding the luminance of its own pixels and white elsewhere. The filters and
+the drawing algorithm then run once per pen, and geometry is simplified,
+merged and sorted **within that pen only**. Paper masking is on by default in
+palette mode so pale paper never becomes a light pen's drawing;
+`--no-background` turns it off, `--background` forces it on for a single pen,
+and `--background-threshold` tunes the cut-off. A very muted image can be
+boosted before the split with `--saturation` or `--palette-adapt` so pixels
+below the neutral cut-off join their hue family; the report of the factor used
+is described under **Image Options**.
 
 The palette's order is the drawing order and the order of the SVG layers. Each
 pen that produced strokes becomes one Inkscape layer named `layerN`, where `N`
