@@ -225,6 +225,27 @@ output_path: "{masked}"
         light_count, light_length, _ = _layer_geometry(masked, "stabilo_88_light_blue")
         assert light_count == 0 and light_length == 0.0
 
+        disabled = tmp_path / "disabled.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(PENCIL),
+                "-p",
+                str(project),
+                "--background-threshold",
+                "5",
+                "--no-background",
+                "-o",
+                str(disabled),
+                "--no-vpype",
+            ],
+            env={"XDG_CONFIG_HOME": str(tmp_path / "config")},
+        )
+        assert result.exit_code == 0, result.output
+        assert "Masking paper background" not in result.output
+        assert disabled.read_bytes() == PALETTE_BEFORE.read_bytes()
+
 
 class TestPaletteDrawsOnlyTheDrawing:
     """The light pen can no longer cover the paper on the synthetic fixture."""
