@@ -651,6 +651,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `profiles` | List built-in and user machine profiles (source, description, bed size, feeds) |
 | `filters` | List available filters with parameters |
 | `image PATH` | Show image info (size, mode, EXIF, DPI, planned working resolution) |
+| `palette-match PATH` | Show which palette pens raw colour separation picks and each pen's pixel share |
 | `config` | Show resolved config (config + project + defaults) |
 
 #### Options
@@ -667,6 +668,33 @@ one object with a `profiles` array, whose rows have `name`, `source`,
 `description`, `bed_width_mm`, `bed_height_mm`, `travel_mm_s`, `draw_mm_s` and
 `z_mm_s` (the Z feed falls back to the travel feed when the profile omits it).
 
+#### `penpath info palette-match`
+
+```bash
+penpath info palette-match IMAGE_PATH [OPTIONS]
+```
+
+Measures the **raw, pre-drawing** colour separation of the loaded image: it
+runs the same `separate_palette` as `convert` and counts the pixels each pen's
+layer actually inks (a layer pixel below 255). No filters, background masking,
+auto equalization or saturation boost is applied, and nothing is drawn, so the
+numbers describe the pixels before the convert pipeline changes them. Pixels in
+connected regions smaller than 8 px are dropped by separation and count as
+unassigned, together with paper pixels. Percentages are of all image pixels;
+unused pens are kept with a zero count so they are easy to spot.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--palette NAME\|LIST` | `stabilo_88` | Built-in palette name or inline `name=width,#hex;...` (same parser as `convert --palette`) |
+| `--format json\|yaml\|table` | `table` | Output format; table columns are Order, Pen name, Colour, Pixels, Percent and end with an unassigned row |
+
+JSON and YAML contain `path`, `palette`, `width`, `height`, a `rows` array with
+`order`, `name`, `color`, `pixels` and full-precision `percent` for every palette
+pen in drawing order, plus `unassigned_pixels` and `unassigned_percent`. The
+percentages in the table are rounded to one decimal. An invalid palette is a
+usage error (exit 2); an unreadable image is reported as a click error naming
+the image problem (exit 1).
+
 #### Examples
 
 ```bash
@@ -680,6 +708,9 @@ penpath info profiles --format json
 penpath info filters
 penpath info image photo.jpg
 penpath info image photo.jpg --format json
+penpath info palette-match photo.jpg
+penpath info palette-match photo.jpg --palette "red=0.4,#FF0000;blue=0.4,#0000FF"
+penpath info palette-match photo.jpg --palette stabilo_88 --format json
 penpath info config --project project.yaml
 ```
 

@@ -15,6 +15,7 @@ from rich.console import Console
 from shapely import LineString
 
 from penpath.cli.config import Config, load_config
+from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
@@ -30,7 +31,7 @@ from penpath.core.models import ImageRef, Palette, Paper, Pen, Project, SketchLi
 from penpath.core.output.svg import export_pen_layers, fit_image_placement, write_penpath_svg
 from penpath.core.output.vpype import optimize_with_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
-from penpath.presets.palettes import get_palette, list_palettes
+from penpath.presets.palettes import list_palettes
 from penpath.presets.papers import get_paper
 from penpath.presets.pens import get_pen
 from penpath.presets.pfms import DEFAULT_PFM, get_pfm_preset, list_pfm_presets
@@ -170,42 +171,6 @@ def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
             f"invalid {field} '{value}': {error['msg']}. Accepted: {hint}",
             param_hint="--pen",
         ) from e
-
-
-def _resolve_palette(palette_spec: str) -> Palette:
-    """Resolve a built-in palette name or an inline 'name=width,#hex;...' list."""
-    if palette_spec in list_palettes():
-        return get_palette(palette_spec)
-
-    pens: list[Pen] = []
-    for index, entry in enumerate(palette_spec.split(";"), start=1):
-        if "=" not in entry:
-            raise click.BadParameter(
-                f"Invalid palette pen {index}: '{entry}'. Use NAME=WIDTH,#HEX",
-                param_hint="palette",
-            )
-        name, value = entry.split("=", 1)
-        parts = value.split(",")
-        if len(parts) != 2:
-            raise click.BadParameter(
-                f"Invalid palette pen {index}: '{entry}'. Use NAME=WIDTH,#HEX",
-                param_hint="palette",
-            )
-        try:
-            pens.append(
-                Pen(
-                    name=name.strip(),
-                    width_mm=float(parts[0].strip()),
-                    color=parts[1].strip(),
-                )
-            )
-        except (ValidationError, ValueError) as e:
-            raise click.BadParameter(
-                f"Invalid palette pen {index}: '{entry}'. {e}",
-                param_hint="palette",
-            ) from e
-
-    return Palette(name="inline", pens=pens)
 
 
 def _apply_palette(project: Project, palette: Palette) -> None:

@@ -11,11 +11,13 @@ from rich.console import Console
 from rich.table import Table
 
 from penpath.cli.config import load_config
+from penpath.cli.palettes import resolve_palette
 from penpath.core import ProfileError, list_profile_sources, load_profile
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.image.load import load_image
 from penpath.core.image.pipeline import list_filters
 from penpath.core.image.resolution import plan_working_resolution
+from penpath.core.image.separate import palette_match
 from penpath.core.models import Paper
 from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper, list_papers
@@ -35,7 +37,7 @@ def _output_format(data: dict[str, Any], fmt: str) -> None:
     elif fmt == "yaml":
         import yaml
 
-        console.print(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        console.print(yaml.dump(data, default_flow_style=False, sort_keys=False), soft_wrap=True)
     else:  # table
         _print_table(data)
 
@@ -65,6 +67,29 @@ def _print_table(data: dict[str, Any]) -> None:
             console.print(table)
         else:
             console.print(f"[bold]{key}:[/bold] {value}")
+
+
+def _print_palette_match_table(data: dict[str, Any]) -> None:
+    """Print one row per palette pen plus the unassigned share."""
+    table = Table(title=f"Palette Match: {data['path']} ({data['width']}x{data['height']})")
+    for column in ("Order", "Pen name", "Colour", "Pixels", "Percent"):
+        table.add_column(column)
+    for row in data["rows"]:
+        table.add_row(
+            str(row["order"]),
+            row["name"],
+            row["color"],
+            str(row["pixels"]),
+            f"{row['percent']:.1f}%",
+        )
+    table.add_row(
+        "-",
+        "(unassigned)",
+        "-",
+        str(data["unassigned_pixels"]),
+        f"{data['unassigned_percent']:.1f}%",
+    )
+    console.print(table)
 
 
 @click.group(name="info")
@@ -174,6 +199,55 @@ def info_palettes(fmt: str) -> None:
 
     data = {"builtin_palettes": builtin_palettes, "palette_pens": palette_pens}
     _output_format(data, fmt)
+
+
+@info_group.command(name="palette-match")
+@click.argument("image_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--palette",
+    "palette_spec",
+    default="stabilo_88",
+    show_default=True,
+    help="Built-in palette name or inline 'name=width,#hex;...'",
+)
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
+def info_palette_match(image_path: Path, palette_spec: str, fmt: str) -> None:
+    """Show which palette pens raw colour separation picks for an image.
+
+    IMAGE_PATH: Image to measure before any filter, masking or drawing
+    """
+    palette = resolve_palette(palette_spec)
+    try:
+        image = load_image(image_path)
+    except Exception as e:
+        raise click.ClickException(f"Failed to load image: {e}") from e
+    try:
+        match = palette_match(image, palette.pens)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    data: dict[str, Any] = {
+        "path": str(image_path),
+        "palette": palette.name,
+        "width": match.width,
+        "height": match.height,
+        "rows": [
+            {
+                "order": row.order,
+                "name": row.name,
+                "color": row.color,
+                "pixels": row.pixels,
+                "percent": row.percent,
+            }
+            for row in match.rows
+        ],
+        "unassigned_pixels": match.unassigned_pixels,
+        "unassigned_percent": match.unassigned_percent,
+    }
+    if fmt == "table":
+        _print_palette_match_table(data)
+    else:
+        _output_format(data, fmt)
 
 
 @info_group.command(name="pfms")

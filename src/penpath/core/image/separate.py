@@ -14,6 +14,8 @@ cannot follow. Every pixel reaches some pen on a single-pen palette.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image, ImageColor
@@ -24,6 +26,28 @@ from penpath.core.image.filters import grayscale
 from penpath.core.models import Pen
 
 _MIN_REGION_PIXELS = 8
+
+
+@dataclass(frozen=True)
+class PalettePenShare:
+    """The share of an image inked by one palette pen."""
+
+    order: int
+    name: str
+    color: str
+    pixels: int
+    percent: float
+
+
+@dataclass(frozen=True)
+class PaletteMatch:
+    """Raw palette separation measurements for one image, before drawing."""
+
+    width: int
+    height: int
+    rows: list[PalettePenShare]
+    unassigned_pixels: int
+    unassigned_percent: float
 
 
 def _pen_rgb(pen: Pen) -> NDArray[np.float32]:
@@ -93,4 +117,59 @@ def separate_palette(
     return separated
 
 
-__all__ = ["separate_palette"]
+def palette_match(image: Image.Image, pens: list[Pen]) -> PaletteMatch:
+    """Measure how many pixels raw palette separation gives to each pen.
+
+    The measurement uses ``separate_palette`` on the loaded image as it is: no
+    filters, background masking or saturation boost is applied, and nothing is
+    drawn. A pen inks the pixels below 255 in its separated layer. Pixels no
+    layer inks are paper pixels (white in every layer) plus pixels in connected
+    regions smaller than eight pixels, which the separation drops as specks.
+
+    Parameters
+    ----------
+    image : PIL.Image.Image
+        Loaded colour image, before any conversion to greyscale.
+    pens : list[Pen]
+        Pens in drawing order; the returned rows follow the same order,
+        including pens that inked no pixels.
+
+    Returns
+    -------
+    PaletteMatch
+        Image size, one row per pen with a pixel count and its percentage of
+        all image pixels, and the unassigned count and percentage. Percentages
+        are full precision; rows plus the unassigned share add to 100.
+
+    Raises
+    ------
+    ValueError
+        If the image has no pixels, the palette is empty, or a pen colour
+        cannot be parsed.
+    """
+    total_pixels = image.width * image.height
+    rows: list[PalettePenShare] = []
+    inked_pixels = 0
+    for order, (pen, layer) in enumerate(separate_palette(image, pens), start=1):
+        pixels = int(np.count_nonzero(np.asarray(layer) < 255))
+        inked_pixels += pixels
+        rows.append(
+            PalettePenShare(
+                order=order,
+                name=pen.name,
+                color=pen.color,
+                pixels=pixels,
+                percent=100.0 * pixels / total_pixels,
+            )
+        )
+    unassigned_pixels = total_pixels - inked_pixels
+    return PaletteMatch(
+        width=image.width,
+        height=image.height,
+        rows=rows,
+        unassigned_pixels=unassigned_pixels,
+        unassigned_percent=100.0 * unassigned_pixels / total_pixels,
+    )
+
+
+__all__ = ["PaletteMatch", "PalettePenShare", "palette_match", "separate_palette"]
