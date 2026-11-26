@@ -2,7 +2,9 @@
 
 from penpath.core.drawing import (
     PIXEL_SETTING_FIELDS,
+    ContourSettings,
     OutlineSettings,
+    contour_strokes,
     outline_strokes,
     scale_pixel_settings,
 )
@@ -144,6 +146,7 @@ __all__ = [
     "PROJECT_FILE_VERSION",
     "BackgroundResult",
     "BedProfile",
+    "ContourSettings",
     "CoverageResult",
     "DitherMethod",
     "FeedProfile",
@@ -195,6 +198,7 @@ __all__ = [
     "compute_layer_coverage",
     "compute_likeness",
     "compute_machine_cost",
+    "contour_strokes",
     "contrast",
     "detect_paper_color",
     "fit_layers_to_drawable",
