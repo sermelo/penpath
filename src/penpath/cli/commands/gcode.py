@@ -10,12 +10,14 @@ import click
 from rich.console import Console
 
 from penpath.core import (
+    FitResult,
     GcodeError,
     MachineProfile,
     ProfileError,
     UnknownProfileError,
     build_gcode,
     compute_machine_cost,
+    fit_layers_to_drawable,
     get_svg_paper_size,
     list_profiles,
     load_profile,
@@ -85,12 +87,21 @@ def _estimate_plot_seconds(profile: MachineProfile, total: LayerMetrics) -> floa
     is_flag=True,
     help="Write the G-code to stdout instead of a file; all messages go to stderr.",
 )
+@click.option(
+    "--fit/--no-fit",
+    default=True,
+    help=(
+        "Fit a drawing that exceeds the machine's drawable area (default). "
+        "With --no-fit, a point outside the area is an error (exit 3)."
+    ),
+)
 def gcode_cmd(
     drawing_svg: Path,
     profile_name: str | None,
     output_path: Path | None,
     profiles_path: Path | None,
     dry_run: bool,
+    fit: bool,
 ) -> None:
     """Turn DRAWING_SVG into G-code for the machine named by --profile.
 
@@ -100,9 +111,10 @@ def gcode_cmd(
 
     Penpath does not guess the machine: --profile is required, and a missing or
     unknown name is a usage error (exit 2) that lists the available profiles.
-    An unreadable or invalid profile file, or a point outside the machine's
-    drawable area, is a validation error (exit 3). With --dry-run, stdout holds
-    only G-code; every message goes to stderr.
+    An unreadable or invalid profile file is a validation error (exit 3). A
+    drawing outside the machine's drawable area is fitted by default, with a
+    warning on stderr naming the change; --no-fit keeps it an exit-3 error.
+    With --dry-run, stdout holds only G-code; every message goes to stderr.
     """
     if profile_name is None:
         raise click.UsageError(f"Missing option '--profile'. {_available_hint(profiles_path)}")
@@ -135,10 +147,31 @@ def gcode_cmd(
 
     layers = parse_svg_layers(drawing_svg)
     layer_count = sum(1 for layer in layers if any(len(line) >= 2 for line in layer.polylines))
+    fit_result: FitResult | None = None
+    if fit:
+        try:
+            fit_result = fit_layers_to_drawable(layers, profile, page_size)
+        except GcodeError as exc:
+            raise ProfileValidationError(str(exc)) from exc
+        emit_layers = fit_result.layers
+    else:
+        emit_layers = layers
     try:
-        text = build_gcode(layers, profile, page_size)
+        text = build_gcode(emit_layers, profile, page_size)
     except GcodeError as exc:
-        raise ProfileValidationError(str(exc)) from exc
+        message = str(exc)
+        if not fit:
+            message += " Pass --fit (the default) or use a smaller --paper."
+        raise ProfileValidationError(message) from exc
+
+    if fit_result is not None and fit_result.changed:
+        overshoot_x, overshoot_y = fit_result.overshoot_mm
+        shift_x, shift_y = fit_result.offset_mm
+        console.print(
+            f"Warning: drawing is {max(overshoot_x, overshoot_y):.3f} mm past the "
+            f"{profile.name} drawable area; fitted with scale {fit_result.scale:.3f} "
+            f"and shift ({shift_x:.3f}, {shift_y:.3f}) mm"
+        )
 
     strokes_with_travel = parse_svg_strokes(drawing_svg, include_pen_up=True)
     total = cast(LayerMetrics, compute_machine_cost(strokes_with_travel)["total"])

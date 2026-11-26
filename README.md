@@ -149,6 +149,9 @@ penpath gcode palette_plot.svg --profile generic -o palette_plot.gcode
 # Lay the card out on a 190x190 mm page so it fits the Aquila bed:
 penpath convert photo.jpg -o card.svg --paper 190x190 -s seed=42
 penpath gcode card.svg --profile aquila -o card.gcode
+# A page slightly past the drawable area is fitted by default, with a warning on
+# stderr; add --no-fit to keep the strict error instead
+penpath gcode card.svg --profile aquila
 
 # Check the G-code without a machine: the PNG matches the SVG preview
 penpath preview plot.gcode -o gcode_preview.png

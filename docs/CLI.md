@@ -424,6 +424,7 @@ penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
 | `--output PATH` | `-o` | `<input>.gcode` | Output file, beside the input SVG |
 | `--profiles PATH` | — | user config | Alternate user profiles YAML file for this run |
 | `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
+| `--fit/--no-fit` | — | `--fit` | Fit a drawing past the drawable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
 
 Each Inkscape pen layer (`<g inkscape:groupmode="layer">`) becomes a G-code
 layer in document order, which is the drawing order of the pens. Strokes inside
@@ -450,9 +451,37 @@ stderr in both cases.
 The stderr summary reports the number of layers, drawing length, pen-up travel
 and pen lifts measured from the SVG's strokes, plus an estimated plot time
 from the profile's draw, travel and Z feeds (one down and one up per stroke plus
-a final lift). A point outside the drawable area (minus `bed.margin_mm`) fails
-the run with its coordinates instead of writing G-code the machine cannot
-follow.
+a final lift).
+
+#### Fitting an oversized page
+
+By default `penpath gcode` fits a reviewed page that reaches past the machine's
+drawable area instead of refusing it. `penpath.core.fit_layers_to_drawable`
+maps the strokes into pen space the same way the emitter does, reserves
+`bed.margin_mm` plus the ramp lead-in on every side so ramped landings stay
+reachable, then shifts the drawing the shortest way that fits. It scales the
+drawing down uniformly only when it is larger than the available area. When the
+fit changes the drawing, one warning goes to stderr naming the overshoot, the
+scale and the applied pen-space shift, for example:
+
+```
+Warning: drawing is 0.881 mm past the aquila drawable area; fitted with scale 1.000 and shift (-0.881, 0.000) mm
+```
+
+The overshoot includes the reserved ramp lead-in, so it can exceed the amount
+the strict check reports for the same page. Overruns of `FIT_TOLERANCE_MM =
+0.05` mm or less are float rounding: the drawing is left untouched and no
+warning is printed. The warning never goes to stdout, so `--dry-run` output is
+still G-code only. No `.gcode` file is written unless the complete document was
+built successfully.
+
+Pass `--no-fit` to keep the strict check: a point outside the drawable area
+(minus `bed.margin_mm`) then fails with exit 3, naming its coordinates, the
+per-axis overshoot and the fix:
+
+```
+Error: point (x=197.431, y=180.000) mm is outside the drawable area X 0.000..197.300, Y 0.000..191.400 mm; overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
+```
 
 #### Ramped landing
 
@@ -472,8 +501,9 @@ exactly the same G-code as before. `pen.z_touch` must be above `pen.z_down` and
 `pen.z_hover` must not be below `pen.z_touch` when ramping.
 
 Exit codes: **2** for a missing or unknown `--profile` (the message lists the
-available profiles), **3** for an unreadable or invalid profile file or a point
-outside the drawable area, and 1 for other file errors.
+available profiles), **3** for an unreadable or invalid profile file, a drawing
+that cannot be fitted, or (with `--no-fit`) a point outside the drawable area,
+and 1 for other file errors.
 
 #### Examples
 
@@ -489,6 +519,10 @@ penpath gcode christmas_card.svg --profile generic -o card.gcode
 # The built-in aquila profile: page against the drawable corner, ramped landings,
 # a pen set at the touch spot before every layer, and no M2 at the end
 penpath gcode card.svg --profile aquila -o card.gcode
+# A slightly oversized page is fitted with a warning on stderr
+penpath gcode card.svg --profile aquila
+# --no-fit restores the strict exit-3 error
+penpath gcode card.svg --profile aquila --no-fit
 ```
 
 ---
@@ -945,7 +979,7 @@ coordinates instead of writing G-code the machine cannot follow.
 | 0 | Success |
 | 1 | Runtime error (file not found, vpype failed, image load failed) |
 | 2 | Usage error (invalid args, missing required, bad filter param) |
-| 3 | Validation error (project file invalid, config invalid, PFM settings invalid, profile file invalid or drawing outside the bed) |
+| 3 | Validation error (project file invalid, config invalid, PFM settings invalid, profile file invalid, drawing cannot be fitted, or `--no-fit` drawing outside the bed) |
 
 ---
 
