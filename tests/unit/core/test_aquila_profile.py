@@ -41,7 +41,7 @@ def test_aquila_profile_numbers_match_reference() -> None:
     assert profile.pen.ramp_mm == 1.5
     assert profile.pen.touch_xy_mm == (190.0, 12.0)
     assert lead_in_mm(profile) == 0.75
-    assert page_origin_mm(profile, (190.0, 190.0))[0] == 197.3 - 190.0
+    assert page_origin_mm(profile, (190.0, 190.0)) == (197.3 - 190.0, 0.0)
     assert profile.pen_change.mode == "each"
 
 
@@ -103,3 +103,17 @@ def test_aquila_end_block_parks_and_has_no_m2() -> None:
         "M117 Plot done",
     ]
     assert "M2" not in {line.split(" ", 1)[0] for line in lines}
+
+
+def test_aquila_three_pens_pause_three_times_without_m25() -> None:
+    """Each used pen gets one pen-change block and one M0; this firmware never uses M25."""
+    layers = [
+        GcodeLayer(f"pen{index}", [[(10.0, index * 10.0), (40.0, index * 10.0)]])
+        for index in (1, 2, 3)
+    ]
+    text = build_gcode(layers, load_profile("aquila"), (190.0, 190.0))
+    commands = {line.split(" ", 1)[0] for line in text.splitlines()}
+
+    assert text.count("; pen change") == 3
+    assert sum(line.startswith("M0") for line in text.splitlines()) == 3
+    assert "M25" not in commands
