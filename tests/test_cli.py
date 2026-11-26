@@ -575,6 +575,15 @@ class TestInfoPaletteMatch:
         image.save(path)
         return path
 
+    @pytest.fixture
+    def red_blue_paper_image(self, tmp_path: Path) -> Path:
+        image = Image.new("RGB", (30, 10), "white")
+        image.paste("red", (0, 0, 10, 10))
+        image.paste("blue", (10, 0, 20, 10))
+        path = tmp_path / "red_blue_paper.png"
+        image.save(path)
+        return path
+
     def test_info_palette_match_table_shows_every_pen_and_unassigned(
         self, runner: CliRunner, red_blue_image: Path
     ) -> None:
@@ -646,6 +655,41 @@ class TestInfoPaletteMatch:
         assert yaml_result.exit_code == 0, yaml_result.output
         yaml_data = yaml.safe_load(yaml_result.output)
         assert yaml_data == data
+
+    def test_info_palette_match_reports_unassigned_and_full_precision(
+        self, runner: CliRunner, red_blue_paper_image: Path
+    ) -> None:
+        import json
+
+        result = runner.invoke(
+            main,
+            [
+                "info",
+                "palette-match",
+                str(red_blue_paper_image),
+                "--palette",
+                self.PALETTE,
+                "--format",
+                "json",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+
+        assert [row["pixels"] for row in data["rows"]] == [100, 100, 0]
+        assert data["unassigned_pixels"] == 100
+        assert data["rows"][0]["percent"] == pytest.approx(100 / 3)
+        assert data["unassigned_percent"] == pytest.approx(100 / 3)
+        total = sum(row["percent"] for row in data["rows"]) + data["unassigned_percent"]
+        assert total == pytest.approx(100.0)
+
+        table_result = runner.invoke(
+            main,
+            ["info", "palette-match", str(red_blue_paper_image), "--palette", self.PALETTE],
+        )
+        assert table_result.exit_code == 0, table_result.output
+        assert "33.3%" in table_result.output
+        assert "33.333" not in table_result.output
 
     def test_info_palette_match_default_palette_reports_twelve_rows(
         self, runner: CliRunner, red_blue_image: Path
