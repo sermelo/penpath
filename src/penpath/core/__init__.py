@@ -56,6 +56,7 @@ from penpath.core.image import (
     threshold,
 )
 from penpath.core.likeness import (
+    compute_edge_likeness,
     compute_likeness,
     prepare_for_comparison,
 )
@@ -188,6 +189,7 @@ __all__ = [
     "box_blur",
     "brightness",
     "build_gcode",
+    "compute_edge_likeness",
     "compute_layer_coverage",
     "compute_likeness",
     "compute_machine_cost",

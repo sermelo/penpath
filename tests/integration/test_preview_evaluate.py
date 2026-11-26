@@ -489,6 +489,66 @@ class TestEvaluate:
         assert result.stdout.strip() == ""
 
 
+class TestEvaluateEdgeLikeness:
+    """The extra diagnostic is a sibling of likeness in JSON and in the table."""
+
+    def test_json_reports_both_scores(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(main, ["evaluate", str(reference), str(drawing), "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert {"likeness", "edge_likeness", "machine_cost"} <= set(data)
+        assert isinstance(data["likeness"], float)
+        assert isinstance(data["edge_likeness"], float)
+        assert 0.0 <= data["edge_likeness"] <= 1.0
+
+    def test_human_output_has_edge_ssim_row(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(main, ["evaluate", str(reference), str(drawing)])
+
+        assert result.exit_code == 0, result.output
+        assert "Likeness" in result.output
+        assert "SSIM" in result.output
+        assert "Edge SSIM" in result.output
+
+    def test_luc_135_repro_is_caught_by_edge_ssim(self, runner: CliRunner) -> None:
+        """The pale-area repro scores well in greyscale but its edges do not match."""
+        fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+        image = fixtures / "images/background/pencil_on_pale_grey.png"
+        svg = fixtures / "golden/svg/pencil_palette_before_background.svg"
+
+        result = runner.invoke(main, ["evaluate", str(image), str(svg), "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+
+        # Measured on this fixture with the shipped defaults (96/25.4 px/mm):
+        # grey 0.7820, edge 0.2154. The 0.40 ceiling is the midpoint between
+        # that repro and the lowest matching-edge drawing measured below (0.7215,
+        # the hatched-square unit case), rounded down to one decimal.
+        assert data["likeness"] == pytest.approx(0.7820, abs=0.001)
+        assert data["edge_likeness"] == pytest.approx(0.2154, abs=0.001)
+        assert data["edge_likeness"] < data["likeness"] - 0.5
+        assert data["edge_likeness"] < 0.40
+
+    def test_matching_edges_still_score_high(self, runner: CliRunner) -> None:
+        """The same figure drawn without the pale-area scribble keeps its edges."""
+        fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+        image = fixtures / "images/background/pencil_on_pale_grey.png"
+        svg = fixtures / "golden/svg/single_pen_before_background.svg"
+
+        result = runner.invoke(main, ["evaluate", str(image), str(svg), "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+
+        # Measured 0.8756; the 0.70 floor is that value rounded down to 0.1.
+        assert data["edge_likeness"] == pytest.approx(0.8756, abs=0.001)
+        assert data["edge_likeness"] > 0.70
+        assert data["edge_likeness"] > data["likeness"] - 0.15
+
+
 class TestEvaluateCoverage:
     """Ink coverage is reported per layer and warns on stderr when a page fills up."""
 

@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from penpath.core import (
+    compute_edge_likeness,
     compute_layer_coverage,
     compute_likeness,
     compute_machine_cost,
@@ -117,9 +118,12 @@ def evaluate_cmd(
     """Evaluate DRAWING_SVG against the original IMAGE.
 
     The SVG is simulated at the chosen resolution, cropped to the recorded
-    image placement, and scored with SSIM. Machine cost and ink coverage are
-    reported per pen layer and in total; a layer covering most of the page
-    warns on stderr. With --json, only a JSON object is written to stdout.
+    image placement, and scored with greyscale SSIM and edge SSIM. Greyscale
+    SSIM misses pale ink on a near-blank page; edge SSIM compares Sobel edge
+    maps instead and penalises spurious structure. Machine cost and ink
+    coverage are reported per pen layer and in total; a layer covering most
+    of the page warns on stderr. With --json, only a JSON object is written
+    to stdout.
     """
     if px_per_mm <= 0:
         raise click.BadParameter("must be greater than zero", param_hint="--dpi")
@@ -154,10 +158,17 @@ def evaluate_cmd(
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="--paper-color") from exc
+    placement_rect = (placement.x, placement.y, placement.width, placement.height)
     likeness = compute_likeness(
         simulated,
         original,
-        (placement.x, placement.y, placement.width, placement.height),
+        placement_rect,
+        dpi_px_per_mm=px_per_mm,
+    )
+    edge_likeness = compute_edge_likeness(
+        simulated,
+        original,
+        placement_rect,
         dpi_px_per_mm=px_per_mm,
     )
     cost = compute_machine_cost(strokes)
@@ -179,7 +190,12 @@ def evaluate_cmd(
                 )
 
     if as_json:
-        click.echo(json.dumps({"likeness": likeness, "machine_cost": cost}, indent=2))
+        click.echo(
+            json.dumps(
+                {"likeness": likeness, "edge_likeness": edge_likeness, "machine_cost": cost},
+                indent=2,
+            )
+        )
         return
 
     console.print(f"Evaluation: {drawing_svg.name} vs {image.name}")
@@ -188,6 +204,7 @@ def evaluate_cmd(
     table.add_column("Metric", style="cyan")
     table.add_column("Value", justify="right")
     table.add_row("SSIM", f"{likeness:.4f}")
+    table.add_row("Edge SSIM", f"{edge_likeness:.4f}")
     console.print(table)
     console.print()
     console.print(_cost_table(cost))
