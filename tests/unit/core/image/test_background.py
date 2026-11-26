@@ -217,6 +217,28 @@ class TestBackgroundMethod:
         assert np.all(local_output[:, : GRADIENT_LINE[0]] == 255)
         assert np.all(local_output[:, GRADIENT_LINE[1] :] == 255)
 
+    def test_local_reports_field_median_and_masks_a_vignette(self) -> None:
+        size = 160
+        centre = (size - 1) / 2
+        ys, xs = np.mgrid[0:size, 0:size]
+        radius = np.hypot(ys - centre, xs - centre)
+        ramp = np.rint(200 + 55 * (1 - radius / radius.max())).astype(np.uint8)
+        array = np.broadcast_to(ramp[:, :, None], (size, size, 3)).copy()
+        x0, x1 = 78, 82
+        array[:, x0:x1] = 32
+        image = Image.fromarray(array)
+
+        local = mask_background(image)
+        global_result = mask_background(image, method="global")
+        assert local.paper_color == "#E0E0E0"
+        assert global_result.paper_color != local.paper_color
+        assert local.masked_percent == pytest.approx(97.5, abs=0.01)
+        local_output = np.asarray(local.image)
+        assert np.all(local_output[:, :x0] == 255)
+        assert np.all(local_output[:, x1:] == 255)
+        assert np.array_equal(local_output[:, x0:x1], array[:, x0:x1])
+        assert np.any(np.asarray(global_result.image)[:, :x0] != 255)
+
     def test_global_reproduces_the_legacy_single_colour_mask(self) -> None:
         image, _ = _gradient_page()
         rgb = np.asarray(image)
