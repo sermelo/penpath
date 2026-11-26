@@ -1,5 +1,6 @@
 """Drawing module for penpath - PFM implementations."""
 
+from penpath.core.drawing.outline import OutlineSettings, outline_strokes
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 from penpath.core.drawing.registry import (
     PFMRegistry,
@@ -12,11 +13,13 @@ from penpath.core.drawing.settings import PIXEL_SETTING_FIELDS, scale_pixel_sett
 
 __all__ = [
     "PIXEL_SETTING_FIELDS",
+    "OutlineSettings",
     "PFMRegistry",
     "SketchLinesSettings",
     "get_pfm",
     "get_registry",
     "list_pfms",
+    "outline_strokes",
     "register_pfm",
     "scale_pixel_settings",
     "sketch_lines",
