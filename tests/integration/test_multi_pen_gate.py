@@ -4,8 +4,8 @@ The union keeps the LUC-47 floors verbatim. Each used layer is measured with
 region-relative recall, precision, extent, bbox area and cell recall; SSIM is
 printed as evidence but is not a per-layer floor. Blank pages and random
 scribbles must fail the region floors, so the gate cannot pass for every
-possible drawing. Brown's LUC-85 improvement is pinned with the current
-region-relative measures so the fix cannot regress silently.
+possible drawing. The sparse layers introduced by LUC-123's hue-led separation
+are pinned with their region-relative measures so the choice cannot regress.
 """
 
 from __future__ import annotations
@@ -179,28 +179,46 @@ def test_used_layers_meet_region_floors(multi_pen_report: MultiPenGateReport) ->
     assert not failures, "Multi-pen per-layer gate not met:\n" + "\n".join(failures)
 
 
-def test_brown_region_ownership_is_pinned_after_luc85(
+def test_sparse_layer_choices_are_pinned_after_luc123(
     multi_pen_report: MultiPenGateReport,
 ) -> None:
-    """Brown covers its own region instead of drawing only a few sparse strokes.
+    """Hue-led separation hands the sky, horizon and corner to blue, green and purple.
 
-    Before LUC-85 the five brown strokes scored recall 0.3481, extent H 0.373,
-    bbox 0.333 and cell recall 0.455 on this gate; the speckle cleanup and the
-    sparse-canvas baseline raise them to the values below. Precision falls
-    slightly as more strokes are drawn but stays far above its 0.50 floor.
+    Brown and light blue no longer own pixels, so neither draws a layer. The
+    three new sparse layers are pinned here with their stroke counts and
+    region-relative measures so a silent change of pen cannot pass the gate.
     """
     layers = {layer.pen_name: layer for layer in multi_pen_report.layers}
-    brown = layers["stabilo_88_brown"]
-    measured = brown.algorithm
+    assert "stabilo_88_brown" not in layers
+    assert "stabilo_88_light_blue" not in layers
 
-    assert brown.stroke_count == 14
-    assert measured.region_pixels == 2866
-    assert measured.recall == pytest.approx(1.0412, abs=0.02)
-    assert measured.precision == pytest.approx(0.8444, abs=0.02)
-    assert measured.extent_width == pytest.approx(0.9457, abs=0.02)
-    assert measured.extent_height == pytest.approx(0.9725, abs=0.02)
-    assert measured.bbox_area == pytest.approx(0.9145, abs=0.02)
-    assert measured.cell_recall == pytest.approx(0.7000, abs=0.02)
+    pins = {
+        "stabilo_88_blue": (62, 1.3189, 0.2116, 1.000, 0.996, 0.989, 0.929),
+        "stabilo_88_light_green": (20, 0.8458, 0.9647, 1.003, 0.5844, 0.584, 0.6364),
+        "stabilo_88_purple": (10, 0.6667, 0.5699, 0.803, 0.1910, 0.1528, 0.4444),
+    }
+    for pen_name, (strokes, recall, precision, ext_w, ext_h, bbox, cell) in pins.items():
+        layer = layers[pen_name]
+        measured = layer.algorithm
+        assert layer.stroke_count == strokes
+        assert measured.recall == pytest.approx(recall, abs=0.02)
+        assert measured.precision == pytest.approx(precision, abs=0.02)
+        assert measured.extent_width == pytest.approx(ext_w, abs=0.02)
+        assert measured.extent_height == pytest.approx(ext_h, abs=0.02)
+        assert measured.bbox_area == pytest.approx(bbox, abs=0.02)
+        assert measured.cell_recall == pytest.approx(cell, abs=0.02)
+
+
+def test_ideal_baseline_clears_every_enforced_floor(
+    multi_pen_report: MultiPenGateReport,
+) -> None:
+    """A floor must never sit above what its own pen's channel can reach."""
+    failures = [
+        f"{layer.pen_name}: {name} {value:.4f} < {floor:.4f}"
+        for layer in multi_pen_report.layers
+        for name, value, floor in gate_failures(layer, layer.ideal)
+    ]
+    assert not failures, "Floors above a pen's ideal baseline:\n" + "\n".join(failures)
 
 
 def test_blank_page_fails_region_floors(multi_pen_report: MultiPenGateReport) -> None:
@@ -224,9 +242,9 @@ def test_random_scribble_fails_region_floors(multi_pen_report: MultiPenGateRepor
 def test_union_keeps_the_luc47_floors(multi_pen_report: MultiPenGateReport) -> None:
     """The union is checked with the shipped floors, with any failure pinned.
 
-    A tone ratio below 2.0 is a real regression of the palette drawing, not a
-    reason to lower the floor. It is recorded here and in docs/TESTING.md so a
-    later fix cannot silently make it worse or hide a new failure.
+    LUC-123's hue-led separation clears every LUC-47 floor, including tone, so
+    no failure is recorded. A new failure fails this test rather than being
+    silently accepted or lowering a floor.
     """
     failures = union_gate_failures(multi_pen_report.union)
     assert set(UNION_ENFORCED_FLOORS) == set(UNION_FLOORS)
