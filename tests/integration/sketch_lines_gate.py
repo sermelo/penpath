@@ -19,6 +19,7 @@ import numpy as np
 from click.testing import CliRunner
 from numpy.typing import NDArray
 from PIL import Image, ImageFilter
+from scipy.stats import spearmanr
 from shapely import LineString
 
 from penpath.cli.main import main
@@ -41,6 +42,13 @@ REFERENCE_NAMES = ("circle.png", "gradient.png", "sphere.png", "face.jpg", "phot
 SEED = 42
 PX_PER_MM = 96 / 25.4
 GRID_CELLS = 4
+READABILITY_CELLS = 8
+DARK_TILE_DARKNESS = 0.6
+DARK_TILE_TEXTURE = 20.0
+RANK_MIN = 0.75
+DARK_TILE_INK_MIN = 0.20
+DARK_TILE_INK_MAX = 0.92
+_WHITE = 255.0
 INK_CUTOFF = 128
 PAPER = Paper(name="a4", width_mm=210.0, height_mm=297.0, margin_mm=10.0)
 PEN = Pen(name="fine", width_mm=0.3, color="#000000")
@@ -59,6 +67,9 @@ class PlotMeasures:
     tone_dark_density: float
     tone_light_density: float
     tone_ratio: float
+    rank_correlation: float
+    dark_textured_ink_max: float
+    dark_textured_tiles: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +164,45 @@ def tone_metrics(
     return dark_density, light_density, float(ratio)
 
 
+def tile_readability(
+    mask: NDArray[np.bool_],
+    original_crop: Image.Image,
+    cells: int = READABILITY_CELLS,
+) -> tuple[float, float, int]:
+    """Rank tile ink against tile darkness and cap ink in textured dark tiles.
+
+    Ink follows the source when darker tiles carry more ink; the Spearman
+    rank correlation is zero for a blank or randomly scribbled page. A dark
+    tile with a high source standard deviation is textured: a plot that fills
+    it solid has lost the white gaps a pen needs to show the texture.
+    """
+    greyscale = np.asarray(original_crop.convert("L"), dtype=np.float64)
+    height, width = greyscale.shape
+    darknesses: list[float] = []
+    textures: list[float] = []
+    inks: list[float] = []
+    for row in range(cells):
+        for column in range(cells):
+            tile = (
+                slice(row * height // cells, (row + 1) * height // cells),
+                slice(column * width // cells, (column + 1) * width // cells),
+            )
+            darknesses.append(float(np.mean((_WHITE - greyscale[tile]) / _WHITE)))
+            textures.append(float(np.std(greyscale[tile])))
+            inks.append(float(mask[tile].mean()))
+    if np.ptp(darknesses) == 0 or np.ptp(inks) == 0:
+        correlation = 0.0
+    else:
+        measured = float(spearmanr(darknesses, inks).statistic)
+        correlation = measured if math.isfinite(measured) else 0.0
+    textured_dark = [
+        ink
+        for darkness, texture, ink in zip(darknesses, textures, inks, strict=True)
+        if darkness >= DARK_TILE_DARKNESS and texture >= DARK_TILE_TEXTURE
+    ]
+    return correlation, max(textured_dark, default=0.0), len(textured_dark)
+
+
 def measure_plot(
     plot: Image.Image,
     original: Image.Image,
@@ -168,6 +218,7 @@ def measure_plot(
     coverage = coverage_fractions(points, placement) if points is not None else (1.0, 1.0, 1.0)
     spread = ink_spread(mask)
     dark, light, ratio = tone_metrics(mask, original_crop)
+    correlation, dark_ink_max, dark_tiles = tile_readability(mask, original_crop)
     ssim = compute_likeness(plot, original, placement, dpi_px_per_mm=PX_PER_MM)
     return PlotMeasures(
         ssim=ssim,
@@ -179,6 +230,9 @@ def measure_plot(
         tone_dark_density=dark,
         tone_light_density=light,
         tone_ratio=ratio,
+        rank_correlation=correlation,
+        dark_textured_ink_max=dark_ink_max,
+        dark_textured_tiles=dark_tiles,
     )
 
 
@@ -200,6 +254,18 @@ def make_ideal_plot(
     ink_levels = tone.convert("1", dither=Image.Dither.FLOYDSTEINBERG).convert("L")
     ideal.paste(Image.merge("RGB", (ink_levels, ink_levels, ink_levels)), (crop[0], crop[1]))
     return ideal
+
+
+def make_solid_plot(
+    plot_size: tuple[int, int],
+    placement: tuple[float, float, float, float],
+    px_per_mm: float = PX_PER_MM,
+) -> Image.Image:
+    """Return a plot whose placement rectangle is one solid black mass."""
+    plot = Image.new("RGB", plot_size, "white")
+    left, top, right, bottom = placement_crop(plot_size, placement, px_per_mm)
+    plot.paste(Image.new("RGB", (right - left, bottom - top), "black"), (left, top))
+    return plot
 
 
 def write_blank_svg(
@@ -338,7 +404,8 @@ def format_measurement_table(reports: Sequence[GateReport]) -> str:
     """Return a plain-text table of all measurements."""
     header = (
         f"{'image':<13} {'mode':<10} {'SSIM':>7} {'cov W':>7} {'cov H':>7} {'bbox':>7} "
-        f"{'ink min':>8} {'ink max':>8} {'tone':>7} {'strokes':>8}"
+        f"{'ink min':>8} {'ink max':>8} {'tone':>7} {'rank':>7} "
+        f"{'darkInk':>8} {'tiles':>5} {'strokes':>8}"
     )
     rows = [
         "Sketch Lines likeness gate: default settings, fixed seed "
@@ -358,7 +425,8 @@ def format_measurement_table(reports: Sequence[GateReport]) -> str:
                 f"{measures.coverage_width:>7.3f} {measures.coverage_height:>7.3f} "
                 f"{measures.coverage_area:>7.3f} {measures.ink_spread_min:>8.4f} "
                 f"{measures.ink_spread_max:>8.4f} {measures.tone_ratio:>7.2f} "
-                f"{report.stroke_count:>8d}"
+                f"{measures.rank_correlation:>7.3f} {measures.dark_textured_ink_max:>8.3f} "
+                f"{measures.dark_textured_tiles:>5d} {report.stroke_count:>8d}"
             )
     return "\n".join(rows)
 
@@ -380,6 +448,8 @@ def finite_values(measures: PlotMeasures) -> tuple[float, ...]:
         measures.tone_dark_density,
         measures.tone_light_density,
         measures.tone_ratio,
+        measures.rank_correlation,
+        measures.dark_textured_ink_max,
     )
 
 
@@ -389,9 +459,15 @@ def all_finite(measures: PlotMeasures) -> bool:
 
 
 __all__ = [
+    "DARK_TILE_DARKNESS",
+    "DARK_TILE_INK_MAX",
+    "DARK_TILE_INK_MIN",
+    "DARK_TILE_TEXTURE",
     "GRID_CELLS",
     "INK_CUTOFF",
     "PX_PER_MM",
+    "RANK_MIN",
+    "READABILITY_CELLS",
     "REFERENCE_DIR",
     "REFERENCE_NAMES",
     "SEED",
@@ -403,6 +479,7 @@ __all__ = [
     "ink_mask",
     "ink_spread",
     "make_ideal_plot",
+    "make_solid_plot",
     "measure_all",
     "measure_plot",
     "measure_reference",
@@ -410,6 +487,7 @@ __all__ = [
     "placement_crop",
     "print_measurement_table",
     "simulate_svg",
+    "tile_readability",
     "tone_metrics",
     "write_blank_svg",
     "write_random_svg",

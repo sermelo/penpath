@@ -265,13 +265,18 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSetti
             f"Unknown PFM: '{pfm_name}'. Available PFMs: {registered}, presets: {presets}"
         )
 
+    # Keep the fields the preset or caller actually set so the drawing can tell
+    # an explicit value from a model default (flat images keep the calibrated
+    # legacy max_fill/line_density; see the tone rule in pfm_sketch_lines).
     if pfm_name in presets:
         pfm_type = get_pfm_for_preset(pfm_name)
-        base_settings = get_pfm_preset_settings(pfm_name).model_dump()
+        base_model = get_pfm_preset_settings(pfm_name)
     else:
         pfm_type = pfm_name
         _, settings_model = get_pfm(pfm_type)
-        base_settings = settings_model().model_dump()
+        base_model = settings_model()
+    base_settings = base_model.model_dump()
+    explicit_keys = set(base_model.model_fields_set) | set(pfm_settings)
 
     _, settings_model = get_pfm(pfm_type)
     for key, value_str in pfm_settings.items():
@@ -296,7 +301,9 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSetti
             ) from e
 
     try:
-        settings = settings_model.model_validate(base_settings)
+        settings = settings_model(
+            **{key: value for key, value in base_settings.items() if key in explicit_keys}
+        )
     except ValidationError as e:
         error = e.errors()[0]
         key = str(error["loc"][0]) if error.get("loc") else "pfm"

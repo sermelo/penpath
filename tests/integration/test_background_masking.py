@@ -31,8 +31,24 @@ def runner() -> CliRunner:
 def _convert(
     runner: CliRunner, output: Path, tmp_path: Path, *flags: str, palette: bool = False
 ) -> Result:
-    """Run convert on the pencil fixture with a fixed seed and direct export."""
+    """Run convert on the pencil fixture with the pre-LUC-128 PFM settings.
+
+    The goldens in this module pin background masking, so the tone defaults
+    are held at their previous values; only the background flags vary.
+    """
     options = ["--palette", "stabilo_88"] if palette else []
+    legacy_pfm = [
+        "-s",
+        "max_fill=80",
+        "-s",
+        "line_density=0.75",
+        "-s",
+        "tone_coverage=1",
+        "-s",
+        "tone_exponent=1",
+        "-s",
+        "texture_limit=0",
+    ]
     return runner.invoke(
         main,
         [
@@ -42,6 +58,7 @@ def _convert(
             str(output),
             "-s",
             "seed=42",
+            *legacy_pfm,
             "--no-vpype",
             *options,
             *flags,
@@ -161,6 +178,11 @@ pfm:
   pfm_type: sketch_lines
   settings:
     seed: 42
+    max_fill: 80
+    line_density: 0.75
+    tone_coverage: 1
+    tone_exponent: 1
+    texture_limit: 0
 output_path: "{off}"
 """
         )
@@ -204,6 +226,11 @@ pfm:
   pfm_type: sketch_lines
   settings:
     seed: 42
+    max_fill: 80
+    line_density: 0.75
+    tone_coverage: 1
+    tone_exponent: 1
+    texture_limit: 0
 output_path: "{masked}"
 """
         )

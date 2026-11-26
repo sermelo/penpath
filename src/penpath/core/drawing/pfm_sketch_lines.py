@@ -3,7 +3,10 @@
 Port of ``PFMSketchLinesBasic`` and ``AbstractSketchPFM`` from DrawingBotV3
 (v1.6.25-stable-free). The algorithm repeatedly picks the darkest part of a
 working copy of the image, walks dark rays from there, draws them, and lightens
-the pixels it covered so the next stroke moves on to a different region.
+the pixels it covered so the next stroke moves on to a different region. The
+shipped defaults add a contrast-adaptive tone budget: search scores follow
+local source tone and stop earlier where the source is textured, so dark areas
+keep white gaps instead of becoming one solid mass.
 """
 
 from __future__ import annotations
@@ -26,24 +29,43 @@ _MAX_FAILS = 1000
 _WHITE = 255.0
 _NEARLY_BLANK_MEAN = 252.5
 _BLANK_CANVAS_MEAN = 254.0
+_TONE_DESIRED_LUMINANCE = 254.2
+_TEXTURED_FRACTION = 0.18
+_LEGACY_MAX_FILL = 80.0
+_LEGACY_LINE_DENSITY = 0.75
 
 
 class SketchLinesSettings(BaseModel):
     """Settings for the Sketch Lines PFM algorithm.
 
-    Defaults mirror DrawingBotV3 v1.6.25-stable-free's registered settings
-    (``Register.registerPFMSettings``), except where a value is expressed in
-    penpath's image-pixel scale.
+    The beam-search and erase rules follow DrawingBotV3 v1.6.25-stable-free
+    (``Register.registerPFMSettings``). Pixel values are in penpath's image
+    scale, and the tone defaults are calibrated for photos (LUC-128): neutral
+    ``tone_coverage=1``, ``tone_exponent=1`` and ``texture_limit=0`` restore
+    the pre-LUC-128 search.
 
     Parameters
     ----------
     line_density : float
-        Overall ink density multiplier (0.01 - 10.0). Higher = more ink.
+        Fraction of the luminance progress at which drawing stops
+        (0.01 - 10.0). Higher = more ink.
     max_fill : float
         Maximum ink coverage as a percentage (1 - 100). Any source tone
         darker than ``255 * (1 - max_fill / 100)`` is treated as black. 100
         keeps the full range; the shipped default is lower so solid black
         areas stay plottable.
+    tone_coverage : float
+        Fraction of each pixel's distance to white that may be spent on ink
+        (0 - 1). 1 keeps the legacy rule where a pixel is drawn until it is
+        white; lower values stop a dark tone earlier and leave white gaps.
+    tone_exponent : float
+        Shape of the tone curve (0 - 2). 1 spends ink in proportion to
+        darkness; below 1 gives mid tones more of the dark tones' ink so
+        they show a distinct hatch step.
+    texture_limit : float
+        How much local texture reduces ``tone_coverage`` in dark areas
+        (0 - 1). Textured dark tones get a higher stop point than flat ones,
+        so hair, foliage and slopes do not turn into solid black.
     min_length : float
         Minimum line length in image pixels (1 - 1000). Reference default 2.
     max_length : float
@@ -96,8 +118,11 @@ class SketchLinesSettings(BaseModel):
         generous cap is derived from the image size and line density.
     """
 
-    line_density: float = Field(default=0.75, ge=0.01, le=10.0)
-    max_fill: float = Field(default=80.0, ge=1.0, le=100.0)
+    line_density: float = Field(default=0.97, ge=0.01, le=10.0)
+    max_fill: float = Field(default=90.0, ge=1.0, le=100.0)
+    tone_coverage: float = Field(default=0.5, ge=0.0, le=1.0)
+    tone_exponent: float = Field(default=0.55, ge=0.0, le=2.0)
+    texture_limit: float = Field(default=0.8, ge=0.0, le=1.0)
     min_length: float = Field(default=2.0, ge=1.0, le=1000.0)
     max_length: float = Field(default=40.0, ge=1.0, le=5000.0)
     angle_range: tuple[float, float] = Field(default=(-72.0, -52.0))
@@ -163,6 +188,54 @@ def _bresenham_line(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]
             err += dx
             y += sy
     return points
+
+
+def _box_mean(values: NDArray[np.float64], radius: int) -> NDArray[np.float64]:
+    """Return the mean of each pixel's square window using an integral image."""
+    height, width = values.shape
+    padded = np.pad(values, radius, mode="edge")
+    integral = np.pad(padded, ((1, 0), (1, 0))).cumsum(axis=0).cumsum(axis=1)
+    size = 2 * radius + 1
+    total = (
+        integral[size : size + height, size : size + width]
+        - integral[:height, size : size + width]
+        - integral[size : size + height, :width]
+        + integral[:height, :width]
+    )
+    return total / (size * size)
+
+
+def _local_texture(
+    source: NDArray[np.float64],
+    radius: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return the local mean and standard deviation of the source luminance."""
+    mean = _box_mean(source, radius)
+    variance = np.maximum(0.0, _box_mean(source * source, radius) - mean * mean)
+    return mean, np.sqrt(variance)
+
+
+def _tone_budgets(
+    source: NDArray[np.float64],
+    mean: NDArray[np.float64],
+    std: NDArray[np.float64],
+    tone_coverage: float,
+    tone_exponent: float,
+    texture_limit: float,
+) -> NDArray[np.float64]:
+    """Return the luminance worth of ink each pixel may still receive.
+
+    A flat pixel may gain at most ``255 * tone_coverage * darkness**exponent``
+    before it stops receiving ink. Local texture, measured as the standard
+    deviation of the source in a square window, reduces that budget in dark
+    areas only, so textured dark regions keep white gaps between strokes.
+    """
+    if tone_coverage >= 1.0 and math.isclose(tone_exponent, 1.0) and texture_limit <= 0.0:
+        return np.zeros_like(source)
+    darkness = np.clip((_WHITE - source) / _WHITE, 0.0, 1.0)
+    texture = np.clip(std / 24.0, 0.0, 1.0) * darkness
+    budget = tone_coverage * darkness**tone_exponent * (1.0 - texture_limit * texture)
+    return _WHITE * budget
 
 
 def _sample_rays(
@@ -376,6 +449,10 @@ def _apply_erase(
     tone: float,
     radius_min: float = 1.0,
     radius_max: float = 1.0,
+    *,
+    score: NDArray[np.float64] | None = None,
+    tone_offsets: NDArray[np.float64] | None = None,
+    caps: NDArray[np.float64] | None = None,
 ) -> None:
     """Lighten pixels under a segment with the reference's round erase brush."""
     h, w = working.shape
@@ -392,6 +469,8 @@ def _apply_erase(
             if 0 <= x < w and 0 <= y < h and (x, y) not in covered:
                 covered.add((x, y))
                 working[y, x] = min(_WHITE, working[y, x] + amount)
+                if score is not None and tone_offsets is not None and caps is not None:
+                    score[y, x] = min(caps[y, x], working[y, x] + tone_offsets[y, x])
 
 
 class _SketchEngineSettings(Protocol):
@@ -414,6 +493,10 @@ class _SketchEngineSettings(Protocol):
     squiggle_min_length: int
     squiggle_max_length: int
     max_strokes: int | None
+    tone_coverage: float
+    tone_exponent: float
+    texture_limit: float
+    model_fields_set: set[str]
 
 
 _AngleProvider = Callable[[random.Random, int, int, int], float]
@@ -436,25 +519,67 @@ def _run_sketch_engine(
     rng = random.Random(settings.seed)
     gray = image.convert("L") if image.mode != "L" else image
     working = np.asarray(gray, dtype=np.float64).copy()
-    black_point = _WHITE * (1.0 - settings.max_fill / 100.0)
-    if black_point > 0.0:
-        np.maximum(working, black_point, out=working)
     h, w = working.shape
     if h == 0 or w == 0:
         return []
 
+    sample_step = int(settings.sample_step)
+    _raw_mean, raw_std = _local_texture(working, max(2, sample_step))
+    textured = bool(np.mean(raw_std >= 20.0) >= _TEXTURED_FRACTION)
+    sparse_canvas = bool((working < _WHITE).any()) and bool(
+        _NEARLY_BLANK_MEAN <= float(np.mean(working)) < _BLANK_CANVAS_MEAN
+    )
+    tone_rule = bool(
+        not sparse_canvas
+        and settings.erase_enabled
+        and textured
+        and (
+            settings.tone_coverage < 1.0
+            or not math.isclose(settings.tone_exponent, 1.0)
+            or settings.texture_limit > 0.0
+        )
+    )
+    max_fill = settings.max_fill
+    line_density = settings.line_density
+    if not tone_rule:
+        if "max_fill" not in settings.model_fields_set:
+            max_fill = _LEGACY_MAX_FILL
+        if "line_density" not in settings.model_fields_set:
+            line_density = _LEGACY_LINE_DENSITY
+    black_point = _WHITE * (1.0 - max_fill / 100.0)
+    if black_point > 0.0:
+        np.maximum(working, black_point, out=working)
+
     min_len = int(max(1, settings.min_length))
     max_len = int(max(min_len, settings.max_length))
-    line_density = max(0.01, settings.line_density)
-    sample_step = int(settings.sample_step)
+    line_density = max(0.01, line_density)
     num_tests = max(1, round(360.0 / settings.search_angle_step))
 
     canvas_avg = float(np.mean(working))
     ink_pixels = working < _WHITE
     sparse_canvas = bool(ink_pixels.any()) and _NEARLY_BLANK_MEAN <= canvas_avg < _BLANK_CANVAS_MEAN
+    local_mean, local_std = _local_texture(working, max(2, sample_step))
+    offsets = np.zeros_like(working)
+    if tone_rule:
+        offsets = _tone_budgets(
+            working,
+            local_mean,
+            local_std,
+            settings.tone_coverage,
+            settings.tone_exponent,
+            settings.texture_limit,
+        )
+    caps = np.where(
+        working >= _WHITE,
+        _WHITE,
+        _WHITE - 0.5 - 0.5 * (working / _WHITE),
+    )
+    score = np.minimum(caps, working + offsets) if tone_rule else working
     progress_pixels = ink_pixels if sparse_canvas else None
     initial_avg = (
-        float(np.mean(working[progress_pixels])) if progress_pixels is not None else canvas_avg
+        float(np.mean(score[progress_pixels]))
+        if progress_pixels is not None
+        else float(np.mean(score))
     )
     if settings.max_strokes is not None:
         max_strokes = settings.max_strokes
@@ -466,23 +591,29 @@ def _run_sketch_engine(
     lines: list[LineString] = []
     fails = 0
     while len(lines) < max_strokes and fails < _MAX_FAILS:
-        canvas_avg = float(np.mean(working))
+        canvas_avg = float(np.mean(score))
+        if float(np.min(score)) >= _WHITE:
+            break
         current_avg = (
-            float(np.mean(working[progress_pixels])) if progress_pixels is not None else canvas_avg
+            float(np.mean(score[progress_pixels])) if progress_pixels is not None else canvas_avg
         )
         if settings.erase_enabled:
-            if initial_avg >= _DESIRED_LUMINANCE:
+            if tone_rule:
+                target = min(_TONE_DESIRED_LUMINANCE, float(np.mean(caps)))
+                density = min(1.0, line_density)
+            else:
+                target = _DESIRED_LUMINANCE
+                density = line_density
+            if initial_avg >= target:
                 break
-            lum_progress = (current_avg - initial_avg) / (
-                (_DESIRED_LUMINANCE - initial_avg) * line_density
-            )
+            lum_progress = (current_avg - initial_avg) / ((target - initial_avg) * density)
             if lum_progress >= 1.0:
                 break
         else:
             lum_progress = 0.0
 
-        start_x, start_y = _find_darkest_pixel(working, sample_step, rng)
-        initial_darkness = float(working[start_y, start_x])
+        start_x, start_y = _find_darkest_pixel(score, sample_step, rng)
+        initial_darkness = float(score[start_y, start_x])
         if settings.erase_enabled:
             allowable = initial_darkness + max(
                 1.0, _DESIRED_LUMINANCE * settings.squiggle_max_deviation
@@ -498,7 +629,7 @@ def _run_sketch_engine(
             line_len = rng.randint(min_len, max_len)
             start_angle = angle_provider(rng, current_x, current_y, s)
             avg_lum, next_x, next_y = _find_darkest_line(
-                working,
+                score,
                 current_x,
                 current_y,
                 min_len,
@@ -547,6 +678,9 @@ def _run_sketch_engine(
                     settings.tone,
                     settings.erase_radius_min,
                     settings.erase_radius_max,
+                    score=score if tone_rule else None,
+                    tone_offsets=offsets if tone_rule else None,
+                    caps=caps if tone_rule else None,
                 )
             current_x, current_y = next_x, next_y
 
@@ -557,6 +691,8 @@ def _run_sketch_engine(
                 fails = 0
                 continue
         working[current_y, current_x] = _WHITE
+        if tone_rule:
+            score[current_y, current_x] = _WHITE
         fails += 1
 
     return lines
@@ -568,7 +704,12 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     Strokes are returned in image pixel coordinates (origin top-left) and are
     always inside the image. Drawing lightens the working image, so the run
     stops when its average luminance reaches the target given by
-    ``line_density``. On a nearly blank canvas (mean from 252.5 to below 254),
+    ``line_density``. The search score is a per-pixel source-tone ink budget
+    lowered as strokes spend it: pixels darker than their local surroundings
+    keep more budget, while textured dark pixels lose part of theirs to
+    ``texture_limit``, so dark areas keep white gaps instead of saturating.
+    Flat shapes and near-white pixels keep a small budget so every part of the
+    image can receive ink. On a nearly blank canvas (mean from 252.5 to below 254),
     that average is taken over the ink-bearing pixels only: a sparse palette
     channel is mostly white, so a whole-canvas average collapses the stop
     target and ends the run after a handful of strokes. Canvases below 252.5

@@ -91,6 +91,9 @@ def sketch_squares(image: Image.Image, settings: SketchSquaresSettings) -> list[
         max_length=settings.max_length,
         seed=settings.seed,
         max_strokes=settings.max_strokes,
+        tone_coverage=1.0,
+        tone_exponent=1.0,
+        texture_limit=0.0,
     )
 
     def angle_provider(_rng: random.Random, x: int, y: int, _step: int) -> float:

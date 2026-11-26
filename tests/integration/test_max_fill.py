@@ -38,9 +38,9 @@ def sweep_reports(tmp_path_factory: pytest.TempPathFactory) -> list[FillReport]:
 
 
 def test_shipped_default_matches_the_calibrated_value() -> None:
-    """The harness and the settings model agree on the shipped default."""
-    assert DEFAULT_MAX_FILL < 100.0
-    assert SketchLinesSettings().max_fill == DEFAULT_MAX_FILL
+    """The flat calibration stays at 80; photos ship the LUC-128 value 90."""
+    assert DEFAULT_MAX_FILL == 80.0
+    assert SketchLinesSettings().max_fill == 90.0
 
 
 def test_sweep_covers_every_figure_and_value(sweep_reports: list[FillReport]) -> None:
