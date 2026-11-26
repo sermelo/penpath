@@ -353,6 +353,32 @@ def test_gcode_dry_run_with_fit_keeps_stdout_gcode_only(
     assert not slightly_outside_card.with_suffix(".gcode").exists()
 
 
+def test_gcode_fit_within_tolerance_leaves_drawing_alone(runner: CliRunner, tmp_path: Path) -> None:
+    """An overrun inside FIT_TOLERANCE_MM changes nothing and prints no warning."""
+    drawing = tmp_path / "within_tolerance.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg"
+ xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+ width="190mm" height="190mm" viewBox="0 0 190 190">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 189.28,10"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+
+    fitted = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--dry-run", "--fit"]
+    )
+    strict = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--dry-run", "--no-fit"]
+    )
+
+    assert fitted.exit_code == 0, fitted.stderr
+    assert strict.exit_code == 0, strict.stderr
+    assert "Warning:" not in fitted.stderr
+    assert fitted.stdout == strict.stdout
+
+
 def test_gcode_fits_far_point_by_default(runner: CliRunner, tmp_path: Path) -> None:
     """A point 9 mm outside is fitted rather than rejected with the default."""
     drawing = tmp_path / "outside.svg"
