@@ -35,6 +35,7 @@ from penpath.core.image.resolution import (
     apply_working_resolution,
     plan_working_resolution,
 )
+from penpath.core.image.saturation import adapt_saturation, boost_saturation
 from penpath.core.image.separate import separate_palette
 
 __all__ = [
@@ -49,8 +50,10 @@ __all__ = [
     "ImageLoadError",
     "UnsupportedFormatError",
     "WorkingResolution",
+    "adapt_saturation",
     "apply_working_resolution",
     "auto_equalize",
+    "boost_saturation",
     "box_blur",
     "brightness",
     "contrast",

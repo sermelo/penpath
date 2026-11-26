@@ -50,6 +50,8 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--auto-equalize` / `--no-auto-equalize` | — | `true` | Normalize the working image's luminance range (linear auto levels) once before drawing. Use `--no-auto-equalize` to keep the original tones. |
 | `--background` / `--no-background` | — | mode-dependent | Mask paper-coloured pixels as no ink. On by default with `--palette`, off for a single pen; the flag overrides either mode. |
 | `--background-threshold FLOAT` | — | `10` | Maximum CIE Lab distance from the detected paper colour treated as no ink. Giving it enables masking unless `--no-background` is also given. |
+| `--saturation FLOAT` | — | `1.0` | CIE Lab chroma multiplier for palette mode, in [0, 3]. `1.0` is off; `0` makes the image neutral. |
+| `--palette-adapt` | — | `false` | Pick the multiplier automatically from the image and the palette. An explicit `--saturation` wins. |
 | `--max-resolution PX` | — | derived | Longest side of the working image in pixels. Overrides the derived value (no clamp) and never enlarges. |
 | `--no-downscale` | — | `false` | Keep the source pixels; do not downscale before drawing |
 
@@ -78,6 +80,17 @@ fixture: after auto equalization paper noise reaches 4.4 ΔE at the 99th
 percentile while the faintest ink starts at 17.4 ΔE, so the cut-off sits well
 below any ink. Lowering it can leave paper noise unmasked; raising it too far
 can eat faint ink.
+
+A colour boost follows masking, still before palette separation. It multiplies
+CIE Lab a* and b* by a factor and leaves L* alone, so tones and ink density do
+not move. `--saturation FLOAT` sets the factor directly in [0, 3]; `1.0` is a
+byte-for-byte no-op and `0` removes chroma. `--palette-adapt` instead chooses
+the factor so the 90th-percentile chroma of non-background pixels reaches the
+palette's median chroma, clamped to [1, 3]; an already-saturated image gets
+`1.0`. Passing an explicit `--saturation` disables adaptation for that run.
+The factor actually used goes to stderr (silenced by `--quiet`), for example
+`Saturation factor: 3.00 (palette-adapted)`. Both options are meaningful only
+with `--palette`: a single pen ignores them rather than failing.
 
 #### Drawing Options
 
@@ -142,7 +155,10 @@ and white elsewhere. The filters and the drawing algorithm then run once per
 pen, and geometry is simplified, merged and sorted **within that pen only**.
 Paper masking is on by default in palette mode so pale paper never becomes a
 light pen's drawing; `--no-background` turns it off, `--background` forces it
-on for a single pen, and `--background-threshold` tunes the cut-off.
+on for a single pen, and `--background-threshold` tunes the cut-off. A muted
+image can be boosted before the split with `--saturation` or `--palette-adapt`,
+so its pixels land on a colour pen instead of a neutral one; the report of the
+factor used is described under **Image Options**.
 
 The palette's order is the drawing order and the order of the SVG layers. Each
 pen that produced strokes becomes one Inkscape layer named `layerN`, where `N`
@@ -702,6 +718,8 @@ input:
   auto_equalize: true   # linear levels normalization before drawing (default)
   background: true             # mask paper before separation (palette default)
   background_threshold: 10.0   # CIE Lab ΔE treated as paper
+  saturation: 1.0              # Lab chroma multiplier (0-3; 1.0 = off)
+  palette_adapt: false         # choose the multiplier from image and palette
 
 filters:
   - grayscale:
@@ -779,7 +797,16 @@ image:
   dpi: 300
   background: false
   background_threshold: 4.5
+  saturation: 2.0
+  palette_adapt: false
 ```
+
+The chroma keys live under `image:` as well. `saturation: 2.0` is a manual
+multiplier in [0, 3] (default `1.0`), and `palette_adapt: true` chooses it from
+the image and the palette. Old files without the keys load as `1.0` and
+`false`, so their output is unchanged. `--saturation` on the command line
+overrides the file and disables `palette_adapt`; `--palette-adapt` overrides the
+file's manual factor. As at the CLI, both keys are no-ops for a single pen.
 
 **Minimal Example**:
 ```yaml

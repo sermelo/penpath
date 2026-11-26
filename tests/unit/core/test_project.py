@@ -705,5 +705,41 @@ class TestBackgroundProjectFiles:
             load_yaml(_write_yaml(tmp_path, data))
 
 
+class TestSaturationProjectFiles:
+    """Saturation options load old files unchanged and round-trip when set."""
+
+    def test_old_project_loads_with_disabled_defaults(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.image.saturation == 1.0
+        assert project.image.palette_adapt is False
+
+    def test_saturation_fields_round_trip(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["palette"] = "stabilo_88"
+        data["image"]["saturation"] = 2.5
+        data["image"]["palette_adapt"] = True
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.image.saturation == 2.5
+        assert project.image.palette_adapt is True
+
+        path = tmp_path / "saved.yaml"
+        save_yaml(project, path)
+        saved = yaml.safe_load(path.read_text())
+        assert saved["image"]["saturation"] == 2.5
+        assert saved["image"]["palette_adapt"] is True
+        loaded = load_yaml(path)
+        assert loaded.image.saturation == 2.5
+        assert loaded.image.palette_adapt is True
+
+    def test_out_of_range_saturation_is_rejected(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        data["image"]["saturation"] = 3.5
+        with pytest.raises(ProjectLoadError, match="validation failed"):
+            load_yaml(_write_yaml(tmp_path, data))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-xvs"])

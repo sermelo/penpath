@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast, get_args
 
 import click
+from click.core import ParameterSource
 from pydantic import ValidationError
 from rich.console import Console
 from shapely import LineString
@@ -23,6 +24,7 @@ from penpath.core.image.filters import auto_equalize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
+from penpath.core.image.saturation import NO_BOOST_FACTOR, adapt_saturation, boost_saturation
 from penpath.core.image.separate import separate_palette
 from penpath.core.models import ImageRef, Palette, Paper, Pen, Project, SketchLinesPFM
 from penpath.core.output.svg import export_pen_layers, fit_image_placement, write_penpath_svg
@@ -365,8 +367,12 @@ def _run_convert_pipeline(
 ) -> list[list[LineString]]:
     """Draw every pen and return its optimized lines, in pen order."""
     pens = project.palette
+    use_palette = len(pens) > 1
     use_background = (
-        project.image.background if project.image.background is not None else len(pens) > 1
+        project.image.background if project.image.background is not None else use_palette
+    )
+    saturation_active = use_palette and (
+        project.image.saturation != NO_BOOST_FACTOR or project.image.palette_adapt
     )
 
     # Step 1: Load image and plan the working resolution. Placement is derived
@@ -392,7 +398,7 @@ def _run_convert_pipeline(
     if no_downscale:
         resolution = replace(resolution, target_size_px=source_size_px, scale=1.0)
     downscaling = resolution.target_size_px != source_size_px
-    reporter.set_total_stages(5 + int(downscaling) + int(use_background))
+    reporter.set_total_stages(5 + int(downscaling) + int(use_background) + int(saturation_active))
     reporter.finish()
 
     working_width, working_height = resolution.target_size_px
@@ -424,6 +430,24 @@ def _run_convert_pipeline(
             f"Paper colour: {masked.paper_color}; "
             f"masked {masked.masked_percent:.1f}% of pixels as no ink"
         )
+
+    # Chroma boost runs on the masked working image. A single pen has no colour
+    # decision to make, so both paths are silent no-ops there.
+    if saturation_active:
+        if project.image.saturation != NO_BOOST_FACTOR:
+            factor = project.image.saturation
+            reporter.start("Boosting saturation")
+            working_image = boost_saturation(working_image, factor)
+            reporter.finish()
+            mode = "manual"
+        else:
+            reporter.start("Adapting saturation to palette")
+            factor = adapt_saturation(working_image, pens)
+            reporter.finish()
+            if factor != NO_BOOST_FACTOR:
+                working_image = boost_saturation(working_image, factor)
+            mode = "palette-adapted"
+        reporter.message(f"Saturation factor: {factor:.2f} ({mode})")
 
     # Step 3: Split before filtering, so the default grayscale filter cannot
     # throw away the colour needed to choose a pen.
@@ -555,6 +579,19 @@ def _run_convert_pipeline(
         f"(default: {DEFAULT_BACKGROUND_THRESHOLD:g}; implies --background)"
     ),
 )
+@click.option(
+    "--saturation",
+    "saturation",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="CIE Lab chroma multiplier for palette mode (0-3; 1.0 is off)",
+)
+@click.option(
+    "--palette-adapt",
+    is_flag=True,
+    help="Choose the chroma multiplier from the image and palette; --saturation wins",
+)
 @click.option("--pfm", "pfm_name", help="PFM algorithm or built-in preset (default: sketch_lines)")
 @click.option(
     "--pfm-setting",
@@ -622,6 +659,8 @@ def convert_cmd(
     auto_equalize_flag: bool | None,
     background_flag: bool | None,
     background_threshold: float | None,
+    saturation: float,
+    palette_adapt: bool,
     pfm_name: str | None,
     pfm_settings: tuple[str, ...],
     pen_spec: str | None,
@@ -652,6 +691,10 @@ def convert_cmd(
         raise click.BadParameter(
             "must be a finite, non-negative Lab distance", param_hint="--background-threshold"
         )
+
+    explicit_saturation = ctx.get_parameter_source("saturation") is ParameterSource.COMMANDLINE
+    if not math.isfinite(saturation) or not 0.0 <= saturation <= 3.0:
+        raise click.BadParameter("must be a finite number in [0, 3]", param_hint="--saturation")
 
     if pen_spec is not None and palette_spec is not None:
         raise click.UsageError(
@@ -693,6 +736,12 @@ def convert_cmd(
             project.image.background_threshold = background_threshold
             if background_flag is None:
                 project.image.background = True
+        if explicit_saturation:
+            project.image.saturation = saturation
+            project.image.palette_adapt = False
+        elif palette_adapt:
+            project.image.palette_adapt = True
+            project.image.saturation = 1.0
         project.image.path = input_path  # Always use CLI input path
     else:
         # Build project from CLI flags and config
@@ -737,6 +786,8 @@ def convert_cmd(
                     if background_threshold is None
                     else background_threshold
                 ),
+                saturation=saturation,
+                palette_adapt=palette_adapt and not explicit_saturation,
             ),
             paper=paper,
             pen=pen,
