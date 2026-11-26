@@ -123,6 +123,12 @@ penpath convert photo.jpg --palette stabilo_88 --background-threshold 6
 penpath convert photo.jpg --palette stabilo_88 --no-background
 penpath convert photo.jpg --pen fine --background
 
+# The default local paper field follows lighting gradients and shadows; the
+# global method uses one detected colour (with a lower cut-off it leaves a pale
+# gradient as ink, which is the regression the local field fixes):
+penpath convert photo.jpg --palette stabilo_88 --background-method local
+penpath convert photo.jpg --palette stabilo_88 --background-method global --background-threshold 5
+
 # Muted colour photos can be boosted before the palette split (1.0 is off):
 penpath convert photo.jpg --palette stabilo_88 --palette-adapt
 penpath convert photo.jpg --palette stabilo_88 --saturation 2.0

@@ -152,6 +152,11 @@ class ImageRef(BaseModel):
     background_threshold : float
         Maximum CIE Lab distance from the detected paper colour treated as no
         ink. Documented default 10.0; old project files load with it.
+    background_method : {'global', 'local'}
+        How paper is found: ``local`` follows a smooth per-pixel paper field so
+        lighting gradients and shadows stay no-ink; ``global`` uses one detected
+        colour, reproducing the original mask. Defaults to ``local``, so older
+        project files without the key load with the new behaviour.
     saturation : float
         CIE Lab chroma multiplier applied to the working image before palette
         separation. 1.0 (the default) is off; old project files load as 1.0.
@@ -168,6 +173,7 @@ class ImageRef(BaseModel):
     background_threshold: float = Field(
         default=DEFAULT_BACKGROUND_THRESHOLD, ge=0.0, allow_inf_nan=False
     )
+    background_method: Literal["global", "local"] = "local"
     saturation: float = Field(default=1.0, ge=0.0, le=3.0, allow_inf_nan=False)
     palette_adapt: bool = False
 
