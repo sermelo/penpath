@@ -121,7 +121,7 @@ penpath convert photo.jpg --no-auto-equalize
 # Palette mode masks pale paper as no ink by default; tune or override it:
 penpath convert photo.jpg --palette stabilo_88 --background-threshold 6
 penpath convert photo.jpg --palette stabilo_88 --no-background
-penpath convert photo.jpg --pen fineliner_03 --background
+penpath convert photo.jpg --pen fine --background
 
 # Adjust PFM (Sketch Lines) settings
 penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
