@@ -6,7 +6,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast, get_args
+from typing import Any, Literal, cast, get_args
 
 import click
 from click.core import ParameterSource
@@ -389,12 +389,14 @@ def _run_convert_pipeline(
     if use_background:
         reporter.start("Masking paper background")
         masked = mask_background(
-            working_image, threshold=project.image.background_threshold, method="global"
+            working_image,
+            threshold=project.image.background_threshold,
+            method=project.image.background_method,
         )
         working_image = masked.image
         reporter.finish()
         reporter.message(
-            f"Paper colour: {masked.paper_color}; "
+            f"Paper colour: {masked.paper_color} ({project.image.background_method} method); "
             f"masked {masked.masked_percent:.1f}% of pixels as no ink"
         )
 
@@ -547,6 +549,17 @@ def _run_convert_pipeline(
     ),
 )
 @click.option(
+    "--background-method",
+    "background_method",
+    type=click.Choice(["global", "local"]),
+    default="local",
+    show_default=True,
+    help=(
+        "How to find paper: local follows lighting gradients, "
+        "global uses one detected colour; implies --background"
+    ),
+)
+@click.option(
     "--saturation",
     "saturation",
     type=float,
@@ -626,6 +639,7 @@ def convert_cmd(
     auto_equalize_flag: bool | None,
     background_flag: bool | None,
     background_threshold: float | None,
+    background_method: Literal["global", "local"],
     saturation: float,
     palette_adapt: bool,
     pfm_name: str | None,
@@ -659,6 +673,9 @@ def convert_cmd(
             "must be a finite, non-negative Lab distance", param_hint="--background-threshold"
         )
 
+    explicit_background_method = (
+        ctx.get_parameter_source("background_method") is ParameterSource.COMMANDLINE
+    )
     explicit_saturation = ctx.get_parameter_source("saturation") is ParameterSource.COMMANDLINE
     if not math.isfinite(saturation) or not 0.0 <= saturation <= 3.0:
         raise click.BadParameter("must be a finite number in [0, 3]", param_hint="--saturation")
@@ -703,6 +720,10 @@ def convert_cmd(
             project.image.background_threshold = background_threshold
             if background_flag is None:
                 project.image.background = True
+        if explicit_background_method:
+            project.image.background_method = background_method
+            if background_flag is None:
+                project.image.background = True
         if explicit_saturation:
             project.image.saturation = saturation
             project.image.palette_adapt = False
@@ -739,7 +760,7 @@ def convert_cmd(
         elif palette_spec:
             background = True
         else:
-            background = background_threshold is not None
+            background = background_threshold is not None or explicit_background_method
 
         project = Project(
             image=ImageRef(
@@ -753,6 +774,7 @@ def convert_cmd(
                     if background_threshold is None
                     else background_threshold
                 ),
+                background_method=background_method,
                 saturation=saturation,
                 palette_adapt=palette_adapt and not explicit_saturation,
             ),

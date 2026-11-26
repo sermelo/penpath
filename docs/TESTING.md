@@ -628,10 +628,17 @@ uv run pytest tests/integration/test_multi_pen_gate.py -s
 ```
 
 The harness (`tests/integration/multi_pen_gate.py`) runs the real CLI on
-`tests/fixtures/images/reference/photo.jpg` with `--palette stabilo_88` and
-`-s seed=42`, on A4 with a 10 mm margin and vpype 1.15 on the default export
-path; the recorded working image is 742x494 px and the placement is 190.0 x
-126.6172 mm. It splits the photo with `separate_palette` — one full-size `L`
+`tests/fixtures/images/reference/photo.jpg` with `--palette stabilo_88`,
+`--background-method global` and `-s seed=42`, on A4 with a 10 mm margin and
+vpype 1.15 on the default export path; the recorded working image is 742x494 px
+and the placement is 190.0 x 126.6172 mm. The background method is stated
+explicitly because LUC-121 made `local` the CLI default: on this photo the local
+paper field masks a much larger area, erases the forest and water, and drops
+black recall to 0.2817 and union ink per 4x4 cell to 0.0000. The floors below
+were calibrated with the global mask and stay unchanged; pinning the method
+keeps the gate measuring colour separation under those same conditions. The
+gradient/paper-shadow regression itself is covered by
+`tests/integration/test_background_method.py`. It splits the photo with `separate_palette` — one full-size `L`
 channel per pen, holding that pen's luminance on its own pixels and white
 elsewhere. Strokes are selected with `parse_svg_strokes(svg, layer="layerN")`,
 using the `id` of each Inkscape layer, not by stroke colour: a user palette can
