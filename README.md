@@ -143,6 +143,9 @@ penpath gcode plot.svg --profile generic --dry-run > plot.gcode
 # A multi-pen SVG becomes one G-code layer per used pen, in layer order, with
 # one pen-change block before each layer that follows the first
 penpath gcode palette_plot.svg --profile generic -o palette_plot.gcode
+# The built-in aquila profile drives sergio's Voxelab Aquila: it parks the page
+# against the drawable corner, ramps each landing and pauses to set every pen
+penpath gcode card.svg --profile aquila -o card.gcode
 
 # Check the G-code without a machine: the PNG matches the SVG preview
 penpath preview plot.gcode -o gcode_preview.png
@@ -491,9 +494,12 @@ penpath config set default_paper a3
 
 ### Machine profiles
 
-Machine profiles hold bed, feed and pen values for a plotter. List the built-in
-and your own machines with `penpath info profiles`; the file format and an
-example are in [docs/CLI.md](docs/CLI.md#machine-profile-format).
+Machine profiles hold bed, feed and pen values for a plotter. Two built-ins
+ship: `generic` (a plain Z-lifted plotter) and `aquila` (the Voxelab Aquila with
+a pen offset, a ramped landing and a touch-spot pen change; its numbers come
+from sergio's `aquila-gcode-reference` script). List the built-ins and your own
+machines with `penpath info profiles`; the file format and an example are in
+[docs/CLI.md](docs/CLI.md#machine-profile-format).
 
 ---
 

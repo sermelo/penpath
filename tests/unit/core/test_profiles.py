@@ -91,7 +91,7 @@ def test_load_profile_user_file_overrides_builtin(tmp_path: Path) -> None:
     assert profile.bed.size_mm == (300.0, 200.0)
     assert profile.feed.travel_mm_s == 120.0
     assert profile.pen.z_up == 7.0
-    assert list_profiles(path) == ["generic"]
+    assert list_profiles(path) == ["aquila", "generic"]
 
 
 def test_load_profile_user_file_can_hold_several_machines(tmp_path: Path) -> None:
@@ -102,7 +102,7 @@ def test_load_profile_user_file_can_hold_several_machines(tmp_path: Path) -> Non
     )
 
     assert load_profile("shop_plotter", profiles_path=path).name == "shop_plotter"
-    assert list_profiles(path) == ["generic", "shop_plotter"]
+    assert list_profiles(path) == ["aquila", "generic", "shop_plotter"]
 
 
 def test_load_profile_unknown_name_lists_available(tmp_path: Path) -> None:
@@ -117,7 +117,7 @@ def test_load_profile_unknown_name_lists_available(tmp_path: Path) -> None:
 
     message = str(info.value)
     assert "Unknown profile 'aqula'" in message
-    assert "Available: generic, shop_plotter" in message
+    assert "Available: aquila, generic, shop_plotter" in message
 
 
 def test_load_profile_broken_yaml_names_file_line_and_reason(tmp_path: Path) -> None:
@@ -208,7 +208,7 @@ def test_list_profiles_defaults_to_user_file(
     profiles_file = get_user_profiles_path()
     _write_profiles(profiles_file, "shop_plotter:\n" + _MINIMAL_PROFILE)
 
-    assert list_profiles() == ["generic", "shop_plotter"]
+    assert list_profiles() == ["aquila", "generic", "shop_plotter"]
 
 
 def test_load_profile_defaults_to_user_file_and_overrides_builtin(
@@ -235,6 +235,7 @@ def test_list_profile_sources_marks_builtin_and_user_names(tmp_path: Path) -> No
     )
 
     assert list_profile_sources(path) == {
+        "aquila": "built-in",
         "generic": "user",
         "shop_plotter": "user",
     }
@@ -242,4 +243,7 @@ def test_list_profile_sources_marks_builtin_and_user_names(tmp_path: Path) -> No
 
 def test_list_profile_sources_without_user_file_marks_builtin(tmp_path: Path) -> None:
     """A missing user file still lists built-ins as built-in."""
-    assert list_profile_sources(tmp_path / "no-profiles.yaml") == {"generic": "built-in"}
+    assert list_profile_sources(tmp_path / "no-profiles.yaml") == {
+        "aquila": "built-in",
+        "generic": "built-in",
+    }

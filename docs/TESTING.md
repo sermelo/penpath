@@ -113,6 +113,15 @@ exact file per built-in profile.
   lead-in and lead-out are not inked, and
   `test_gcode_rejects_point_outside_derived_drawable_area` checks that the
   shifted nozzle range rejects a point with its coordinates.
+- **Part 8 (LUC-65)**: `tests/fixtures/golden/gcode/aquila.gcode` pins the built-in
+  `aquila` profile byte for byte from `tests/fixtures/svg/gcode/aquila_card.svg`,
+  a 190x190 mm page that fits the machine's 197.3 x 191.4 mm drawable area. A
+  change to any reference number or verbatim block in `aquila.yaml` must be made
+  in the profile and then regenerate the golden with `--update-golden`; unit
+  tests in `tests/unit/core/test_aquila_profile.py` name each reference value,
+  and the CLI test in `tests/integration/test_gcode_cli.py` checks the file a
+  user gets from `penpath gcard.svg --profile aquila`. Plotting on the machine
+  is the operator's evidence and is not a CI check.
 
 ### Measured suite speed (2026-11-25)
 

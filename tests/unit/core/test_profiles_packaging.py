@@ -23,5 +23,6 @@ def test_builtin_profile_yaml_is_packaged_in_wheel(tmp_path: Path) -> None:
     with zipfile.ZipFile(wheels[0]) as wheel:
         names = set(wheel.namelist())
         assert "penpath/presets/profiles/generic.yaml" in names
+        assert "penpath/presets/profiles/aquila.yaml" in names
         assert "penpath/presets/profiles/__init__.py" in names
         assert "penpath/core/profiles.py" in names

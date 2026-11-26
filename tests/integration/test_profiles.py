@@ -60,7 +60,7 @@ generic:
         encoding="utf-8",
     )
 
-    assert list_profiles() == ["generic", "shop_plotter"]
+    assert list_profiles() == ["aquila", "generic", "shop_plotter"]
 
     shop = load_profile("shop_plotter")
     assert shop.bed.size_mm == (300.0, 210.0)
@@ -73,7 +73,7 @@ generic:
     assert overridden.description == "My own generic machine"
     assert overridden.bed.size_mm == (400.0, 300.0)
 
-    with pytest.raises(UnknownProfileError, match="Available: generic, shop_plotter"):
+    with pytest.raises(UnknownProfileError, match="Available: aquila, generic, shop_plotter"):
         load_profile("missing_machine")
 
 

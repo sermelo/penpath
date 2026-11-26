@@ -1,7 +1,8 @@
 """Golden G-code tests: the exact text a user gets from each fixture SVG.
 
 The generic goldens pin the plain stroke shape; ``ramped.gcode`` pins the pen
-offset and the D7 landing ramp from a user profile fixture.
+offset and the D7 landing ramp from a user profile fixture; ``aquila.gcode``
+pins the built-in machine profile against a page that fits its drawable area.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from penpath.core import (
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 SIMPLE_SVG = FIXTURES / "svg" / "gcode" / "simple.svg"
 MULTI_PEN_SVG = FIXTURES / "svg" / "gcode" / "multi_pen.svg"
+AQUILA_SVG = FIXTURES / "svg" / "gcode" / "aquila_card.svg"
 GOLDEN_DIR = FIXTURES / "golden" / "gcode"
 RAMPED_PROFILES = FIXTURES / "profiles" / "ramped.yaml"
 
@@ -42,6 +44,7 @@ def _build_fixture_gcode(svg_path: Path, profiles_path: Path, profile_name: str 
         (SIMPLE_SVG, "generic.gcode", "generic"),
         (MULTI_PEN_SVG, "multi_pen.gcode", "generic"),
         (SIMPLE_SVG, "ramped.gcode", "ramped"),
+        (AQUILA_SVG, "aquila.gcode", "aquila"),
     ],
 )
 def test_gcode_matches_golden_byte_for_byte(

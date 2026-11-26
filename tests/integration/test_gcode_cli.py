@@ -13,11 +13,13 @@ from penpath.cli.main import main
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 SIMPLE_SVG = FIXTURES / "svg" / "gcode" / "simple.svg"
 MULTI_PEN_SVG = FIXTURES / "svg" / "gcode" / "multi_pen.svg"
+AQUILA_SVG = FIXTURES / "svg" / "gcode" / "aquila_card.svg"
 GENERIC_PROFILE = FIXTURES.parent.parent / "src/penpath/presets/profiles/generic.yaml"
 RAMPED_PROFILE = FIXTURES / "profiles" / "ramped.yaml"
 GOLDEN = (FIXTURES / "golden" / "gcode" / "generic.gcode").read_text(encoding="utf-8")
 GOLDEN_MULTI = (FIXTURES / "golden" / "gcode" / "multi_pen.gcode").read_text(encoding="utf-8")
 GOLDEN_RAMPED = (FIXTURES / "golden" / "gcode" / "ramped.gcode").read_text(encoding="utf-8")
+GOLDEN_AQUILA = (FIXTURES / "golden" / "gcode" / "aquila.gcode").read_text(encoding="utf-8")
 SUMMARY_LINES = (
     "G-code summary",
     "Profile: generic",
@@ -257,6 +259,59 @@ def test_gcode_with_offset_and_ramp_matches_golden(runner: CliRunner, card: Path
     assert result.stdout == GOLDEN_RAMPED
     assert "Profile: ramped" in result.stderr
     assert "G1 X12.000 Y290.000 Z2.000 F1800" in result.stdout
+
+
+def test_gcode_aquila_writes_golden_file(runner: CliRunner, tmp_path: Path) -> None:
+    """A user runs `penpath gcard.svg --profile aquila` on a card that fits the bed."""
+    card = tmp_path / "card.svg"
+    shutil.copyfile(AQUILA_SVG, card)
+
+    result = runner.invoke(main, ["gcode", str(card), "--profile", "aquila"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == ""
+    assert card.with_suffix(".gcode").read_text(encoding="utf-8") == GOLDEN_AQUILA
+    assert "Profile: aquila" in result.stderr
+
+
+def test_gcode_aquila_dry_run_keeps_the_reference_blocks(runner: CliRunner) -> None:
+    """The built-in profile emits the proven start, pen-change and end sequences."""
+    result = runner.invoke(main, ["gcode", str(AQUILA_SVG), "--profile", "aquila", "--dry-run"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == GOLDEN_AQUILA
+    for line in (
+        "M84 S0 ; no stepper timeout during the pauses",
+        "G1 X212.700 Y40.600 F6000",
+        "M0 Pen 1: stabilo_88_black. Touch paper, tighten, press knob",
+        "G1 X0.000 Y220.000 F6000 ; head left, bed forward: paper free to take out",
+        "M117 Plot done",
+    ):
+        assert line in result.stdout
+
+
+def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """The built-in Aquila refuses a pen point past its reference reach."""
+    drawing = tmp_path / "outside.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg"
+ xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+ width="190mm" height="190mm" viewBox="0 0 190 190">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 199,10"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert "outside the drawable area" in result.stderr
+    assert "X 0.000..197.300, Y 0.000..191.400" in result.stderr
+    assert not drawing.with_suffix(".gcode").exists()
 
 
 def test_gcode_rejects_point_outside_derived_drawable_area(
