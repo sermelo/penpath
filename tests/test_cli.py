@@ -562,6 +562,121 @@ class TestInfoCommand:
         assert "RGB" in result.output or "L" in result.output
 
 
+class TestInfoPaletteMatch:
+    """End-to-end tests for `penpath info palette-match`."""
+
+    PALETTE = "red=0.4,#FF0000;blue=0.4,#0000FF;green=0.4,#00FF00"
+
+    @pytest.fixture
+    def red_blue_image(self, tmp_path: Path) -> Path:
+        image = Image.new("RGB", (40, 20), "red")
+        image.paste("blue", (20, 0, 40, 20))
+        path = tmp_path / "red_blue.png"
+        image.save(path)
+        return path
+
+    def test_info_palette_match_table_shows_every_pen_and_unassigned(
+        self, runner: CliRunner, red_blue_image: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            ["info", "palette-match", str(red_blue_image), "--palette", self.PALETTE],
+        )
+
+        assert result.exit_code == 0, result.output
+        for header in ("Order", "Pen name", "Colour", "Pixels", "Percent"):
+            assert header in result.output
+        for name in ("red", "blue", "green", "(unassigned)"):
+            assert name in result.output
+        assert "50.0%" in result.output
+        assert "0.0%" in result.output  # unused green and no paper pixels
+
+    def test_info_palette_match_formats_agree(
+        self, runner: CliRunner, red_blue_image: Path
+    ) -> None:
+        import json
+
+        import yaml
+
+        json_result = runner.invoke(
+            main,
+            [
+                "info",
+                "palette-match",
+                str(red_blue_image),
+                "--palette",
+                self.PALETTE,
+                "--format",
+                "json",
+            ],
+        )
+        assert json_result.exit_code == 0, json_result.output
+        data = json.loads(json_result.output)
+
+        assert data["path"] == str(red_blue_image)
+        assert data["palette"] == "inline"
+        assert (data["width"], data["height"]) == (40, 20)
+        assert [row["name"] for row in data["rows"]] == ["red", "blue", "green"]
+        assert [row["pixels"] for row in data["rows"]] == [400, 400, 0]
+        assert [row["percent"] for row in data["rows"]] == [50.0, 50.0, 0.0]
+        assert data["unassigned_pixels"] == 0
+        assert data["unassigned_percent"] == 0.0
+        assert sum([row["percent"] for row in data["rows"]] + [data["unassigned_percent"]]) == 100
+
+        table_result = runner.invoke(
+            main, ["info", "palette-match", str(red_blue_image), "--palette", self.PALETTE]
+        )
+        assert table_result.exit_code == 0, table_result.output
+        for row in data["rows"]:
+            assert str(row["pixels"]) in table_result.output
+            assert f"{row['percent']:.1f}%" in table_result.output
+
+        yaml_result = runner.invoke(
+            main,
+            [
+                "info",
+                "palette-match",
+                str(red_blue_image),
+                "--palette",
+                self.PALETTE,
+                "--format",
+                "yaml",
+            ],
+        )
+        assert yaml_result.exit_code == 0, yaml_result.output
+        yaml_data = yaml.safe_load(yaml_result.output)
+        assert yaml_data == data
+
+    def test_info_palette_match_default_palette_reports_twelve_rows(
+        self, runner: CliRunner, red_blue_image: Path
+    ) -> None:
+        result = runner.invoke(main, ["info", "palette-match", str(red_blue_image)])
+        assert result.exit_code == 0, result.output
+        assert result.output.count("stabilo_88_") >= 12
+
+    def test_info_palette_match_unknown_palette_is_usage_error(
+        self, runner: CliRunner, red_blue_image: Path
+    ) -> None:
+        result = runner.invoke(
+            main, ["info", "palette-match", str(red_blue_image), "--palette", "nonsense"]
+        )
+        assert result.exit_code == 2
+        assert "Invalid palette pen 1" in result.output
+        assert "NAME=WIDTH,#HEX" in result.output
+
+    def test_info_palette_match_unreadable_image_is_clean_error(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        broken = tmp_path / "broken.png"
+        broken.write_bytes(b"not an image")
+
+        result = runner.invoke(main, ["info", "palette-match", str(broken)])
+
+        assert result.exit_code == 1
+        assert "Failed to load image" in result.output
+        assert "Traceback" not in result.output
+
+
 class TestMainModule:
     CWD = (
         "/home/paperclip/.paperclip/instances/default/projects/"

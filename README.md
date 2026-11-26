@@ -423,10 +423,21 @@ penpath convert photo.jpg -o card.svg --palette stabilo_88 -s seed=42
 penpath info palettes
 penpath info palettes --format json
 
+# See which pens the colour separation picks and each pen's pixel share
+penpath info palette-match photo.jpg
+penpath info palette-match photo.jpg --palette stabilo_88 --format json
+penpath info palette-match photo.jpg --palette "red=0.4,#FF0000;blue=0.4,#0000FF"
+
 # Check the result before plotting
 penpath preview card.svg -o card.png --dpi 10
 penpath evaluate photo.jpg card.svg
 ```
+
+`penpath info palette-match` reports one row per palette pen (including unused
+pens) and an unassigned share. It measures the raw separation on the loaded
+image: no filters, background masking or saturation boost, and pixels in regions
+smaller than 8 px count as unassigned. Percentages are of all image pixels, not
+of the finished drawing.
 
 A project file can use `palette: stabilo_88` or an explicit ordered `pens:` list
 instead of `pen:`. Palette order is drawing order and the layer order. An
