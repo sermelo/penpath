@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -393,31 +394,44 @@ def _apply_erase(
                 working[y, x] = min(_WHITE, working[y, x] + amount)
 
 
-def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[LineString]:
-    """Generate sketch lines from an image using the Sketch Lines PFM algorithm.
+class _SketchEngineSettings(Protocol):
+    """Settings fields shared by every PFM that uses the sketch engine."""
 
-    Strokes are returned in image pixel coordinates (origin top-left) and are
-    always inside the image. Drawing lightens the working image, so the run
-    stops when its average luminance reaches the target given by
-    ``line_density``. On a nearly blank canvas (mean from 252.5 to below 254),
-    that average is taken over the ink-bearing pixels only: a sparse palette
-    channel is mostly white, so a whole-canvas average collapses the stop
-    target and ends the run after a handful of strokes. Canvases below 252.5
-    and near-blank canvases at 254 or above keep the whole-canvas rule. With
-    ``erase_enabled=False`` the image never lightens; only the stroke cap stops
-    the run and the result is dense and dark.
+    line_density: float
+    max_fill: float
+    min_length: float
+    max_length: float
+    erase_enabled: bool
+    seed: int | None
+    search_angle_step: float
+    sample_step: float
+    erase_min: float
+    erase_max: float
+    tone: float
+    erase_radius_min: float
+    erase_radius_max: float
+    squiggle_max_deviation: float
+    squiggle_min_length: int
+    squiggle_max_length: int
+    max_strokes: int | None
 
-    Parameters
-    ----------
-    image : PIL.Image.Image
-        Input image (any mode, converted to grayscale).
-    settings : SketchLinesSettings
-        Algorithm configuration.
 
-    Returns
-    -------
-    list[LineString]
-        Strokes in image pixel coordinates.
+_AngleProvider = Callable[[random.Random, int, int, int], float]
+
+
+def _run_sketch_engine(
+    image: Image.Image,
+    settings: _SketchEngineSettings,
+    angle_provider: _AngleProvider,
+    shading_enabled: bool,
+    squiggle_enabled: bool,
+    shading_threshold: float,
+) -> list[LineString]:
+    """Run the shared sketch engine, asking ``angle_provider`` for each ray angle.
+
+    The provider is called after the segment length is drawn, with the RNG, the
+    current pixel and the segment index, so Sketch Lines keeps its exact random
+    draw order while other PFMs can supply a deterministic angle field.
     """
     rng = random.Random(settings.seed)
     gray = image.convert("L") if image.mode != "L" else image
@@ -432,7 +446,6 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     min_len = int(max(1, settings.min_length))
     max_len = int(max(min_len, settings.max_length))
     line_density = max(0.01, settings.line_density)
-    angle_min, angle_max = settings.angle_range
     sample_step = int(settings.sample_step)
     num_tests = max(1, round(360.0 / settings.search_angle_step))
 
@@ -479,11 +492,11 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
 
         current_x, current_y = start_x, start_y
         points: list[tuple[float, float]] = [(float(start_x), float(start_y))]
-        shading = bool(settings.shading_enabled and lum_progress > settings.shading_threshold)
+        shading = bool(shading_enabled and lum_progress > shading_threshold)
 
         for s in range(settings.squiggle_max_length):
             line_len = rng.randint(min_len, max_len)
-            start_angle = rng.uniform(angle_min, angle_max)
+            start_angle = angle_provider(rng, current_x, current_y, s)
             avg_lum, next_x, next_y = _find_darkest_line(
                 working,
                 current_x,
@@ -507,7 +520,7 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
             elif avg_lum > allowable:
                 break
 
-            if settings.squiggle_enabled and s > 0:
+            if squiggle_enabled and s > 0:
                 segment = _add_squiggle(
                     current_x,
                     current_y,
@@ -547,6 +560,47 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
         fails += 1
 
     return lines
+
+
+def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[LineString]:
+    """Generate sketch lines from an image using the Sketch Lines PFM algorithm.
+
+    Strokes are returned in image pixel coordinates (origin top-left) and are
+    always inside the image. Drawing lightens the working image, so the run
+    stops when its average luminance reaches the target given by
+    ``line_density``. On a nearly blank canvas (mean from 252.5 to below 254),
+    that average is taken over the ink-bearing pixels only: a sparse palette
+    channel is mostly white, so a whole-canvas average collapses the stop
+    target and ends the run after a handful of strokes. Canvases below 252.5
+    and near-blank canvases at 254 or above keep the whole-canvas rule. With
+    ``erase_enabled=False`` the image never lightens; only the stroke cap stops
+    the run and the result is dense and dark.
+
+    Parameters
+    ----------
+    image : PIL.Image.Image
+        Input image (any mode, converted to grayscale).
+    settings : SketchLinesSettings
+        Algorithm configuration.
+
+    Returns
+    -------
+    list[LineString]
+        Strokes in image pixel coordinates.
+    """
+
+    def angle_provider(rng: random.Random, _x: int, _y: int, _step: int) -> float:
+        angle_min, angle_max = settings.angle_range
+        return rng.uniform(angle_min, angle_max)
+
+    return _run_sketch_engine(
+        image,
+        settings,
+        angle_provider,
+        shading_enabled=settings.shading_enabled,
+        squiggle_enabled=settings.squiggle_enabled,
+        shading_threshold=settings.shading_threshold,
+    )
 
 
 __all__ = ["SketchLinesSettings", "sketch_lines"]
