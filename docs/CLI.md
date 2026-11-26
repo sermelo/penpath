@@ -435,6 +435,23 @@ a final lift). A point outside the drawable area (minus `bed.margin_mm`) fails
 the run with its coordinates instead of writing G-code the machine cannot
 follow.
 
+#### Ramped landing
+
+When a profile sets `pen.ramp_mm` together with `z_touch` and `z_hover`, each
+stroke gains a lead-in of
+`lead_in_mm = ramp_mm * (z_hover - z_touch) / (z_touch - z_down)` before its
+first point and an equal lead-out after its last. Z falls linearly from
+`z_hover` to `z_down` over `lead_in_mm + ramp_mm` and rises the same way at the
+end, so the pen lands and lifts **while moving** and no ink dot is left at a
+stroke start. The lead-in and lead-out are above the paper and are not previewed
+as ink: `penpath preview` clips Z-interpolated moves at `z_touch`, so the G-code
+PNG still matches the reviewed SVG. The G-code is written in nozzle coordinates
+(`nozzle = pen - bed.pen_offset_mm`) and every emitted point, including the
+lead-in and lead-out, is checked against the drawable area. A profile without
+`ramp_mm` keeps the plain travel → pen-down → draw → pen-up stroke and produces
+exactly the same G-code as before. `pen.z_touch` must be above `pen.z_down` and
+`pen.z_hover` must not be below `pen.z_touch` when ramping.
+
 Exit codes: **2** for a missing or unknown `--profile` (the message lists the
 available profiles), **3** for an unreadable or invalid profile file or a point
 outside the drawable area, and 1 for other file errors.

@@ -158,3 +158,51 @@ def test_gcode_to_strokes_round_trips_reachable_corner() -> None:
 
     assert len(strokes) == 1
     assert strokes[0].polyline == points
+
+
+def _ramped_profile() -> MachineProfile:
+    return MachineProfile(
+        name="ramped",
+        bed=BedProfile(
+            size_mm=(100.0, 100.0),
+            pen_offset_mm=(-2.0, -3.0),
+            nozzle_range_mm=((0.0, 100.0), (0.0, 100.0)),
+        ),
+        feed=FeedProfile(travel_mm_s=60.0, draw_mm_s=30.0, z_mm_s=10.0),
+        pen=PenProfile(z_up=5.0, z_down=1.0, z_touch=2.0, z_hover=3.0, ramp_mm=2.0),
+    )
+
+
+def test_gcode_to_strokes_ignores_the_ramp_lead_in_and_lead_out() -> None:
+    profile = _ramped_profile()
+    points = [(10.0, 10.0), (20.0, 10.0), (20.0, 20.0)]
+    text = build_gcode([GcodeLayer("black", [points])], profile, (100.0, 100.0))
+
+    strokes = gcode_to_strokes(text, (100.0, 100.0), profile)
+
+    assert len(strokes) == 1
+    assert strokes[0].polyline == [
+        (10.0, 10.0),
+        (12.0, 10.0),
+        (20.0, 10.0),
+        (20.0, 18.0),
+        (20.0, 20.0),
+    ]
+    assert strokes[0].polyline[0] == points[0]
+    assert strokes[0].polyline[-1] == points[-1]
+
+
+def test_gcode_to_strokes_clips_z_interpolated_moves_at_touch_height() -> None:
+    text = (
+        HEADER
+        + "G0 Z12.500\nG0 X10.000 Y90.000\n"
+        + "G1 X20.000 Y90.000 Z9.000\nG1 X30.000 Y90.000 Z9.000\n"
+        + "G1 X40.000 Y90.000 Z12.500\nG0 Z12.500\n"
+    )
+
+    strokes = gcode_to_strokes(text, (100.0, 100.0))
+
+    assert len(strokes) == 1
+    assert strokes[0].polyline[0] == pytest.approx((17.1428571429, 10.0))
+    assert strokes[0].polyline[1:3] == [(20.0, 10.0), (30.0, 10.0)]
+    assert strokes[0].polyline[-1] == pytest.approx((32.8571428571, 10.0))

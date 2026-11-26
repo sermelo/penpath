@@ -8,8 +8,10 @@ the caller because paper size stays in the reviewed SVG, not in the profile.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Final
 
 from penpath.core.profiles import MachineProfile
@@ -49,6 +51,20 @@ class GcodeLayer:
 def _format_mm(value: float) -> str:
     """Format a millimetre value at the emitter's fixed precision."""
     return f"{value:.{COORDINATE_DECIMALS}f}"
+
+
+def lead_in_mm(profile: MachineProfile) -> float | None:
+    """Return the ramp lead-in distance, or ``None`` when the profile has no ramp.
+
+    The lead-in is the distance before a stroke's first point over which the pen
+    descends from ``z_hover`` to ``z_touch`` at the same rate as the ramp from
+    ``z_touch`` to ``z_down`` (D7). The profile validator guarantees touch is
+    above down and hover is at or above touch whenever a ramp is declared.
+    """
+    pen = profile.pen
+    if not pen.ramp_mm or pen.z_touch is None or pen.z_hover is None:
+        return None
+    return pen.ramp_mm * (pen.z_hover - pen.z_touch) / (pen.z_touch - pen.z_down)
 
 
 def _drawable_area(profile: MachineProfile) -> Bounds:
@@ -95,9 +111,8 @@ def _profile_values(profile: MachineProfile) -> dict[str, str]:
     ramp = pen.ramp_mm
     z_touch = pen.z_touch
     z_hover = pen.z_hover
-    lead_in = ""
-    if ramp is not None and z_touch is not None and z_hover is not None:
-        lead_in = _format_mm(ramp * (z_hover - z_touch) / (z_touch - pen.z_down))
+    lead = lead_in_mm(profile)
+    lead_in = _format_mm(lead) if lead is not None else ""
     return {
         "z_up": _format_mm(pen.z_up),
         "z_down": _format_mm(pen.z_down),
@@ -207,31 +222,105 @@ def _pen_change_lines(profile: MachineProfile, values: dict[str, str]) -> list[s
     return lines
 
 
-def _nozzle_points(
+def _check_pen_point(point: Coordinate, profile: MachineProfile, drawable: Bounds) -> None:
+    """Reject a pen-space point outside the drawable area minus the bed margin."""
+    margin = profile.bed.margin_mm
+    (xmin, ymin), (xmax, ymax) = drawable
+    x_pen, y_pen = point
+    if not (
+        xmin + margin - 1e-9 <= x_pen <= xmax - margin + 1e-9
+        and ymin + margin - 1e-9 <= y_pen <= ymax - margin + 1e-9
+    ):
+        raise PointOutsideBedError(
+            f"point (x={_format_mm(x_pen)}, y={_format_mm(y_pen)}) mm is outside "
+            f"the drawable area X {_format_mm(xmin + margin)}..{_format_mm(xmax - margin)}, "
+            f"Y {_format_mm(ymin + margin)}..{_format_mm(ymax - margin)} mm"
+        )
+
+
+def _pen_points(
     polyline: Polyline,
     profile: MachineProfile,
     page_height_mm: float,
     origin: Coordinate,
     drawable: Bounds,
 ) -> list[Coordinate]:
-    """Map a page polyline to nozzle coordinates, rejecting unreachable points."""
-    offset_x, offset_y = profile.bed.pen_offset_mm
-    margin = profile.bed.margin_mm
-    (xmin, ymin), (xmax, ymax) = drawable
+    """Map a page polyline to checked pen-space points."""
     result: list[Coordinate] = []
     for x_svg, y_svg in polyline:
         x_pen = origin[0] + x_svg
         y_pen = origin[1] + (page_height_mm - y_svg if profile.bed.invert_y else y_svg)
-        if not (
-            xmin + margin - 1e-9 <= x_pen <= xmax - margin + 1e-9
-            and ymin + margin - 1e-9 <= y_pen <= ymax - margin + 1e-9
-        ):
-            raise PointOutsideBedError(
-                f"point (x={_format_mm(x_pen)}, y={_format_mm(y_pen)}) mm is outside "
-                f"the drawable area X {_format_mm(xmin + margin)}..{_format_mm(xmax - margin)}, "
-                f"Y {_format_mm(ymin + margin)}..{_format_mm(ymax - margin)} mm"
-            )
-        result.append((x_pen - offset_x, y_pen - offset_y))
+        _check_pen_point((x_pen, y_pen), profile, drawable)
+        result.append((x_pen, y_pen))
+    return result
+
+
+def _nozzle(point: Coordinate, profile: MachineProfile) -> Coordinate:
+    """Convert one checked pen-space point to nozzle/machine space."""
+    offset_x, offset_y = profile.bed.pen_offset_mm
+    return (point[0] - offset_x, point[1] - offset_y)
+
+
+def _ramped_path(
+    points: list[Coordinate],
+    profile: MachineProfile,
+) -> list[tuple[Coordinate, float]]:
+    """Return ``(pen point, Z)`` triples of one stroke's ramped landing and lift.
+
+    Ported from the Aquila reference's ``ramped`` helper: a lead-in before the
+    first point and a lead-out after the last, with Z falling linearly from
+    ``z_hover`` to ``z_down`` over ``lead_in + ramp_mm`` and rising the same way
+    at the end. Marks where Z reaches ``z_down`` are inserted so every emitted
+    G1 interpolates a straight, correctly timed descent.
+    """
+    lead = lead_in_mm(profile)
+    ramp = profile.pen.ramp_mm
+    hover = profile.pen.z_hover
+    if lead is None or ramp is None or hover is None:
+        raise GcodeError("ramped landing needs pen.ramp_mm, pen.z_touch and pen.z_hover")
+    down = profile.pen.z_down
+    clean = [
+        point
+        for index, point in enumerate(points)
+        if index == 0 or math.dist(point, points[index - 1]) > 1e-6
+    ]
+    if len(clean) < 2:
+        return []
+
+    def unit(a: Coordinate, b: Coordinate) -> Coordinate:
+        distance = math.dist(a, b)
+        return ((b[0] - a[0]) / distance, (b[1] - a[1]) / distance)
+
+    u0 = unit(clean[0], clean[1])
+    u1 = unit(clean[-2], clean[-1])
+    path: list[Coordinate] = [
+        (clean[0][0] - u0[0] * lead, clean[0][1] - u0[1] * lead),
+        *clean,
+        (clean[-1][0] + u1[0] * lead, clean[-1][1] + u1[1] * lead),
+    ]
+    cumulative = [0.0]
+    for a, b in pairwise(path):
+        cumulative.append(cumulative[-1] + math.dist(a, b))
+    total = cumulative[-1]
+    ramp_distance = min(lead + ramp, total / 2)
+
+    def z_at(distance: float) -> float:
+        fall = min(1.0, distance / ramp_distance, (total - distance) / ramp_distance)
+        return hover - (hover - down) * fall
+
+    result: list[tuple[Coordinate, float]] = []
+    for index, (a, b) in enumerate(pairwise(path)):
+        result.append((a, z_at(cumulative[index])))
+        for mark in sorted({ramp_distance, total - ramp_distance}):
+            if cumulative[index] < mark < cumulative[index + 1]:
+                ratio = (mark - cumulative[index]) / (cumulative[index + 1] - cumulative[index])
+                result.append(
+                    (
+                        (a[0] + (b[0] - a[0]) * ratio, a[1] + (b[1] - a[1]) * ratio),
+                        z_at(mark),
+                    )
+                )
+    result.append((path[-1], z_at(total)))
     return result
 
 
@@ -255,6 +344,12 @@ def build_gcode(
         SVG page width and height in millimetres, used for the Y flip and for
         ``reachable_corner`` placement. Paper size comes from the reviewed SVG.
 
+    A profile with ``ramp_mm`` uses the ramped landing of D7: each stroke gains
+    a lead-in before its first point and a lead-out after its last, and Z falls
+    linearly from ``z_hover`` to ``z_down`` over ``lead_in_mm + ramp_mm`` and
+    rises the same way, so the pen lands and lifts while moving. Profiles
+    without a ramp keep the plain travel/down/draw/up stroke.
+
     Returns
     -------
     str
@@ -268,6 +363,7 @@ def build_gcode(
     used_layers = [layer for layer in layers if any(len(line) >= 2 for line in layer.polylines)]
     layer_count = len(used_layers)
     drawable = _drawable_area(profile)
+    lead = lead_in_mm(profile)
     origin = page_origin_mm(profile, page_size_mm)
     line_values = _profile_values(profile)
     common_values = line_values | {
@@ -295,18 +391,35 @@ def build_gcode(
         for polyline in layer.polylines:
             if len(polyline) < 2:
                 continue
-            points = _nozzle_points(polyline, profile, page_size_mm[1], origin, drawable)
+            pen_points = _pen_points(polyline, profile, page_size_mm[1], origin, drawable)
             if pen_is_down:
                 lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}")
                 pen_is_down = False
-            first_x, first_y = points[0]
-            lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}")
-            lines.append(f"G0 Z{_format_mm(profile.pen.z_down)}")
-            pen_is_down = True
             feed = f" F{line_values['feed_draw']}"
-            for point_index, point in enumerate(points[1:]):
-                suffix = feed if point_index == 0 else ""
-                lines.append(f"G1 X{_format_mm(point[0])} Y{_format_mm(point[1])}{suffix}")
+            if lead is not None:
+                ramp_path = _ramped_path(pen_points, profile)
+                if not ramp_path:
+                    continue
+                for point, _ in ramp_path:
+                    _check_pen_point(point, profile, drawable)
+                first, first_z = ramp_path[0]
+                first_x, first_y = _nozzle(first, profile)
+                lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}")
+                lines.append(f"G0 Z{_format_mm(first_z)}")
+                for point_index, (point, z) in enumerate(ramp_path[1:]):
+                    x, y = _nozzle(point, profile)
+                    suffix = feed if point_index == 0 else ""
+                    lines.append(f"G1 X{_format_mm(x)} Y{_format_mm(y)} Z{_format_mm(z)}{suffix}")
+                lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}")
+            else:
+                points = [_nozzle(point, profile) for point in pen_points]
+                first_x, first_y = points[0]
+                lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}")
+                lines.append(f"G0 Z{_format_mm(profile.pen.z_down)}")
+                pen_is_down = True
+                for point_index, point in enumerate(points[1:]):
+                    suffix = feed if point_index == 0 else ""
+                    lines.append(f"G1 X{_format_mm(point[0])} Y{_format_mm(point[1])}{suffix}")
         if pen_is_down:
             lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}")
             pen_is_down = False
@@ -320,5 +433,6 @@ __all__ = [
     "GcodeLayer",
     "PointOutsideBedError",
     "build_gcode",
+    "lead_in_mm",
     "page_origin_mm",
 ]

@@ -102,6 +102,17 @@ exact file per built-in profile.
   up/down state machine and the draw feed in one byte-for-byte check. Unit
   tests in `tests/unit/core/output/test_gcode.py` cover the same rules with
   synthetic profiles, including the out-of-bed error.
+- **Part 7 (LUC-64)**: `tests/fixtures/profiles/ramped.yaml` is a user-profile
+  fixture with `bed.pen_offset_mm` and a D7 ramp. The same
+  `tests/integration/test_gcode_golden.py` run pins
+  `tests/fixtures/golden/gcode/ramped.gcode` for `simple.svg`, so a change to
+  the lead-in formula, the Z interpolation or the nozzle transform fails it.
+  The generic and multi-pen goldens stay unchanged: a profile without those
+  fields must still produce exactly the same text. The end-to-end
+  `test_ramped_gcode_png_equals_svg_png` checks that the ramp's above-paper
+  lead-in and lead-out are not inked, and
+  `test_gcode_rejects_point_outside_derived_drawable_area` checks that the
+  shifted nozzle range rejects a point with its coordinates.
 
 ### Measured suite speed (2026-11-25)
 

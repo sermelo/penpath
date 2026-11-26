@@ -1,4 +1,4 @@
-"""Unit tests for the pure G-code emitter (LUC-51 part 3)."""
+"""Unit tests for the pure G-code emitter (LUC-51 parts 3 and 7)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from penpath.core import (
     MachineProfile,
     PointOutsideBedError,
     build_gcode,
+    lead_in_mm,
     load_profile,
 )
 
@@ -392,3 +393,86 @@ def test_pen_change_names_missing_profile_value(
 
     with pytest.raises(GcodeError, match=expected):
         build_gcode(_one_layer(((1.0, 1.0), (2.0, 1.0))), profile, (10.0, 10.0))
+
+
+def _ramped_profile() -> MachineProfile:
+    return _profile(
+        bed={
+            "size_mm": [100.0, 100.0],
+            "pen_offset_mm": [-2.0, -3.0],
+            "nozzle_range_mm": [[0.0, 100.0], [0.0, 100.0]],
+        },
+        feed={"travel_mm_s": 60.0, "draw_mm_s": 30.0, "z_mm_s": 10.0},
+        pen={"z_up": 5.0, "z_down": 1.0, "z_touch": 2.0, "z_hover": 3.0, "ramp_mm": 2.0},
+    )
+
+
+def test_lead_in_mm_uses_the_d7_formula() -> None:
+    profile = _profile(
+        pen={"z_up": 12.5, "z_down": 9.0, "z_touch": 10.0, "z_hover": 10.5, "ramp_mm": 1.5}
+    )
+
+    assert lead_in_mm(profile) == pytest.approx(0.75)
+    assert lead_in_mm(_profile()) is None
+    assert lead_in_mm(_profile(pen={"z_up": 5.0, "z_down": 0.0, "ramp_mm": 0.0})) is None
+    assert lead_in_mm(_profile(pen={"z_up": 5.0, "z_down": 0.0, "z_touch": 2.0})) is None
+
+
+def test_build_gcode_ramped_stroke_lands_and_lifts_while_moving() -> None:
+    produced = build_gcode(
+        _one_layer(((10.0, 10.0), (20.0, 10.0))), _ramped_profile(), (100.0, 100.0)
+    )
+
+    assert produced == (
+        "; penpath gcode profile=test_machine page=100.000x100.000 "
+        "z_up=5.000 z_touch=2.000 z_down=1.000\n"
+        "G21\nG90\n"
+        "; layer 1/1 pen=ink\n"
+        "G0 Z5.000\n"
+        "G0 X10.000 Y93.000\n"
+        "G0 Z3.000\n"
+        "G1 X12.000 Y93.000 Z2.000 F1800\n"
+        "G1 X14.000 Y93.000 Z1.000\n"
+        "G1 X20.000 Y93.000 Z1.000\n"
+        "G1 X22.000 Y93.000 Z2.000\n"
+        "G1 X24.000 Y93.000 Z3.000\n"
+        "G0 Z5.000\n"
+        "M2\n"
+    )
+
+
+def test_build_gcode_ramp_checks_lead_out_against_the_drawable_area() -> None:
+    profile = _profile(
+        pen={"z_up": 5.0, "z_down": 1.0, "z_touch": 2.0, "z_hover": 3.0, "ramp_mm": 2.0}
+    )
+
+    with pytest.raises(PointOutsideBedError) as info:
+        build_gcode(_one_layer(((5.0, 5.0), (99.0, 5.0))), profile, (100.0, 100.0))
+
+    assert "x=101.000, y=95.000" in str(info.value)
+    assert "drawable area" in str(info.value)
+
+
+def test_build_gcode_ramp_clamps_a_short_stroke_without_dividing_by_zero() -> None:
+    produced = build_gcode(
+        _one_layer(((10.0, 10.0), (12.0, 10.0))), _ramped_profile(), (100.0, 100.0)
+    )
+
+    assert produced.index("G0 Z5.000") < produced.index("G1 X")
+    assert produced.rstrip().endswith("G0 Z5.000\nM2")
+
+
+def test_build_gcode_ramp_skips_a_stroke_with_no_movement() -> None:
+    produced = build_gcode(_one_layer(((1.0, 1.0), (1.0, 1.0))), _ramped_profile(), (10.0, 10.0))
+
+    assert "G1 X" not in produced
+    assert "; layer 1/1 pen=ink" in produced
+
+
+def test_build_gcode_without_ramp_keeps_the_plain_stroke_with_touch_and_hover() -> None:
+    profile = _profile(pen={"z_up": 5.0, "z_down": 1.0, "z_touch": 2.0, "z_hover": 3.0})
+
+    produced = build_gcode(_one_layer(((1.0, 1.0), (2.0, 1.0))), profile, (10.0, 10.0))
+
+    assert "G0 Z1.000\nG1 X2.000 Y9.000 F1800\n" in produced
+    assert "Z3.000" not in produced

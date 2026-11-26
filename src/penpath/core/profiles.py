@@ -115,6 +115,15 @@ class PenProfile(_ProfileModel):
             raise ValueError("pen.z_hover must be between pen.z_down and pen.z_up")
         if self.ramp_mm and (self.z_touch is None or self.z_hover is None):
             raise ValueError("pen.ramp_mm requires pen.z_touch and pen.z_hover")
+        if self.ramp_mm and self.z_touch is not None and self.z_touch <= self.z_down:
+            raise ValueError("pen.z_touch must be above pen.z_down when pen.ramp_mm is set")
+        if (
+            self.ramp_mm
+            and self.z_hover is not None
+            and self.z_touch is not None
+            and self.z_hover < self.z_touch
+        ):
+            raise ValueError("pen.z_hover must not be below pen.z_touch when ramping")
         return self
 
 

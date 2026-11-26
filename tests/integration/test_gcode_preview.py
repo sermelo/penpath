@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from penpath.presets.palettes import STABILO_88
 
 DPI = 5
 COLORS = {pen.name: pen.color for pen in STABILO_88.pens}
+RAMPED_PROFILE = Path(__file__).resolve().parents[1] / "fixtures" / "profiles" / "ramped.yaml"
 
 
 @pytest.fixture
@@ -85,6 +87,37 @@ def test_gcode_png_equals_svg_png_when_page_differs_from_bed(
     gcode_image = _preview(runner, gcode, tmp_path / "small-gcode.png")
 
     assert gcode_image.size == svg_image.size == (190 * DPI, 190 * DPI)
+    assert ImageChops.difference(svg_image, gcode_image).getbbox() is None
+
+
+def test_ramped_gcode_png_equals_svg_png(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ramped plot inks only the original stroke, not its lead-in or lead-out."""
+    config_home = tmp_path / "xdg"
+    profiles_dir = config_home / "penpath"
+    profiles_dir.mkdir(parents=True)
+    shutil.copyfile(RAMPED_PROFILE, profiles_dir / "profiles.yaml")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    drawing = tmp_path / "ramp.svg"
+    drawing.write_text(
+        f"""<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  width="100mm" height="100mm" viewBox="0 0 100 100">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_yellow" id="layer1"
+  fill="none" stroke="{COLORS["stabilo_88_yellow"]}" stroke-width="0.4">
+<polyline points="10,10 40,10 40,40"/>
+<polyline points="60,60 80,60"/></g></svg>""",
+        encoding="utf-8",
+    )
+    gcode = drawing.with_suffix(".gcode")
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "ramped", "-o", str(gcode)])
+    assert result.exit_code == 0, result.stderr
+
+    svg_image = _preview(runner, drawing, tmp_path / "svg.png")
+    gcode_image = _preview(runner, gcode, tmp_path / "gcode.png")
+
+    assert gcode_image.size == svg_image.size == (100 * DPI, 100 * DPI)
     assert ImageChops.difference(svg_image, gcode_image).getbbox() is None
 
 

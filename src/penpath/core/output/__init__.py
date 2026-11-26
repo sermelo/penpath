@@ -7,6 +7,7 @@ from penpath.core.output.gcode import (
     GcodeLayer,
     PointOutsideBedError,
     build_gcode,
+    lead_in_mm,
     page_origin_mm,
 )
 from penpath.core.output.svg import export_pen_layers, export_svg, write_penpath_svg
@@ -19,6 +20,7 @@ __all__ = [
     "build_gcode",
     "export_pen_layers",
     "export_svg",
+    "lead_in_mm",
     "optimize_with_vpype",
     "page_origin_mm",
     "write_penpath_svg",
