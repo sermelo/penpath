@@ -1,6 +1,6 @@
 # penpath Feature Proposal
 
-**Status**: For board decision (MVP / later / out)  
+**Status**: For board decision (MVP / planned / later / out)  
 **Reference**: DrawingBotV3 v1.6.25-stable-free (read-only)  
 **Goal**: Smallest CLI that turns a photo into a good, plottable SVG
 
@@ -42,7 +42,7 @@
 | 25 | vpype pipeline integration | Industry-standard optimization & export | vpype commands (linemerge, linesimplify, reloop, linesort, write) | `integrations/vpype/*.java` | M | vpype (Python) | **MVP** — use vpype CLI as backend |
 | **Output** |||||||
 | 26 | SVG export (layers per pen) | Standard vector format for plotters | Paper size, DPI, layer naming, inkscape:groupmode, background layer | `files/exporters/SVGExporter.java` | S | svgwrite / lxml | **MVP** |
-| 27 | GCode export | Direct machine control | Pen up/down commands, feed rates, units, header/footer | `files/exporters/GCodeExporter.java` | M | — | **later** |
+| 27 | GCode export | Direct machine control | Pen up/down commands, feed rates, units, header/footer | `files/exporters/GCodeExporter.java` | M | — | **planned** — LUC-51 Phase 7 (machine profiles); built and merged |
 | 28 | HPGL / DXF export | Legacy cutter support | — | New | M | — | **out** |
 | 29 | PNG/PDF preview | Quick visual check | DPI, antialiasing, show pen-up moves | `files/exporters/ImageExporter.java`, `PDFExporter.java` | S | Cairo / reportlab | **later** |
 | **Presets & Config** |||||||
@@ -78,11 +78,11 @@
 
 **MVP Scope**: One PFM (Sketch Lines), one pen by default and an ordered palette for multi-pen, vpype for optimization/export, minimal but complete filter chain for photo prep.
 
-### Later (11 features) — "Polish and versatility"
+### Later (10 features) — "Polish and versatility"
 - Sketch Squares, Spiral (additional styles)
 - Contour tracing (clean outlines)
 - Edge detect (outline mode)
-- Filter pipeline/presets, pen pressure, GCode, preview renders, preset system
+- Filter pipeline/presets, pen pressure, preview renders, preset system
 - Batch input
 
 ### Out (6 features) — "Not core, niche, or premium-only in ref"
