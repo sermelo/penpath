@@ -537,6 +537,8 @@ def build_gcode(
     lead = lead_in_mm(profile)
     origin = page_origin_mm(profile, page_size_mm)
     line_values = _profile_values(profile)
+    feed_travel = f" F{line_values['feed_travel']}"
+    feed_z = f" F{line_values['feed_z']}"
     common_values = line_values | {
         "pen": "",
         "pen_index": "0",
@@ -564,7 +566,7 @@ def build_gcode(
                 continue
             pen_points = _pen_points(polyline, profile, page_size_mm[1], origin, drawable)
             if pen_is_down:
-                lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}")
+                lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}{feed_z}")
                 pen_is_down = False
             feed = f" F{line_values['feed_draw']}"
             if lead is not None:
@@ -575,24 +577,24 @@ def build_gcode(
                     _check_pen_point(point, profile, drawable)
                 first, first_z = ramp_path[0]
                 first_x, first_y = _nozzle(first, profile)
-                lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}")
-                lines.append(f"G0 Z{_format_mm(first_z)}")
+                lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}{feed_travel}")
+                lines.append(f"G0 Z{_format_mm(first_z)}{feed_z}")
                 for point_index, (point, z) in enumerate(ramp_path[1:]):
                     x, y = _nozzle(point, profile)
                     suffix = feed if point_index == 0 else ""
                     lines.append(f"G1 X{_format_mm(x)} Y{_format_mm(y)} Z{_format_mm(z)}{suffix}")
-                lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}")
+                lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}{feed_z}")
             else:
                 points = [_nozzle(point, profile) for point in pen_points]
                 first_x, first_y = points[0]
-                lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}")
-                lines.append(f"G0 Z{_format_mm(profile.pen.z_down)}")
+                lines.append(f"G0 X{_format_mm(first_x)} Y{_format_mm(first_y)}{feed_travel}")
+                lines.append(f"G0 Z{_format_mm(profile.pen.z_down)}{feed_z}")
                 pen_is_down = True
                 for point_index, point in enumerate(points[1:]):
                     suffix = feed if point_index == 0 else ""
                     lines.append(f"G1 X{_format_mm(point[0])} Y{_format_mm(point[1])}{suffix}")
         if pen_is_down:
-            lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}")
+            lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}{feed_z}")
             pen_is_down = False
         lines.extend(_block(profile.gcode.layer_end, values))
     lines.extend(_block(profile.gcode.end, common_values))
