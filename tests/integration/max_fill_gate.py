@@ -3,7 +3,9 @@
 Generates a solid dark figure, a light figure and a greyscale gradient, runs the
 real ``penpath convert`` pipeline for each value in the sweep, and measures ink
 density, tone ordering, machine cost and likeness. The test module turns those
-numbers into assertions and records the chosen default.
+numbers into assertions and records the chosen default. Auto equalization is
+disabled so the sweep isolates the cap from LUC-90's default normalization and
+the measured values stay those of the original calibration.
 """
 
 from __future__ import annotations
@@ -153,6 +155,7 @@ def measure_sweep(work_dir: Path, sweep: Sequence[float] = SWEEP) -> list[FillRe
                     str(work_dir / f"{name}.png"),
                     "-o",
                     str(svg_path),
+                    "--no-auto-equalize",
                     "--pfm-setting",
                     f"seed={SEED}",
                     "--pfm-setting",

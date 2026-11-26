@@ -529,6 +529,48 @@ Fewer strokes and a little less SSIM are the expected cost of capping solid
 black. Coverage, ink spread and tone separation all stay above the LUC-47
 floors, so the drawings remain recognisable and plottable.
 
+### Auto equalization on by default (LUC-90, 2026-11-25)
+
+`convert` stretches the working image's luminance range `[lo, hi]` to
+`[0, 255]` with one linear lookup table before palette separation. It is a
+no-op for images that already cover 0-255, that span at least 7/8 of 0-255
+(224 levels), or that have a range narrower than 16 levels. All five likeness
+references fall into one of those cases, so their converted SVGs are
+**byte-identical to `main`** and the three gate suites report their `main`
+values after the LUC-89 `max_fill` rebase:
+`pytest tests/integration/test_sketch_lines_gate.py` reports 6 passed with the
+LUC-89 baselines (sphere 0.8011, 46 strokes, ink min 0.0004),
+`test_basic_shapes.py` reports 13 passed with every measured value identical,
+and `test_multi_pen_gate.py` reports 12 passed with its pre-existing recorded
+union tone-ratio failure at 1.5842, inside the harness's pinned tolerance.
+No floor was moved. Reproduce with:
+
+```bash
+uv run pytest tests/integration/test_sketch_lines_gate.py -s
+```
+
+The 224-level no-op came from an Architect decision after an unrestricted
+stretch regressed `sphere.png` (range 31-255). The measurements below are kept
+as evidence: "before" is the same harness on the same runner with `convert`'s
+`auto_equalize` monkeypatched to an identity copy, "after" is that rejected
+unrestricted stretch.
+
+| image | before SSIM | after SSIM | strokes before → after | ink min before → after | tone ratio before → after |
+|-------|------------:|-----------:|-----------------------:|-----------------------:|--------------------------:|
+| `circle.png` | 0.5474 | 0.5474 | 175 → 175 | 0.0009 → 0.0009 | 4442.16 → 4442.16 |
+| `gradient.png` | 0.5405 | 0.5405 | 206 → 206 | 0.0019 → 0.0019 | 41.11 → 41.11 |
+| `sphere.png` | 0.8135 | 0.8198 | 43 → 50 | 0.0005 → **0.0000** | 8114.67 → 5005.35 |
+| `face.jpg` | 0.6383 | 0.6383 | 1149 → 1149 | 0.0155 → 0.0155 | 24.04 → 24.04 |
+| `photo.jpg` | 0.5739 | 0.5740 | 901 → 901 | 0.0197 → 0.0197 | 3.31 → 3.31 |
+
+At range 224 the largest stretch is 255/224 = 1.14. It raised SSIM but left
+one corner cell of `sphere.png` with no ink (0.0000 < the enforced 0.0003
+floor), so the gate reported **1 failed, 5 passed** with
+`sphere.png: ink per 4x4 cell 0.0000 < 0.0003`. `photo.jpg`'s brightest
+luminance is 254, so it barely moved; `circle.png`, `gradient.png` and
+`face.jpg` already cover 0-255. Re-deriving the floor cannot accept a zero
+cell, so the rule was refined instead and no floor was changed.
+
 ### Multi-pen per-layer gate (LUC-50 part 6, 2026-11-25)
 
 One palette drawing has several pens, each responsible for a colour region.

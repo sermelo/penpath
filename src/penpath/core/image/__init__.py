@@ -3,6 +3,7 @@
 from penpath.core.image.filters import (
     DitherMethod,
     GrayscaleMethod,
+    auto_equalize,
     box_blur,
     brightness,
     contrast,
@@ -40,6 +41,7 @@ __all__ = [
     "UnsupportedFormatError",
     "WorkingResolution",
     "apply_working_resolution",
+    "auto_equalize",
     "box_blur",
     "brightness",
     "contrast",

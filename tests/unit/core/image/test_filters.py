@@ -12,6 +12,7 @@ from penpath.core.image.filters import (
     _grayscale_lightness,
     _grayscale_luminance,
     _ordered_dither,
+    auto_equalize,
     box_blur,
     brightness,
     contrast,
@@ -488,6 +489,90 @@ class TestInvert:
         img = Image.new("RGB", (123, 456), color="red")
         result = invert(img)
         assert result.size == (123, 456)
+
+
+class TestAutoEqualize:
+    """Tests for linear levels normalization."""
+
+    def test_auto_equalize_full_range_l_is_byte_identical(self) -> None:
+        """An image covering 0-255 is copied without changing a pixel."""
+        img = Image.new("L", (4, 1))
+        img.putdata([0, 85, 170, 255])
+        result = auto_equalize(img)
+        assert result is not img
+        assert list(result.getdata()) == list(img.getdata())
+
+    def test_auto_equalize_wide_range_l_is_byte_identical(self) -> None:
+        """An image spanning 31-255 (7/8 of the range) is left unchanged."""
+        img = Image.new("L", (4, 1))
+        img.putdata([31, 80, 160, 255])
+        result = auto_equalize(img)
+        assert result is not img
+        assert list(result.getdata()) == list(img.getdata())
+
+    def test_auto_equalize_wide_range_rgb_is_byte_identical(self) -> None:
+        """The wide-range no-op applies to RGB luminance as well."""
+        img = Image.new("RGB", (2, 1))
+        img.putdata([(31, 31, 31), (255, 255, 255)])
+        result = auto_equalize(img)
+        assert list(result.getdata()) == list(img.getdata())
+
+    def test_auto_equalize_low_contrast_l_stretches_to_full_range(self) -> None:
+        """A narrow luminance range is stretched to 0-255."""
+        img = Image.new("L", (4, 1))
+        img.putdata([64, 106, 149, 191])
+        result = auto_equalize(img)
+        assert result.mode == "L"
+        assert min(result.getdata()) == 0
+        assert max(result.getdata()) == 255
+
+    def test_auto_equalize_low_contrast_rgb_uses_one_luminance_table(self) -> None:
+        """The same table reaches every colour channel."""
+        img = Image.new("RGB", (2, 1))
+        img.putdata([(50, 60, 70), (150, 160, 170)])
+        result = auto_equalize(img)
+        assert result.mode == "RGB"
+        assert result.getpixel((0, 0))[0] == 0
+        assert result.getpixel((1, 0))[2] == 255
+
+    def test_auto_equalize_near_uniform_is_unchanged(self) -> None:
+        """A range narrower than 16 levels is not amplified."""
+        img = Image.new("L", (4, 1))
+        img.putdata([100, 101, 102, 103])
+        result = auto_equalize(img)
+        assert list(result.getdata()) == list(img.getdata())
+
+    def test_auto_equalize_preserves_alpha(self) -> None:
+        """RGBA colour channels are stretched but alpha is copied through."""
+        img = Image.new("RGBA", (2, 1))
+        img.putdata([(50, 60, 70, 7), (150, 160, 170, 9)])
+        result = auto_equalize(img)
+        assert result.mode == "RGBA"
+        assert [pixel[3] for pixel in result.getdata()] == [7, 9]
+        assert result.getpixel((0, 0))[:3] != img.getpixel((0, 0))[:3]
+
+    def test_auto_equalize_supports_la(self) -> None:
+        """LA mode stretches lightness and keeps alpha."""
+        img = Image.new("LA", (2, 1))
+        img.putdata([(50, 200), (150, 100)])
+        result = auto_equalize(img)
+        assert result.mode == "LA"
+        assert result.getpixel((0, 0)) == (0, 200)
+        assert result.getpixel((1, 0)) == (255, 100)
+
+    def test_auto_equalize_does_not_mutate_input(self) -> None:
+        """The source image keeps every pixel."""
+        img = Image.new("RGB", (2, 1))
+        img.putdata([(50, 60, 70), (150, 160, 170)])
+        before = list(img.getdata())
+        auto_equalize(img)
+        assert list(img.getdata()) == before
+
+    def test_auto_equalize_unsupported_mode_raises(self) -> None:
+        """Other modes fail with an actionable message."""
+        img = Image.new("P", (2, 2))
+        with pytest.raises(TypeError, match="L, LA, RGB and RGBA"):
+            auto_equalize(img)
 
 
 class TestFilterChaining:

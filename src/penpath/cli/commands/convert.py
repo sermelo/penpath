@@ -17,6 +17,7 @@ from penpath.cli.progress import StageReporter
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
+from penpath.core.image.filters import auto_equalize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
@@ -385,6 +386,12 @@ def _run_convert_pipeline(
         reporter.finish()
     working_size_px = working_image.size
 
+    # Auto levels run once on the whole working image, before separation, so
+    # every palette channel shares one luminance range and explicit -f filters
+    # keep their current meaning.
+    if project.image.auto_equalize:
+        working_image = auto_equalize(working_image)
+
     # Step 3: Split before filtering, so the default grayscale filter cannot
     # throw away the colour needed to choose a pen.
     reporter.start("Applying filters")
@@ -493,6 +500,12 @@ def _run_convert_pipeline(
     help="Filter to apply (repeatable). Format: name:param=value",
 )
 @click.option("--no-auto-orient", is_flag=True, help="Disable EXIF auto-orientation")
+@click.option(
+    "--auto-equalize/--no-auto-equalize",
+    "auto_equalize_flag",
+    default=None,
+    help="Normalize tonal range before drawing (default: on; use --no-auto-equalize to keep tones)",
+)
 @click.option("--pfm", "pfm_name", help="PFM algorithm or built-in preset (default: sketch_lines)")
 @click.option(
     "--pfm-setting",
@@ -549,6 +562,7 @@ def convert_cmd(
     project_path: Path | None,
     filter_specs: tuple[str, ...],
     no_auto_orient: bool,
+    auto_equalize_flag: bool | None,
     pfm_name: str | None,
     pfm_settings: tuple[str, ...],
     pen_spec: str | None,
@@ -605,6 +619,8 @@ def convert_cmd(
             project.output_path = resolved_output
         if dpi != 300:
             project.image.dpi = dpi
+        if auto_equalize_flag is not None:
+            project.image.auto_equalize = auto_equalize_flag
         project.image.path = input_path  # Always use CLI input path
     else:
         # Build project from CLI flags and config
@@ -632,7 +648,12 @@ def convert_cmd(
         )
 
         project = Project(
-            image=ImageRef(path=input_path, filters=filter_pipeline, dpi=dpi),
+            image=ImageRef(
+                path=input_path,
+                filters=filter_pipeline,
+                dpi=dpi,
+                auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
+            ),
             paper=paper,
             pen=pen,
             pens=pens,

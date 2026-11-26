@@ -47,8 +47,20 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 |--------|-------|---------|-------------|
 | `--filter NAME` | `-f` | — | Apply filter (repeatable: `-f grayscale -f threshold`). See **Filters** below. |
 | `--no-auto-orient` | — | `false` | Disable EXIF auto-orientation |
+| `--auto-equalize` / `--no-auto-equalize` | — | `true` | Normalize the working image's luminance range (linear auto levels) once before drawing. Use `--no-auto-equalize` to keep the original tones. |
 | `--max-resolution PX` | — | derived | Longest side of the working image in pixels. Overrides the derived value (no clamp) and never enlarges. |
 | `--no-downscale` | — | `false` | Keep the source pixels; do not downscale before drawing |
+
+Auto equalization is on by default. After downscaling and before palette
+separation, penpath stretches the working image's luminance range `[lo, hi]`
+to `[0, 255]` with one linear lookup table applied to every colour channel;
+alpha is left untouched. It is a no-op for images that already cover 0-255,
+for images that already span at least 7/8 of 0-255 (224 levels), and for
+near-uniform images, so a calibrated plot is unchanged. Pass
+`--no-auto-equalize` to keep the original tones, or set `image.auto_equalize:
+false` in a project file. This is one global pre-separation step, not a `-f`
+filter, so every palette pen uses the same normalization and explicit filters
+keep their meaning.
 
 #### Drawing Options
 
@@ -291,6 +303,9 @@ penpath convert photo.jpg --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E"
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
+
+# Keep the original tonal range (auto equalization is on by default)
+penpath convert photo.jpg --no-auto-equalize
 
 # Cap the working image at 800 px on its longest side, or keep source pixels
 penpath convert photo.jpg --max-resolution 800
@@ -588,6 +603,7 @@ version: 1
 input:
   path: "photo.jpg"
   auto_orient: true
+  auto_equalize: true   # linear levels normalization before drawing (default)
 
 filters:
   - grayscale:
@@ -643,7 +659,10 @@ output:
 `pen:`, `palette:` and `pens:` are mutually exclusive: a project file that
 sets more than one of them fails to load with a clear error. A file with only
 `pen:` keeps its old meaning (one pen). `save_yaml` writes a built-in palette
-back as `palette:` and an explicit list back as `pens:`.
+back as `palette:` and an explicit list back as `pens:`. `image.auto_equalize`
+defaults to `true`, so older YAML without the field loads with normalization
+on; set it to `false` to keep the original tones, or pass
+`--auto-equalize` / `--no-auto-equalize` to override it for one run.
 
 **Minimal Example**:
 ```yaml
