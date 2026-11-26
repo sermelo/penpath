@@ -622,6 +622,27 @@ def test_gcode_margin_changes_the_usable_area(runner: CliRunner, tmp_path: Path)
     assert "X12.000 Y18.000" in overridden.stdout
 
 
+def test_gcode_margin_override_applies_to_a_builtin_profile(
+    runner: CliRunner,
+) -> None:
+    """--margin also overrides a built-in profile, not just a user file."""
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(SIMPLE_SVG),
+            "--profile",
+            "generic",
+            "--dry-run",
+            "--margin",
+            "10",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert "usable_x=10.000..200.000 usable_y=10.000..287.000" in result.stdout
+
+
 def test_gcode_negative_margin_exits_2(runner: CliRunner, tmp_path: Path) -> None:
     profiles = _margin_profile(tmp_path)
     drawing = _edge_page(tmp_path)

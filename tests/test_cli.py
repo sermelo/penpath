@@ -540,6 +540,7 @@ class TestInfoCommand:
         data = json.loads(result.output)
         rows = {row["name"]: row for row in data["profiles"]}
         assert list(rows) == ["aquila", "generic", "shop_plotter"]
+        assert "margin_mm" in rows["aquila"]
         assert rows["generic"]["source"] == "user"
         assert rows["generic"]["description"] == "My own generic machine"
         assert rows["generic"]["bed_width_mm"] == 300.0
