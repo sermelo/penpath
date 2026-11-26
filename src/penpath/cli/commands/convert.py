@@ -665,7 +665,7 @@ def convert_cmd(
             project.image.background = background_flag
         if background_threshold is not None:
             project.image.background_threshold = background_threshold
-            if project.image.background is None:
+            if background_flag is None:
                 project.image.background = True
         project.image.path = input_path  # Always use CLI input path
     else:

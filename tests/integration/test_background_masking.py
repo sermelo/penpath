@@ -181,6 +181,50 @@ output_path: "{off}"
         assert result.exit_code == 0, result.output
         assert on.read_bytes() != PALETTE_BEFORE.read_bytes()
 
+    def test_threshold_overrides_project_background_false(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        masked = tmp_path / "masked.svg"
+        project = tmp_path / "project.yaml"
+        project.write_text(
+            f"""version: 1
+image:
+  path: "{PENCIL}"
+  filters:
+    steps: []
+  dpi: 300
+  background: false
+  background_threshold: 10.0
+paper:
+  name: a4
+  width_mm: 210.0
+  height_mm: 297.0
+palette: stabilo_88
+pfm:
+  pfm_type: sketch_lines
+  settings:
+    seed: 42
+output_path: "{masked}"
+"""
+        )
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(PENCIL),
+                "-p",
+                str(project),
+                "--background-threshold",
+                "5",
+                "--no-vpype",
+            ],
+            env={"XDG_CONFIG_HOME": str(tmp_path / "config")},
+        )
+        assert result.exit_code == 0, result.output
+        assert "[2/6] Masking paper background" in result.output
+        light_count, light_length, _ = _layer_geometry(masked, "stabilo_88_light_blue")
+        assert light_count == 0 and light_length == 0.0
+
 
 class TestPaletteDrawsOnlyTheDrawing:
     """The light pen can no longer cover the paper on the synthetic fixture."""
