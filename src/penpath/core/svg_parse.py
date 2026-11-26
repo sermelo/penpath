@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from math import hypot
 from pathlib import Path
 
 from shapely import LineString
@@ -12,13 +11,18 @@ from shapely import LineString
 from penpath.core.geometry.sort import sort_lines
 from penpath.core.output.gcode import GcodeLayer
 from penpath.core.output.svg import ImagePlacement, fit_image_placement
-from penpath.core.simulation import PenStroke
+from penpath.core.simulation import (
+    CONTIGUITY_EPSILON_MM as CONTIGUITY_EPSILON_MM,
+)
+from penpath.core.simulation import (
+    PenStroke,
+    insert_pen_up_moves,
+)
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 INKSCAPE_NAMESPACE = "http://www.inkscape.org/namespaces/inkscape"
 
 MM_PER_SVG_UNIT = 25.4 / 96
-CONTIGUITY_EPSILON_MM = 0.01
 
 _NUMBER_RE = re.compile(r"[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
 _PATH_TOKEN_RE = re.compile(r"[MmLlHhVvZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
@@ -350,27 +354,6 @@ def _element_layer_labels(
     return labels
 
 
-def _insert_pen_up_moves(strokes: list[PenStroke]) -> list[PenStroke]:
-    """Insert travel strokes between strokes whose endpoints are not contiguous."""
-    with_travel: list[PenStroke] = []
-    for index, stroke in enumerate(strokes):
-        if index > 0:
-            previous = strokes[index - 1]
-            end_x, end_y = previous.polyline[-1]
-            start_x, start_y = stroke.polyline[0]
-            if hypot(start_x - end_x, start_y - end_y) > CONTIGUITY_EPSILON_MM:
-                with_travel.append(
-                    PenStroke(
-                        polyline=[(end_x, end_y), (start_x, start_y)],
-                        width_mm=stroke.width_mm,
-                        color=stroke.color,
-                        pen_up=True,
-                    )
-                )
-        with_travel.append(stroke)
-    return with_travel
-
-
 def parse_svg_strokes(
     svg_path: str | Path,
     layer: str | None = None,
@@ -468,7 +451,7 @@ def parse_svg_strokes(
                 )
             )
 
-    return _insert_pen_up_moves(strokes) if include_pen_up else strokes
+    return insert_pen_up_moves(strokes) if include_pen_up else strokes
 
 
 def _metadata_placement(root: ET.Element) -> ImagePlacement | None:
