@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -168,24 +169,54 @@ def gcode_to_strokes(
             strokes.append(PenStroke(list(points), width_mm, color))
         points.clear()
 
+    def draw_part(
+        start: tuple[float, float], end: tuple[float, float], z_start: float, z_end: float
+    ) -> None:
+        """Append only the part of a move spent at or below the touch height.
+
+        A ramped stroke carries Z on its G1 moves, so the pen crosses the paper
+        inside a move: the lead-in and lead-out above ``z_touch`` are not ink.
+        """
+        down_start = z_start <= touch_z + Z_EPSILON_MM
+        down_end = z_end <= touch_z + Z_EPSILON_MM
+        if down_start and down_end:
+            first, last = start, end
+        elif down_start != down_end and z_start != z_end:
+            ratio = min(1.0, max(0.0, (touch_z - z_start) / (z_end - z_start)))
+            crossing = (
+                start[0] + (end[0] - start[0]) * ratio,
+                start[1] + (end[1] - start[1]) * ratio,
+            )
+            first, last = (start, crossing) if down_start else (crossing, end)
+        else:
+            return
+        if math.dist(first, last) <= Z_EPSILON_MM:
+            if not points:
+                points.append(_to_page(first, page_size_mm, profile))
+            return
+        if not points:
+            points.append(_to_page(first, page_size_mm, profile))
+        points.append(_to_page(last, page_size_mm, profile))
+
     for move in moves:
         if move.pen is not None:
             finish()
             pen = move.pen
             z = header.z_up if header.z_up is not None else touch_z + 1.0
-        if move.z is not None:
-            finish()
-            z = move.z
-        if move.x is not None or move.y is not None:
-            start = position
-            position = (
-                move.x if move.x is not None else position[0],
-                move.y if move.y is not None else position[1],
-            )
-            if z <= touch_z + Z_EPSILON_MM:
-                if not points:
-                    points.append(_to_page(start, page_size_mm, profile))
-                points.append(_to_page(position, page_size_mm, profile))
+            continue
+        if move.x is None and move.y is None:
+            if move.z is not None:
+                finish()
+                z = move.z
+            continue
+        start = position
+        position = (
+            move.x if move.x is not None else position[0],
+            move.y if move.y is not None else position[1],
+        )
+        z_end = move.z if move.z is not None else z
+        draw_part(start, position, z, z_end)
+        z = z_end
     finish()
     return strokes
 

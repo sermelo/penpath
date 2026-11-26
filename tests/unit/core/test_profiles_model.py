@@ -175,6 +175,25 @@ def test_ramp_requires_both_touch_and_hover(missing: str) -> None:
     assert "pen.ramp_mm" in str(info.value)
 
 
+@pytest.mark.parametrize(
+    ("key", "height", "expected"),
+    [
+        ("z_touch", 9.0, "pen.z_touch must be above pen.z_down"),
+        ("z_hover", 9.5, "pen.z_hover must not be below pen.z_touch"),
+    ],
+)
+def test_ramp_heights_keep_the_lead_in_formula_defined(
+    key: str, height: float, expected: str
+) -> None:
+    data = _full()
+    data["pen"][key] = height
+
+    with pytest.raises(ValidationError) as info:
+        MachineProfile.model_validate(data)
+
+    assert expected in str(info.value)
+
+
 @pytest.mark.parametrize("axis", [0, 1])
 def test_nozzle_range_axes_must_increase(axis: int) -> None:
     data = _full()

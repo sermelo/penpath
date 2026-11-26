@@ -64,6 +64,7 @@ from penpath.core.output import (
     GcodeLayer,
     PointOutsideBedError,
     build_gcode,
+    lead_in_mm,
     page_origin_mm,
 )
 from penpath.core.profiles import (
@@ -173,6 +174,7 @@ __all__ = [
     "get_user_profiles_path",
     "grayscale",
     "invert",
+    "lead_in_mm",
     "list_filters",
     "list_profile_sources",
     "list_profiles",

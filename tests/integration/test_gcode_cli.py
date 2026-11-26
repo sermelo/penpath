@@ -14,8 +14,10 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 SIMPLE_SVG = FIXTURES / "svg" / "gcode" / "simple.svg"
 MULTI_PEN_SVG = FIXTURES / "svg" / "gcode" / "multi_pen.svg"
 GENERIC_PROFILE = FIXTURES.parent.parent / "src/penpath/presets/profiles/generic.yaml"
+RAMPED_PROFILE = FIXTURES / "profiles" / "ramped.yaml"
 GOLDEN = (FIXTURES / "golden" / "gcode" / "generic.gcode").read_text(encoding="utf-8")
 GOLDEN_MULTI = (FIXTURES / "golden" / "gcode" / "multi_pen.gcode").read_text(encoding="utf-8")
+GOLDEN_RAMPED = (FIXTURES / "golden" / "gcode" / "ramped.gcode").read_text(encoding="utf-8")
 SUMMARY_LINES = (
     "G-code summary",
     "Profile: generic",
@@ -234,6 +236,64 @@ def test_gcode_multi_pen_dry_run_sends_only_gcode_to_stdout(runner: CliRunner) -
     assert result.exit_code == 0, result.stderr
     assert result.stdout == GOLDEN_MULTI
     assert "G-code saved to:" not in result.stderr
+
+
+def test_gcode_with_offset_and_ramp_matches_golden(runner: CliRunner, card: Path) -> None:
+    """A user profile with a pen offset and ramp produces the pinned G-code."""
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(card),
+            "--profile",
+            "ramped",
+            "--profiles",
+            str(RAMPED_PROFILE),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == GOLDEN_RAMPED
+    assert "Profile: ramped" in result.stderr
+    assert "G1 X12.000 Y290.000 Z2.000 F1800" in result.stdout
+
+
+def test_gcode_rejects_point_outside_derived_drawable_area(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """The nozzle range shifted by the pen offset is the area the pen may use."""
+    drawing = tmp_path / "wide.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm"
+ viewBox="0 0 100 100"><polyline points="105,10 106,10"/></svg>""",
+        encoding="utf-8",
+    )
+    profiles = _user_profile(
+        tmp_path,
+        "offset",
+        """version: 1
+name: offset
+bed:
+  size_mm: [100.0, 100.0]
+  pen_offset_mm: [-10.0, -10.0]
+  nozzle_range_mm: [[20.0, 120.0], [20.0, 120.0]]
+feed:
+  travel_mm_s: 100.0
+  draw_mm_s: 50.0
+pen:
+  z_up: 5.0
+  z_down: 0.0
+""",
+    )
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "offset", "--profiles", str(profiles)]
+    )
+
+    assert result.exit_code == 3
+    assert "x=105.000, y=90.000" in result.stderr
+    assert "X 10.000..100.000" in result.stderr
 
 
 def test_gcode_help_lists_its_options(runner: CliRunner) -> None:
