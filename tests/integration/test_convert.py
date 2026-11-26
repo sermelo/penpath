@@ -401,6 +401,48 @@ class TestConvertSettings:
         assert _stroke_geometry(plain) != _stroke_geometry(dense)
 
 
+class TestConvertPenForms:
+    """Every documented --pen form resolves when a user runs convert."""
+
+    @pytest.mark.parametrize(
+        ("spec", "expected_color", "expected_width"),
+        [
+            ("0.4", "#000000", "0.4"),
+            ("0.4,#FF6600", "#FF6600", "0.4"),
+            ("0.4,#000000,fineliner", "#000000", "0.4"),
+            ("fine", "#000000", "0.3"),
+        ],
+    )
+    def test_preset_and_inline_forms_reach_the_svg(
+        self,
+        runner: CliRunner,
+        reference_image: Path,
+        tmp_path: Path,
+        spec: str,
+        expected_color: str,
+        expected_width: str,
+    ) -> None:
+        output = tmp_path / "pen.svg"
+        result = _convert_with_flags(runner, reference_image, output, "--pen", spec)
+        assert result.exit_code == 0, result.output
+
+        paths = list(ET.parse(output).getroot().iter(SVG_NS + "path"))
+        assert paths
+        assert {path.get("stroke") for path in paths} == {expected_color}
+        assert {path.get("stroke-width") for path in paths} == {expected_width}
+
+    def test_unknown_type_names_the_field_and_accepted_values(
+        self, runner: CliRunner, reference_image: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "bad_type.svg"
+        result = _convert_with_flags(runner, reference_image, output, "--pen", "0.4,#000000,bogus")
+        assert result.exit_code == 2
+        assert "pen_type" in result.output
+        assert "fineliner" in result.output
+        assert "Unknown pen" not in result.output
+        assert not output.exists()
+
+
 class TestConvertAutoEqualize:
     """Auto levels are on by default and can be turned off per run or project."""
 
