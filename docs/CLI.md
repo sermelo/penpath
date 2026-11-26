@@ -546,6 +546,10 @@ penpath gcode card.svg --profile aquila
 penpath gcode card.svg --profile aquila --no-fit
 ```
 
+The complete operator workflow and checklist for the Aquila, with the
+reference-versus-penpath equivalence check, are in
+[docs/AQUILA.md](AQUILA.md).
+
 ---
 
 ### `penpath evaluate` — Score likeness and machine cost

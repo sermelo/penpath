@@ -213,7 +213,7 @@ Save your entire pipeline in a YAML file for version control and iteration.
 ```bash
 # Create a project file manually (see minimal example below)
 # Edit my_project.yaml to taste
-penpath convert --project my_project.yaml
+penpath convert photo.jpg --project my_project.yaml
 ```
 
 **Example `project.yaml`:**
@@ -288,7 +288,7 @@ output:
 penpath convert photo.jpg -o art.svg \
   -f grayscale -f "posterize:levels=6,dither=floyd_steinberg" \
   -s line_density=0.4 -s shading_enabled=true -s seed=12345 \
-  --pen 0.4,#000000,fineliner --paper a4
+  --pen "0.4,#000000,fineliner" --paper a4
 ```
 
 ### Project-Based Iteration
@@ -296,7 +296,7 @@ penpath convert photo.jpg -o art.svg \
 ```bash
 # Create project file manually from the minimal example
 # Edit portrait.yaml: tweak filters, PFM settings, pen, paper
-penpath convert --project portrait.yaml
+penpath convert photo.jpg --project portrait.yaml
 # Re-run after edits — same results every time
 ```
 
@@ -390,8 +390,8 @@ penpath convert photo.jpg -s seed=42 -o plot2.svg
 
 ```bash
 penpath convert photo.jpg --pen 0.4
-penpath convert photo.jpg --pen 0.4,#FF6600
-penpath convert photo.jpg --pen 0.4,#000000,fineliner
+penpath convert photo.jpg --pen "0.4,#FF6600"
+penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 ```
 
 ### Palettes: one SVG layer per pen
@@ -518,6 +518,11 @@ from sergio's `aquila-gcode-reference` script). The Aquila profile pauses for
 each pen with `M0`; never use `M25` to pause on this firmware. List the built-ins
 and your own machines with `penpath info profiles`; the file format and an
 example are in [docs/CLI.md](docs/CLI.md#machine-profile-format).
+
+For the full image → SVG → reviewed preview → G-code → SD card → plot operator
+path on the Aquila, including the machine checklist and the equivalence check
+against sergio's reference script, see [docs/AQUILA.md](docs/AQUILA.md). A small
+runnable version is in [`examples/aquila/`](examples/aquila/).
 
 ---
 
