@@ -423,7 +423,9 @@ def _run_convert_pipeline(
 
     if use_background:
         reporter.start("Masking paper background")
-        masked = mask_background(working_image, threshold=project.image.background_threshold)
+        masked = mask_background(
+            working_image, threshold=project.image.background_threshold, method="global"
+        )
         working_image = masked.image
         reporter.finish()
         reporter.message(
