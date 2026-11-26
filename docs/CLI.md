@@ -73,9 +73,11 @@ Because white has luminance 255, masked pixels are white in every separated
 pen channel, so no pen can draw the paper. The detected colour and the masked
 percentage go to stderr; `--quiet` silences both. `--no-background` skips the
 step entirely and reproduces the single-pen default output byte for byte. The
-default threshold was measured on the synthetic pencil-on-paper fixture: its
-paper noise stays below 2.6 ΔE while pencil strokes begin around 4 ΔE; a
-smaller value can erase faint strokes and a much larger one can eat light ink.
+default threshold of 10 ΔE was measured on the synthetic pencil-on-paper
+fixture: after auto equalization paper noise reaches 4.4 ΔE at the 99th
+percentile while the faintest ink starts at 17.4 ΔE, so the cut-off sits well
+below any ink. Lowering it can leave paper noise unmasked; raising it too far
+can eat faint ink.
 
 #### Drawing Options
 
