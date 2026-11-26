@@ -7,7 +7,22 @@ import math
 import pytest
 from PIL import Image
 
-from penpath.core.simulation import PenStroke, compute_machine_cost, simulate_plot
+from penpath.core.simulation import (
+    PenStroke,
+    compute_layer_coverage,
+    compute_machine_cost,
+    simulate_plot,
+)
+
+
+def _stroke(color: str, y_mm: float, width_mm: float = 1.0, pen_up: bool = False) -> PenStroke:
+    """A horizontal 10 mm stroke at the given height and pen width."""
+    return PenStroke(
+        polyline=[(0.0, y_mm), (10.0, y_mm)],
+        width_mm=width_mm,
+        color=color,
+        pen_up=pen_up,
+    )
 
 
 class TestPenStroke:
@@ -455,6 +470,72 @@ class TestSimulatePlot:
         # Should form a rectangle - check corners have black pixels
         pixels = list(img.getdata())
         assert any(p != (255, 255, 255) for p in pixels)
+
+
+class TestComputeLayerCoverage:
+    """Tests for per-layer ink coverage."""
+
+    def test_full_page_stroke_is_near_100_percent(self):
+        """Horizontal lines spaced by the pen width fill the whole page."""
+        strokes = [_stroke("#000000", y + 0.5, width_mm=1.1) for y in range(10)]
+        result = compute_layer_coverage(strokes, 10, 10, dpi_px_per_mm=10)
+        assert result.per_layer["#000000"] == pytest.approx(100.0, abs=0.5)
+        assert result.total == pytest.approx(100.0, abs=0.5)
+
+    def test_short_line_is_near_zero(self):
+        """A short line on a large page inks almost none of it."""
+        stroke = PenStroke(polyline=[(10.0, 10.0), (11.0, 10.0)], width_mm=0.3, color="#000000")
+        result = compute_layer_coverage([stroke], 100, 100, dpi_px_per_mm=10)
+        assert result.per_layer["#000000"] < 0.1
+        assert result.total < 0.1
+
+    def test_pen_width_affects_coverage(self):
+        """A thicker pen inks more of the page for the same line."""
+        thin = compute_layer_coverage([_stroke("#000000", 5.0, 0.5)], 10, 10, dpi_px_per_mm=10)
+        thick = compute_layer_coverage([_stroke("#000000", 5.0, 3.0)], 10, 10, dpi_px_per_mm=10)
+        assert thick.total > thin.total
+
+    def test_two_layers_report_their_own_values(self):
+        """Each colour gets its own percentage, keyed by stroke colour."""
+        strokes = [
+            _stroke("#000000", 5.0, width_mm=2.0),
+            PenStroke(polyline=[(0.0, 9.0), (2.0, 9.0)], width_mm=1.0, color="#FF0000"),
+        ]
+        result = compute_layer_coverage(strokes, 10, 10, dpi_px_per_mm=10)
+        assert set(result.per_layer) == {"#000000", "#FF0000"}
+        assert result.per_layer["#000000"] > result.per_layer["#FF0000"]
+
+    def test_values_are_bounded(self):
+        """Overlapping strokes and off-page coordinates stay within 0-100."""
+        strokes = [
+            _stroke("#000000", 5.0, width_mm=50.0),
+            _stroke("#FF0000", 5.0, width_mm=50.0),
+            PenStroke(polyline=[(-100.0, 5.0), (200.0, 5.0)], width_mm=20.0, color="#00FF00"),
+        ]
+        result = compute_layer_coverage(strokes, 10, 10, dpi_px_per_mm=10)
+        assert result.per_layer
+        assert all(0.0 <= value <= 100.0 for value in result.per_layer.values())
+        assert 0.0 <= result.total <= 100.0
+
+    def test_empty_page_does_not_divide_by_zero(self):
+        """No strokes on a zero-sized page reports zero without an error."""
+        result = compute_layer_coverage([], 0, 0, dpi_px_per_mm=10)
+        assert result.per_layer == {}
+        assert result.total == 0.0
+
+    def test_pen_up_strokes_do_not_add_ink(self):
+        """Travel moves are not ink."""
+        result = compute_layer_coverage([_stroke("#000000", 5.0, 1.1, pen_up=True)], 10, 10, 10)
+        assert result.per_layer == {}
+        assert result.total == 0.0
+
+    def test_total_is_union_not_sum_of_overlapping_layers(self):
+        """Two layers over the same pixels report their own values but one total."""
+        strokes = [_stroke("#000000", 5.0, 1.1), _stroke("#FF0000", 5.0, 1.1)]
+        result = compute_layer_coverage(strokes, 10, 10, dpi_px_per_mm=10)
+        assert result.per_layer["#000000"] > 10.0
+        assert result.per_layer["#FF0000"] > 10.0
+        assert result.total == pytest.approx(max(result.per_layer.values()))
 
 
 class TestIntegration:

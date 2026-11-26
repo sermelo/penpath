@@ -95,6 +95,27 @@ def polygon_drawing(tmp_path: Path) -> Path:
     return path
 
 
+def _filled_svg() -> str:
+    """A 100 mm page filled by 1 mm-wide horizontal lines in one light-blue layer."""
+    paths = " ".join(f"M 0 {y + 0.5} L 100 {y + 0.5}" for y in range(100))
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="100mm" height="100mm" viewBox="0 0 100 100">
+  <g inkscape:groupmode="layer" inkscape:label="light blue"
+     stroke="#89CFF0" stroke-width="1">
+    <path d="{paths}" fill="none"/>
+  </g>
+</svg>"""
+
+
+@pytest.fixture
+def filled_drawing(tmp_path: Path) -> Path:
+    path = tmp_path / "filled.svg"
+    path.write_text(_filled_svg(), encoding="utf-8")
+    return path
+
+
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
@@ -292,6 +313,7 @@ class TestEvaluate:
             "num_lifts",
             "num_short_segments",
             "num_strokes",
+            "ink_coverage_pct",
         }
         assert set(cost["total"]) == expected
         assert cost["total"]["num_strokes"] == 2
@@ -465,6 +487,127 @@ class TestEvaluate:
         assert "--paper-color" in result.output
         assert "Traceback" not in result.output
         assert result.stdout.strip() == ""
+
+
+class TestEvaluateCoverage:
+    """Ink coverage is reported per layer and warns on stderr when a page fills up."""
+
+    def test_page_filling_layer_warns_and_reports_coverage(
+        self, runner: CliRunner, filled_drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            ["evaluate", str(reference), str(filled_drawing), "--json", "--dpi", "10"],
+        )
+
+        assert result.exit_code == 0, result.output
+        cost = json.loads(result.stdout)["machine_cost"]
+        assert cost["per_layer"]["#89CFF0"]["ink_coverage_pct"] > 90.0
+        assert 0.0 < cost["total"]["ink_coverage_pct"] <= 100.0
+        assert "Warning" in result.stderr
+        assert "#89CFF0" in result.stderr
+        assert "--background-threshold" in result.stderr
+        assert "--saturation" in result.stderr
+        assert "Warning" not in result.stdout
+
+    def test_sparse_plot_does_not_warn(
+        self, runner: CliRunner, hand_drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(main, ["evaluate", str(reference), str(hand_drawing), "--json"])
+
+        assert result.exit_code == 0, result.output
+        coverage = json.loads(result.stdout)["machine_cost"]["total"]["ink_coverage_pct"]
+        assert 0.0 < coverage < 50.0
+        assert "Warning" not in result.stderr
+
+    def test_coverage_warn_changes_the_threshold(
+        self, runner: CliRunner, hand_drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            [
+                "evaluate",
+                str(reference),
+                str(hand_drawing),
+                "--json",
+                "--coverage-warn",
+                "1",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Warning" in result.stderr
+
+    def test_coverage_warn_rejects_negative_value(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            ["evaluate", str(reference), str(drawing), "--json", "--coverage-warn", "-5"],
+        )
+
+        assert result.exit_code == 2
+        assert "--coverage-warn" in result.output
+        assert "Traceback" not in result.output
+        assert result.stdout.strip() == ""
+
+    def test_coverage_warn_zero_disables_the_warning(
+        self, runner: CliRunner, filled_drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            [
+                "evaluate",
+                str(reference),
+                str(filled_drawing),
+                "--json",
+                "--coverage-warn",
+                "0",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Warning" not in result.stderr
+        assert json.loads(result.stdout)["machine_cost"]["total"]["ink_coverage_pct"] > 90.0
+
+    def test_json_stdout_stays_valid_json_with_warning(
+        self, runner: CliRunner, filled_drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main, ["evaluate", str(reference), str(filled_drawing), "--json", "--dpi", "10"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip().startswith("{")
+        assert "Evaluation:" not in result.stdout
+        assert "Machine Cost" not in result.stdout
+        json.loads(result.stdout)
+
+    def test_human_output_has_coverage_column(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(main, ["evaluate", str(reference), str(drawing)])
+
+        assert result.exit_code == 0, result.output
+        assert "Coverage" in result.output
+        assert "Machine Cost" in result.output
+
+    def test_luc_91_repro_light_blue_layer_reports_coverage(self, runner: CliRunner) -> None:
+        """The committed part-1 repro reports its pale-area layer with a lower threshold."""
+        fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+        image = fixtures / "images/background/pencil_on_pale_grey.png"
+        svg = fixtures / "golden/svg/pencil_palette_before_background.svg"
+
+        result = runner.invoke(
+            main, ["evaluate", str(image), str(svg), "--json", "--coverage-warn", "5"]
+        )
+
+        assert result.exit_code == 0, result.output
+        per_layer = json.loads(result.stdout)["machine_cost"]["per_layer"]
+        assert per_layer["#8CCFE8"]["ink_coverage_pct"] > 5.0
+        assert per_layer["#8CCFE8"]["ink_coverage_pct"] > per_layer["#000000"]["ink_coverage_pct"]
+        assert "#8CCFE8" in result.stderr
+        assert "Warning" in result.stderr
 
 
 class TestEvaluatePlacementLikeness:

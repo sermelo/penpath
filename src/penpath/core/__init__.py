@@ -105,7 +105,9 @@ from penpath.core.project import (
     save_yaml,
 )
 from penpath.core.simulation import (
+    CoverageResult,
     PenStroke,
+    compute_layer_coverage,
     compute_machine_cost,
     simulate_plot,
 )
@@ -134,6 +136,7 @@ __all__ = [
     "PROJECT_FILE_VERSION",
     "BackgroundResult",
     "BedProfile",
+    "CoverageResult",
     "DitherMethod",
     "FeedProfile",
     "FilterPipeline",
@@ -178,6 +181,7 @@ __all__ = [
     "box_blur",
     "brightness",
     "build_gcode",
+    "compute_layer_coverage",
     "compute_likeness",
     "compute_machine_cost",
     "contrast",

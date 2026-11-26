@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from penpath.core import (
+    compute_layer_coverage,
     compute_likeness,
     compute_machine_cost,
     get_image_placement,
@@ -37,6 +38,7 @@ def _cost_table(cost: MachineCostResult) -> Table:
     table.add_column("Lifts", justify="right")
     table.add_column("Short segments", justify="right")
     table.add_column("Strokes", justify="right")
+    table.add_column("Coverage (%)", justify="right")
 
     per_layer = cast(dict[str, LayerMetrics], cost["per_layer"])
     for layer, metrics in per_layer.items():
@@ -47,6 +49,7 @@ def _cost_table(cost: MachineCostResult) -> Table:
             str(metrics["num_lifts"]),
             str(metrics["num_short_segments"]),
             str(metrics["num_strokes"]),
+            f"{metrics['ink_coverage_pct']:.1f}",
         )
 
     total = cast(LayerMetrics, cost["total"])
@@ -57,6 +60,7 @@ def _cost_table(cost: MachineCostResult) -> Table:
         str(total["num_lifts"]),
         str(total["num_short_segments"]),
         str(total["num_strokes"]),
+        f"{total['ink_coverage_pct']:.1f}",
         style="bold",
     )
     return table
@@ -91,6 +95,16 @@ def _cost_table(cost: MachineCostResult) -> Table:
     default=None,
     help="Only evaluate this pen layer (layer label or id). Default: all layers.",
 )
+@click.option(
+    "--coverage-warn",
+    "coverage_warn_pct",
+    type=click.FloatRange(min=0),
+    default=50.0,
+    show_default=True,
+    metavar="PCT",
+    help="Warn on stderr when a layer covers more than this percentage of the page "
+    "(0 disables the warning; must be >= 0).",
+)
 def evaluate_cmd(
     image: Path,
     drawing_svg: Path,
@@ -98,12 +112,14 @@ def evaluate_cmd(
     px_per_mm: float,
     paper_color: str,
     layer_label: str | None,
+    coverage_warn_pct: float,
 ) -> None:
     """Evaluate DRAWING_SVG against the original IMAGE.
 
     The SVG is simulated at the chosen resolution, cropped to the recorded
-    image placement, and scored with SSIM. Machine cost is reported per pen
-    layer and in total. With --json, only a JSON object is written to stdout.
+    image placement, and scored with SSIM. Machine cost and ink coverage are
+    reported per pen layer and in total; a layer covering most of the page
+    warns on stderr. With --json, only a JSON object is written to stdout.
     """
     if px_per_mm <= 0:
         raise click.BadParameter("must be greater than zero", param_hint="--dpi")
@@ -145,6 +161,22 @@ def evaluate_cmd(
         dpi_px_per_mm=px_per_mm,
     )
     cost = compute_machine_cost(strokes)
+    coverage = compute_layer_coverage(strokes, width_mm, height_mm, dpi_px_per_mm=px_per_mm)
+    per_layer_cost = cast(dict[str, LayerMetrics], cost["per_layer"])
+    for layer, metrics in per_layer_cost.items():
+        metrics["ink_coverage_pct"] = coverage.per_layer.get(layer, 0.0)
+    total_cost = cast(LayerMetrics, cost["total"])
+    total_cost["ink_coverage_pct"] = coverage.total
+
+    if coverage_warn_pct > 0:
+        for layer, percentage in coverage.per_layer.items():
+            if percentage > coverage_warn_pct:
+                console.print(
+                    f"Warning: layer {layer} covers {percentage:.1f}% of the page "
+                    f"(above --coverage-warn {coverage_warn_pct:g}%). "
+                    "Check --background-threshold / --saturation: pale areas may be "
+                    "filling the page."
+                )
 
     if as_json:
         click.echo(json.dumps({"likeness": likeness, "machine_cost": cost}, indent=2))
