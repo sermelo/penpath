@@ -271,6 +271,20 @@ scribble covering the page). Measured with the shipped defaults and
 | identical images | 1.0000 | 1.0000 |
 | two uniform images (both edge maps zero) | 1.0000 | 1.0000 |
 
+Simulated previews of the two drawings, rendered at 3 px/mm from the committed
+SVGs:
+
+| case | preview |
+|------|---------|
+| near-blank page + light-blue scribble | [scribble](../images/luc-135/blank_page_light_blue_scribble.png) |
+| same figure without the scribble | [matching figure](../images/luc-135/matching_figure_no_scribble.png) |
+
+The first is a pale blue zig-zag scribble covering almost the whole page with
+the dark pencilled circle and diagonal hatching still in the middle; the
+original has only that figure on a pale near-blank page. The second keeps the
+circle and hatching and leaves the surrounding page empty, matching the
+original's structure.
+
 The regression asserts `edge_likeness < 0.40` for the blind spot. That ceiling
 is derived, not guessed: it is the midpoint between the measured blind spot
 0.2154 and the lowest matching-edge drawing 0.7215 (the hatched square),
