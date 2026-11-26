@@ -152,9 +152,7 @@ class TestGradientAtTheCLI:
 class TestBackgroundMethodProjectFilesAtTheCLI:
     """The YAML key drives the mask and the CLI flag overrides it."""
 
-    def test_project_method_drives_the_cli(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_project_method_drives_the_cli(self, runner: CliRunner, tmp_path: Path) -> None:
         output = tmp_path / "from_project.svg"
         project = _project(tmp_path, output, "global")
         result = runner.invoke(
