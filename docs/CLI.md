@@ -68,9 +68,28 @@ keep their meaning.
 |--------|-------|---------|-------------|
 | `--pfm NAME` | — | `sketch_lines` | PFM algorithm or built-in preset (see **PFM Presets** below) |
 | `--pfm-setting KEY=VALUE` | `-s` | — | PFM-specific setting (repeatable). See **PFM Settings** below. |
-| `--pen NAME` | — | `default` | Pen preset name or `width,color,type` (e.g., `0.3,#000000,fineliner`) |
+| `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
 | `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,margins]` (e.g., `a4`, `210x297,10`) |
+
+#### Pens (`--pen`)
+
+A preset name is looked up first (user config, then the built-ins listed under
+**Pen Presets**). Otherwise `--pen` takes the inline form
+`WIDTH[,COLOR[,TYPE]]`:
+
+```bash
+penpath convert photo.jpg --pen 0.4                       # black rollerball
+penpath convert photo.jpg --pen 0.4,#FF6600               # named or #RRGGBB colour
+penpath convert photo.jpg --pen 0.4,#000000,fineliner     # explicit type
+```
+
+`WIDTH` is in millimetres, greater than 0 and at most 10. Omitted `COLOR`
+defaults to `#000000`; omitted `TYPE` defaults to `rollerball`. The accepted
+types are `ballpoint`, `fineliner`, `fountain`, `brush`, `marker`, `rollerball`
+and `gel`. Pydantic validates every field: an invalid width, colour or type
+exits 2 with a message naming the field and what it accepts. `--pen 0.4` is
+supported; there is no `default` alias.
 
 #### Working Resolution
 
@@ -591,9 +610,6 @@ penpath config [SUBCOMMAND] [OPTIONS]
 | `show` | Print current config (merged with defaults) |
 | `edit` | Open config in `$EDITOR` (creates if missing) |
 | `init` | Create default config file |
-| `get KEY` | Get single config value |
-| `set KEY VALUE` | Set config value |
-| `reset` | Delete config file (revert to defaults) |
 
 #### Config Keys
 
@@ -608,8 +624,6 @@ penpath config [SUBCOMMAND] [OPTIONS]
 ```bash
 penpath config show
 penpath config init
-penpath config set default_paper a3
-penpath config get default_pen
 penpath config edit
 ```
 
@@ -892,7 +906,10 @@ coordinates instead of writing G-code the machine cannot follow.
 | `blue_fine` | 0.3 | Blue | Blue accent |
 | `green_fine` | 0.3 | Green | Green accent |
 
-**Inline Format**: `WIDTH,COLOR` — e.g., `0.4,#FF6600` (color defaults to black if omitted)
+**Inline Format**: `WIDTH[,COLOR[,TYPE]]` — e.g., `0.4`, `0.4,#FF6600`, or
+`0.4,#000000,fineliner`. Colour defaults to `#000000`, type defaults to
+`rollerball`; accepted types are `ballpoint`, `fineliner`, `fountain`, `brush`,
+`marker`, `rollerball`, `gel`. See **Pens (`--pen`)** above.
 
 ---
 

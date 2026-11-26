@@ -394,8 +394,9 @@ class TestConvertCommand:
             "nonexistent",
         ]
         result = runner.invoke(main, args)
-        assert result.exit_code != 0
-        assert "unknown pen" in result.output.lower()
+        assert result.exit_code == 2
+        assert "width_mm" in result.output
+        assert "Accepted:" in result.output
 
 
 class TestPaletteResolution:

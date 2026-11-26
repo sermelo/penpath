@@ -51,6 +51,16 @@ class TestPen:
         pen = Pen(name="blue", width_mm=0.5, color="blue")
         assert pen.color == "blue"
 
+    def test_pen_fineliner_type(self):
+        """`fineliner` is a valid pen type alongside the original six."""
+        pen = Pen(name="fine", width_mm=0.3, pen_type="fineliner")
+        assert pen.pen_type == "fineliner"
+
+    def test_pen_invalid_type(self):
+        """An unknown pen type is rejected by the model."""
+        with pytest.raises(ValidationError, match="pen_type"):
+            Pen(name="test", width_mm=0.5, pen_type="bogus")  # type: ignore[arg-type]
+
     def test_pen_invalid_width_zero(self):
         """Test that zero width raises error."""
         with pytest.raises(ValidationError):
