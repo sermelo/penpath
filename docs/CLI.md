@@ -50,6 +50,7 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--auto-equalize` / `--no-auto-equalize` | — | `true` | Normalize the working image's luminance range (linear auto levels) once before drawing. Use `--no-auto-equalize` to keep the original tones. |
 | `--background` / `--no-background` | — | mode-dependent | Mask paper-coloured pixels as no ink. On by default with `--palette`, off for a single pen; the flag overrides either mode. |
 | `--background-threshold FLOAT` | — | `10` | Maximum CIE Lab distance from the detected paper colour treated as no ink. Giving it enables masking unless `--no-background` is also given. |
+| `--background-method [global\|local]` | — | `local` | How paper is found: a smooth per-pixel field that follows lighting gradients and shadows, or one detected colour. Giving it enables masking unless `--no-background` is also given. |
 | `--saturation FLOAT` | — | `1.0` | CIE Lab chroma multiplier for palette mode, in [0, 3]. `1.0` is off; `0` makes the image neutral. |
 | `--palette-adapt` | — | `false` | Pick the multiplier automatically from the image and the palette. An explicit `--saturation` wins. |
 | `--max-resolution PX` | — | derived | Longest side of the working image in pixels. Overrides the derived value (no clamp) and never enlarges. |
@@ -67,19 +68,28 @@ filter, so every palette pen uses the same normalization and explicit filters
 keep their meaning.
 
 Background masking follows auto equalization and runs before palette
-separation. Penpath estimates the paper colour from the median colour of a
+separation. With the default `--background-method local`, penpath builds a
+smooth per-pixel paper field from a downsampled, median-filtered version of the
+image and sets pixels within 10 CIE Lab ΔE of the field at that pixel to pure
+white. The field follows lighting gradients and soft shadows, so a pale page
+stays no-ink end to end; thin ink is removed before the estimate and dense
+hatching is kept from becoming fake paper. `--background-method global` keeps
+the original single-colour mask: it estimates paper from the median colour of a
 thin border ring (falling back to the lightest near-neutral cluster when the
-border is dark), then sets pixels within 10 CIE Lab ΔE of that colour to pure
-white.
+border is dark) and tests every pixel against that one colour. It is the
+reproducible comparison: on the synthetic gradient page at
+`--background-threshold 5` it leaves the dimmed half unmasked and a light pen
+scribbles there, while `local` masks only the dark line at the same threshold.
 Because white has luminance 255, masked pixels are white in every separated
-pen channel, so no pen can draw the paper. The detected colour and the masked
-percentage go to stderr; `--quiet` silences both. `--no-background` skips the
-step entirely and reproduces the single-pen default output byte for byte. The
-default threshold of 10 ΔE was measured on the synthetic pencil-on-paper
-fixture: after auto equalization paper noise reaches 4.4 ΔE at the 99th
-percentile while the faintest ink starts at 17.4 ΔE, so the cut-off sits well
-below any ink. Lowering it can leave paper noise unmasked; raising it too far
-can eat faint ink.
+pen channel, so no pen can draw the paper. The paper colour and method used,
+plus the masked percentage, go to stderr; `--quiet` silences all of it. An
+explicit `--background-method` enables masking on a single pen just like
+`--background-threshold`, and `--no-background` always wins. The default
+threshold of 10 ΔE was measured on the synthetic pencil-on-paper fixture:
+after auto equalization paper noise reaches 4.4 ΔE at the 99th percentile while
+the faintest ink starts at 17.4 ΔE, so the cut-off sits well below any ink.
+Lowering it can leave paper noise unmasked; raising it too far can eat faint
+ink.
 
 A colour boost follows masking, still before palette separation. It multiplies
 CIE Lab a* and b* by a factor and leaves L* alone, so tones and ink density do
@@ -157,7 +167,8 @@ the drawing algorithm then run once per pen, and geometry is simplified,
 merged and sorted **within that pen only**. Paper masking is on by default in
 palette mode so pale paper never becomes a light pen's drawing;
 `--no-background` turns it off, `--background` forces it on for a single pen,
-and `--background-threshold` tunes the cut-off. A very muted image can be
+`--background-threshold` tunes the cut-off, and `--background-method global`
+switches back to the old single-colour estimate. A very muted image can be
 boosted before the split with `--saturation` or `--palette-adapt` so pixels
 below the neutral cut-off join their hue family; the report of the factor used
 is described under **Image Options**.
@@ -213,11 +224,11 @@ Done in 20.9 s
 
 The downscale stage is reported only when the image is actually downscaled, so
 the counter ends at 5 when it is skipped. A `[n/N] Masking paper
-background...` stage and a `Paper colour: ...; masked N% of pixels as no ink`
-line appear when masking runs (palette mode by default), raising the counter
-by one. The working-resolution line is written to stderr too. `--quiet`
-removes all of this, including the "SVG saved to" line; errors are still
-reported on stderr and the SVG is still written.
+background...` stage and a `Paper colour: #...... (local method); masked N% of
+pixels as no ink` line appear when masking runs (palette mode by default),
+raising the counter by one. The working-resolution line is written to stderr
+too. `--quiet` removes all of this, including the "SVG saved to" line; errors
+are still reported on stderr and the SVG is still written.
 
 #### Optional: vpype
 
@@ -364,6 +375,11 @@ penpath convert photo.jpg --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E"
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
 
+# Paper masking: local follows lighting gradients (default); global is the old
+# single-colour mask. Lower the cut-off to see the gradient repro.
+penpath convert photo.jpg --palette stabilo_88 --background-method local
+penpath convert photo.jpg --palette stabilo_88 --background-method global --background-threshold 5
+
 # Keep the original tonal range (auto equalization is on by default)
 penpath convert photo.jpg --no-auto-equalize
 
@@ -404,6 +420,7 @@ penpath preview DRAWING -o OUTPUT [OPTIONS]
 | `--dpi FLOAT` | — | `10.0` | Resolution in **pixels per millimetre** |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour (hex or named CSS colour) |
 | `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name) |
+| `--travel/--no-travel` | — | `false` | Draw pen-up travel moves as thin light lines |
 
 For an SVG the page size is read from `width`/`height` or `viewBox`; SVGs without
 one fall back to A4. For G-code the page is the `page=WIDTHxHEIGHT` value in the
@@ -427,17 +444,33 @@ uses `reachable_corner`. Layers use the width and colour of their pen from the
 built-in presets (`stabilo_88_*`, `red_fine`, ...); an unknown pen renders black
 at 0.3 mm because G-code carries no colours.
 
+#### Showing pen-up travel
+
+`--travel` adds thin light grey (0.1 mm, `#C8C8C8`) lines for pen-up moves, so
+long travels between strokes are easy to spot. For an SVG these are the gaps
+between consecutive strokes in document order; for G-code they are the gaps
+between the strokes the machine actually draws, in G-code order. Both use the
+same straight two-point travel rule with a 0.01 mm gap threshold as
+`penpath.core.svg_parse.parse_svg_strokes(..., include_pen_up=True)`. The travel
+lines are drawn **under** the ink, so every inked pixel is unchanged. The default
+is `--no-travel`, which renders ink only and produces byte-for-byte the same PNG
+as before. `--travel` also works with `--layer`, where only that pen's strokes
+and travels are shown.
+
 #### Examples
 
 ```bash
 penpath preview plot.svg -o preview.png
 penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
 penpath preview plot.svg -o fine.png --layer fine
+# Show pen-up travel as thin light lines under the ink (default: ink only)
+penpath preview plot.svg -o travel.png --travel
 
 # Check the G-code against the reviewed SVG (the two PNGs match)
 penpath gcode card.svg --profile generic -o card.gcode
 penpath preview card.gcode -o card.png
 penpath preview card.gcode -o red.png --layer stabilo_88_red
+penpath preview card.gcode -o card_travel.png --travel
 ```
 
 ---
@@ -522,7 +555,7 @@ fit changes the drawing, one warning goes to stderr naming the overshoot, the
 scale and the applied pen-space shift, for example:
 
 ```
-Warning: drawing is 0.881 mm past the aquila drawable area; fitted with scale 1.000 and shift (-0.881, 0.000) mm
+Warning: drawing is 0.881 mm past the aquila usable area; fitted with scale 1.000 and shift (-0.881, 0.000) mm
 ```
 
 The overshoot includes the reserved ramp lead-in, so it can exceed the amount
@@ -537,7 +570,7 @@ drawable area minus `bed.margin_mm`) then fails with exit 3, naming its
 coordinates, the per-axis overshoot and the fix:
 
 ```
-Error: point (x=197.431, y=180.000) mm is outside the usable area X 0.000..197.300, Y 0.000..191.400 mm (drawable area minus a 0.000 mm margin); overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
+Error: point (x=187.431, y=170.000) mm is outside the usable area X 10.000..187.300, Y 10.000..181.400 mm (drawable area minus a 10.000 mm margin); overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
 ```
 
 #### Ramped landing
@@ -573,7 +606,7 @@ penpath gcode card.svg --profile my_plotter --profiles ./profiles.yaml
 # A palette SVG: one G-code layer per used pen, with a pen change between layers
 penpath gcode christmas_card.svg --profile generic -o card.gcode
 
-# The built-in aquila profile: page against the drawable corner, ramped landings,
+# The built-in aquila profile: page against the usable corner, ramped landings,
 # a pen set at the touch spot before every layer, and no M2 at the end
 penpath gcode card.svg --profile aquila -o card.gcode
 # A slightly oversized page is fitted with a warning on stderr
@@ -794,6 +827,7 @@ input:
   auto_equalize: true   # linear levels normalization before drawing (default)
   background: true             # mask paper before separation (palette default)
   background_threshold: 10.0   # CIE Lab ΔE treated as paper
+  background_method: local     # local paper field, or global single colour
   saturation: 1.0              # Lab chroma multiplier (0-3; 1.0 = off)
   palette_adapt: false         # choose the multiplier from image and palette
 
@@ -857,13 +891,15 @@ on; set it to `false` to keep the original tones, or pass
 `--auto-equalize` / `--no-auto-equalize` to override it for one run.
 
 The background keys live under `image:` in a file written by `save_yaml`:
-`background: true|false` forces masking on or off, and
-`background_threshold: 10.0` sets the Lab cut-off. Leaving `background` out
-follows the mode: on for `palette:`/`pens:`, off for a single `pen:`. Old files
-without either key load unchanged, and `save_yaml` omits an unset `background`
-so a single-pen project round-trips with today's output. `--background`,
-`--no-background` and `--background-threshold` override the file for one run;
-`--no-background` wins over a threshold on the same command line.
+`background: true|false` forces masking on or off,
+`background_threshold: 10.0` sets the Lab cut-off, and
+`background_method: local|global` chooses the paper estimate. Leaving
+`background` out follows the mode: on for `palette:`/`pens:`, off for a single
+`pen:`. Old files without the method load as `local`, and `save_yaml` omits an
+unset `background` so a single-pen project round-trips with today's output.
+`--background`, `--no-background`, `--background-threshold` and
+`--background-method` override the file for one run; `--no-background` wins on
+the same command line.
 
 ```yaml
 image:
@@ -873,6 +909,7 @@ image:
   dpi: 300
   background: false
   background_threshold: 4.5
+  background_method: local
   saturation: 2.0
   palette_adapt: false
 ```
@@ -1072,10 +1109,13 @@ Y_pen = page_origin_y + y_svg                 # invert_y: false
 
 For the example above, the pen offset `[-22.7, -28.6]` on a 220 x 220 mm bed
 with a 0..220 nozzle range gives a drawable area of X 0..197.3 mm and Y
-0..191.4 mm, which `bed.margin_mm` insets to the usable area. Coordinates are
-written with three decimals (0.001 mm); a point outside the usable area fails
-the run with its coordinates instead of writing G-code the machine cannot
-follow.
+0..191.4 mm. The built-in `aquila` profile sets `bed.margin_mm: 10`, so its
+usable area is X 10..187.3 mm and Y 10..181.4 mm: the largest page that fits is
+about 177 x 171 mm, and a 170 x 170 mm page lands at pen (17.3, 10.0). The
+touch spot at pen (190, 12) sits in the safety margin and is not a drawing
+point, so it is never checked against the usable area. Coordinates are written
+with three decimals (0.001 mm); a point outside the usable area fails the run
+with its coordinates instead of writing G-code the machine cannot follow.
 
 ---
 

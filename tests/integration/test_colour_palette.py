@@ -48,6 +48,8 @@ def _convert(image_name: str, tmp_path: Path) -> Path:
             str(output),
             "--palette",
             PALETTE_NAME,
+            "--background-method",
+            "global",
             "-s",
             f"seed={SEED}",
             "--no-vpype",

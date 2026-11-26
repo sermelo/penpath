@@ -2,6 +2,8 @@
 
 from penpath.core.drawing import (
     PIXEL_SETTING_FIELDS,
+    OutlineSettings,
+    outline_strokes,
     scale_pixel_settings,
 )
 from penpath.core.gcode_preview import (
@@ -159,6 +161,7 @@ __all__ = [
     "ImageRef",
     "InvalidProfileError",
     "MachineProfile",
+    "OutlineSettings",
     "PFMSettings",
     "PFMSettingsUnion",
     "PageProfile",
@@ -216,6 +219,7 @@ __all__ = [
     "mask_background",
     "merge_lines",
     "mm_to_pixels",
+    "outline_strokes",
     "page_origin_mm",
     "palette_match",
     "parse_gcode_header",

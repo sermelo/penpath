@@ -161,6 +161,13 @@ def placed_reference(tmp_path: Path) -> Path:
     return path
 
 
+def _render_preview(runner: CliRunner, source: Path, output: Path, *extra: str) -> Image.Image:
+    result = runner.invoke(main, ["preview", str(source), "-o", str(output), "--dpi", "5", *extra])
+    assert result.exit_code == 0, result.output
+    with Image.open(output) as image:
+        return image.copy()
+
+
 def _placed_likeness(runner: CliRunner, reference: Path, svg_path: Path) -> float:
     result = runner.invoke(
         main, ["evaluate", str(reference), str(svg_path), "--json", "--dpi", str(PLACED_DPI)]
@@ -294,6 +301,57 @@ class TestPreview:
         with Image.open(output) as image:
             assert image.getpixel((250, 250)) == (0, 0, 0)
             assert image.getpixel((400, 350)) == (255, 255, 255)
+
+    def test_preview_travel_changes_svg_png_with_light_lines(
+        self, runner: CliRunner, hand_drawing: Path, tmp_path: Path
+    ) -> None:
+        ink = _render_preview(runner, hand_drawing, tmp_path / "ink.png")
+        travel = _render_preview(runner, hand_drawing, tmp_path / "travel.png", "--travel")
+        no_travel = _render_preview(runner, hand_drawing, tmp_path / "no-travel.png", "--no-travel")
+
+        assert ink.tobytes() != travel.tobytes()
+        assert ink.tobytes() == no_travel.tobytes()
+        assert ink.getpixel((450, 125)) == (255, 255, 255)
+        assert travel.getpixel((450, 125)) == (200, 200, 200)
+
+    def test_preview_travel_leaves_svg_ink_pixels_unchanged(
+        self, runner: CliRunner, hand_drawing: Path, tmp_path: Path
+    ) -> None:
+        ink = _render_preview(runner, hand_drawing, tmp_path / "ink.png")
+        travel = _render_preview(runner, hand_drawing, tmp_path / "travel.png", "--travel")
+        ink_pixels = [
+            (x, y)
+            for y in range(ink.height)
+            for x in range(ink.width)
+            if ink.getpixel((x, y)) != (255, 255, 255)
+        ]
+
+        assert ink_pixels
+        assert all(travel.getpixel(pixel) == ink.getpixel(pixel) for pixel in ink_pixels)
+
+    def test_preview_travel_works_with_layer(self, runner: CliRunner, tmp_path: Path) -> None:
+        svg = tmp_path / "layers.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
+            'width="100mm" height="100mm" viewBox="0 0 100 100">'
+            '<g inkscape:groupmode="layer" inkscape:label="fine" id="layer1" '
+            'stroke="#000000" stroke-width="1">'
+            '<path d="M 10 10 L 30 10"/><path d="M 30 40 L 10 40"/></g>'
+            '<g inkscape:groupmode="layer" inkscape:label="bold" id="layer2" '
+            'stroke="#000000" stroke-width="1">'
+            '<path d="M 10 70 L 30 70"/></g></svg>',
+            encoding="utf-8",
+        )
+
+        ink = _render_preview(runner, svg, tmp_path / "ink.png", "--layer", "fine")
+        travel = _render_preview(
+            runner, svg, tmp_path / "travel.png", "--layer", "fine", "--travel"
+        )
+
+        assert ink.tobytes() != travel.tobytes()
+        assert travel.getpixel((150, 125)) == (200, 200, 200)
+        assert travel.getpixel((100, 350)) == (255, 255, 255)
 
 
 class TestEvaluate:
@@ -712,3 +770,10 @@ class TestCommandHelp:
         assert result.exit_code == 0
         assert "Usage:" in result.output
         assert "--dpi" in result.output
+
+    def test_preview_help_describes_travel(self, runner: CliRunner) -> None:
+        result = runner.invoke(main, ["preview", "--help"])
+
+        assert result.exit_code == 0
+        assert "--travel" in result.output
+        assert "thin light lines" in result.output

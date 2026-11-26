@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="100mm" height="100mm" viewBox="0 0 100 100">
+  <g inkscape:groupmode="layer" inkscape:label="black" id="layer1"
+     fill="none" stroke="#000000" stroke-width="0.6">
+    <path d="M 10 50 L 30 50 L 30 80 L 10 80 Z"/>
+    <path d="M 40 20 L 60 35 L 80 20"/>
+    <path d="M 45 60 L 75 60 L 75 85 L 45 85 Z"/>
+    <path d="M 15 15 L 35 15 L 35 35 L 15 35 Z"/>
+  </g>
+</svg>

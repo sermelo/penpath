@@ -12,6 +12,13 @@ import pytest
 from click.testing import CliRunner
 
 from penpath.cli.main import main
+from penpath.core import (
+    fit_layers_to_drawable,
+    get_svg_paper_size,
+    load_profile,
+    page_origin_mm,
+    parse_svg_layers,
+)
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 SIMPLE_SVG = FIXTURES / "svg" / "gcode" / "simple.svg"
@@ -54,14 +61,29 @@ def card(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def slightly_outside_card(tmp_path: Path) -> Path:
-    """A 190x190 page whose rightmost point sits 0.131 mm past the Aquila area."""
+    """A 170x170 page whose rightmost point sits 0.131 mm past the Aquila usable area."""
     drawing = tmp_path / "card.svg"
     drawing.write_text(
         """<svg xmlns="http://www.w3.org/2000/svg"
  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
- width="190mm" height="190mm" viewBox="0 0 190 190">
+ width="170mm" height="170mm" viewBox="0 0 170 170">
 <g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
- fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 190.131,10"/></g>
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 170.131,10"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+    return drawing
+
+
+def _aquila_svg(tmp_path: Path, width: float, height: float, points: str) -> Path:
+    """Write a one-layer SVG of the given page size for Aquila runs."""
+    drawing = tmp_path / "card.svg"
+    drawing.write_text(
+        f"""<svg xmlns="http://www.w3.org/2000/svg"
+ xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+ width="{width:g}mm" height="{height:g}mm" viewBox="0 0 {width:g} {height:g}">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="{points}"/></g>
 </svg>""",
         encoding="utf-8",
     )
@@ -320,7 +342,7 @@ def test_gcode_fits_slightly_oversized_page_by_default(
     assert result.stdout == ""
     assert slightly_outside_card.with_suffix(".gcode").is_file()
     assert "Warning: drawing is" in result.stderr
-    assert "past the aquila drawable area" in result.stderr
+    assert "past the aquila usable area" in result.stderr
     assert "fitted with scale 1.000 and shift (-0.881, 0.000) mm" in result.stderr
 
 
@@ -334,6 +356,7 @@ def test_gcode_no_fit_rejects_slightly_oversized_page_with_fix(
 
     assert result.exit_code == 3
     assert result.stdout == ""
+    assert "outside the usable area X 10.000..187.300, Y 10.000..181.400" in result.stderr
     assert "overshoot x=0.131 mm, y=0.000 mm" in result.stderr
     assert "Pass --fit (the default) or use a smaller --paper." in result.stderr
     assert not slightly_outside_card.with_suffix(".gcode").exists()
@@ -362,9 +385,9 @@ def test_gcode_fit_within_tolerance_leaves_drawing_alone(runner: CliRunner, tmp_
     drawing.write_text(
         """<svg xmlns="http://www.w3.org/2000/svg"
  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
- width="190mm" height="190mm" viewBox="0 0 190 190">
+ width="170mm" height="170mm" viewBox="0 0 170 170">
 <g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
- fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 189.28,10"/></g>
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 169.28,10"/></g>
 </svg>""",
         encoding="utf-8",
     )
@@ -388,9 +411,9 @@ def test_gcode_fits_far_point_by_default(runner: CliRunner, tmp_path: Path) -> N
     drawing.write_text(
         """<svg xmlns="http://www.w3.org/2000/svg"
  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
- width="190mm" height="190mm" viewBox="0 0 190 190">
+ width="170mm" height="170mm" viewBox="0 0 170 170">
 <g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
- fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 199,10"/></g>
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 179,10"/></g>
 </svg>""",
         encoding="utf-8",
     )
@@ -404,17 +427,15 @@ def test_gcode_fits_far_point_by_default(runner: CliRunner, tmp_path: Path) -> N
     assert "fitted with scale 1.000 and shift (-9.750, 0.000) mm" in result.stderr
 
 
-def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
-    runner: CliRunner, tmp_path: Path
-) -> None:
-    """The built-in Aquila refuses a pen point past its reference reach with --no-fit."""
+def test_gcode_aquila_rejects_point_outside_usable_area(runner: CliRunner, tmp_path: Path) -> None:
+    """The built-in Aquila refuses a pen point inside its 10 mm safety margin."""
     drawing = tmp_path / "outside.svg"
     drawing.write_text(
         """<svg xmlns="http://www.w3.org/2000/svg"
  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
- width="190mm" height="190mm" viewBox="0 0 190 190">
+ width="170mm" height="170mm" viewBox="0 0 170 170">
 <g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
- fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 199,10"/></g>
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 179,10"/></g>
 </svg>""",
         encoding="utf-8",
     )
@@ -423,9 +444,63 @@ def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
 
     assert result.exit_code == 3
     assert result.stdout == ""
-    assert "outside the usable area" in result.stderr
-    assert "X 0.000..197.300, Y 0.000..191.400" in result.stderr
+    assert "outside the usable area X 10.000..187.300, Y 10.000..181.400" in result.stderr
+    assert "a 10.000 mm margin" in result.stderr
     assert not drawing.with_suffix(".gcode").exists()
+
+
+def test_aquila_180_page_fits_by_default_and_writes_gcode(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """A 180 mm page past the safety margin is fitted instead of rejected."""
+    drawing = _aquila_svg(tmp_path, 180.0, 180.0, "0,0 180,180")
+    page_size = get_svg_paper_size(drawing)
+    assert page_size is not None
+    profile = load_profile("aquila", profiles_path=tmp_path / "profiles.yaml")
+    fitted = fit_layers_to_drawable(parse_svg_layers(drawing), profile, page_size)
+
+    assert fitted.changed
+    assert fitted.scale < 1.0 or any(fitted.offset_mm)
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila"])
+
+    assert result.exit_code == 0, result.stderr
+    assert drawing.with_suffix(".gcode").is_file()
+    assert "past the aquila usable area" in result.stderr
+
+
+def test_aquila_180_page_no_fit_names_the_usable_limits(runner: CliRunner, tmp_path: Path) -> None:
+    """The strict opt-out on the same page names the usable area and the fix."""
+    drawing = _aquila_svg(tmp_path, 180.0, 180.0, "0,0 180,180")
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila", "--no-fit"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert "outside the usable area X 10.000..187.300, Y 10.000..181.400" in result.stderr
+    assert "Pass --fit (the default) or use a smaller --paper." in result.stderr
+    assert not drawing.with_suffix(".gcode").exists()
+
+
+def test_aquila_130x73_page_uses_the_usable_corner_without_a_warning(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """A small page lands at pen (57.3, 10) and needs no fit."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+    page_size = get_svg_paper_size(drawing)
+    assert page_size is not None
+    profile = load_profile("aquila", profiles_path=tmp_path / "profiles.yaml")
+    origin = page_origin_mm(profile, page_size)
+    assert origin == pytest.approx((57.3, 10.0))
+    assert (origin[0] + page_size[0], origin[1] + page_size[1]) == pytest.approx((187.3, 83.0))
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila"])
+
+    assert result.exit_code == 0, result.stderr
+    assert "Warning:" not in result.stderr
+    text = drawing.with_suffix(".gcode").read_text(encoding="ascii")
+    assert "page_origin=57.300,10.000 usable_x=10.000..187.300" in text
+    assert "usable_y=10.000..181.400" in text
 
 
 def test_gcode_rejects_point_outside_derived_drawable_area(

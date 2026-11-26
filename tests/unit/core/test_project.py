@@ -704,6 +704,33 @@ class TestBackgroundProjectFiles:
         with pytest.raises(ProjectLoadError, match="validation failed"):
             load_yaml(_write_yaml(tmp_path, data))
 
+    def test_old_project_loads_with_the_local_method(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        assert "background_method" not in data["image"]
+        assert load_yaml(_write_yaml(tmp_path, data)).image.background_method == "local"
+
+    @pytest.mark.parametrize("method", ["global", "local"])
+    def test_background_method_round_trips(self, tmp_path: Path, method: str) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        data["image"]["background_method"] = method
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.image.background_method == method
+
+        path = tmp_path / "saved.yaml"
+        save_yaml(project, path)
+        saved = yaml.safe_load(path.read_text())
+        assert saved["image"]["background_method"] == method
+        assert load_yaml(path).image.background_method == method
+
+    def test_unknown_background_method_is_rejected(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        data["image"]["background_method"] = "diagonal"
+        with pytest.raises(ProjectLoadError, match="validation failed"):
+            load_yaml(_write_yaml(tmp_path, data))
+
 
 class TestSaturationProjectFiles:
     """Saturation options load old files unchanged and round-trip when set."""

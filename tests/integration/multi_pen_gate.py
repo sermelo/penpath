@@ -151,6 +151,8 @@ def convert_photo(work_dir: Path, seed: int = SEED) -> Path:
             str(svg_path),
             "--palette",
             PALETTE_NAME,
+            "--background-method",
+            "global",
             "--pfm-setting",
             f"seed={seed}",
             "--quiet",

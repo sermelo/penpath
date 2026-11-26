@@ -11,6 +11,7 @@ from penpath.core.simulation import (
     PenStroke,
     compute_layer_coverage,
     compute_machine_cost,
+    insert_pen_up_moves,
     simulate_plot,
 )
 
@@ -470,6 +471,95 @@ class TestSimulatePlot:
         # Should form a rectangle - check corners have black pixels
         pixels = list(img.getdata())
         assert any(p != (255, 255, 255) for p in pixels)
+
+    def test_simulate_plot_travel_color_none_leaves_pen_up_invisible(self):
+        """The default and an explicit zero travel colour ignore pen-up strokes."""
+        strokes = [
+            _stroke("#000000", 2.0),
+            _stroke("#000000", 8.0, pen_up=True),
+        ]
+        default = simulate_plot(strokes, 10.0, 10.0, dpi_px_per_mm=10.0)
+        explicit = simulate_plot(strokes, 10.0, 10.0, dpi_px_per_mm=10.0, travel_width_mm=0.5)
+
+        assert default.tobytes() == explicit.tobytes()
+        assert default.getpixel((50, 80)) == (255, 255, 255)
+
+    def test_simulate_plot_travel_style_draws_under_ink(self):
+        """Travel is light and thin, and every ink pixel stays identical."""
+        travel = PenStroke(
+            polyline=[(1.0, 1.0), (9.0, 9.0)],
+            width_mm=0.4,
+            color="#000000",
+            pen_up=True,
+        )
+        ink = PenStroke(
+            polyline=[(1.0, 9.0), (9.0, 1.0)],
+            width_mm=1.0,
+            color="#000000",
+        )
+        ink_only = simulate_plot([ink], 10.0, 10.0, dpi_px_per_mm=10.0)
+        with_travel = simulate_plot(
+            [travel, ink],
+            10.0,
+            10.0,
+            dpi_px_per_mm=10.0,
+            travel_color="#C8C8C8",
+            travel_width_mm=0.1,
+        )
+
+        ink_pixels = [
+            (x, y)
+            for y in range(100)
+            for x in range(100)
+            if ink_only.getpixel((x, y)) != (255, 255, 255)
+        ]
+        assert ink_pixels
+        assert all(with_travel.getpixel(p) == ink_only.getpixel(p) for p in ink_pixels)
+        assert with_travel.getpixel((20, 20)) == (200, 200, 200)
+        assert ink_only.getpixel((20, 20)) == (255, 255, 255)
+
+    def test_simulate_plot_travel_width_controls_line_thickness(self):
+        """A wider travel style inks more pixels than the thin default."""
+        travel = PenStroke(
+            polyline=[(1.0, 1.0), (9.0, 1.0)],
+            width_mm=0.4,
+            color="#000000",
+            pen_up=True,
+        )
+        thin = simulate_plot([travel], 10.0, 10.0, dpi_px_per_mm=10.0, travel_color="#C8C8C8")
+        thick = simulate_plot(
+            [travel], 10.0, 10.0, dpi_px_per_mm=10.0, travel_color="#C8C8C8", travel_width_mm=0.5
+        )
+
+        thin_ink = sum(p == (200, 200, 200) for p in thin.getdata())
+        thick_ink = sum(p == (200, 200, 200) for p in thick.getdata())
+        assert 0 < thin_ink < thick_ink
+
+
+class TestInsertPenUpMoves:
+    """The shared travel helper follows the SVG gap rule for both input formats."""
+
+    def test_insert_pen_up_moves_uses_following_stroke_style(self):
+        first = PenStroke([(0.0, 0.0), (10.0, 0.0)], 0.3, "#000000")
+        second = PenStroke([(20.0, 5.0), (30.0, 5.0)], 0.4, "#FF0000")
+
+        result = insert_pen_up_moves([first, second])
+
+        assert [stroke.pen_up for stroke in result] == [False, True, False]
+        assert result[1].polyline == [(10.0, 0.0), (20.0, 5.0)]
+        assert result[1].width_mm == 0.4
+        assert result[1].color == "#FF0000"
+
+    def test_insert_pen_up_moves_skips_contiguous_and_tiny_gaps(self):
+        first = PenStroke([(0.0, 0.0), (10.0, 0.0)], 0.3, "#000000")
+        touching = PenStroke([(10.0, 0.0), (20.0, 0.0)], 0.3, "#000000")
+        tiny_gap = PenStroke([(20.005, 0.0), (30.0, 0.0)], 0.3, "#000000")
+        real_gap = PenStroke([(30.02, 0.0), (40.0, 0.0)], 0.3, "#000000")
+
+        result = insert_pen_up_moves([first, touching, tiny_gap, real_gap])
+
+        assert [stroke.pen_up for stroke in result] == [False, False, False, True, False]
+        assert result[3].polyline == [(30.0, 0.0), (30.02, 0.0)]
 
 
 class TestComputeLayerCoverage:

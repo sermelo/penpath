@@ -52,6 +52,31 @@
 
 ---
 
+## Library-only outline pass (LUC-129, part 2 of 3)
+
+`penpath.core.outline_strokes(image, OutlineSettings)` extracts contour strokes
+from an image before tone is applied: it detects edges with the project's
+scikit-image dependency, thins them to a one-pixel skeleton, chains the pixels
+into polylines, simplifies them and drops specks. The result is a
+`list[shapely.LineString]` in image pixel coordinates, deterministic for a given
+image and settings, with every point inside the image bounds. Settings such as
+`blur_sigma`, `edge_sigma`, `low_threshold`, `high_threshold`, `close_radius`,
+`min_component_pixels`, `min_length` and `simplify_tolerance` are validated by
+the `OutlineSettings` Pydantic model.
+
+```python
+from penpath.core import OutlineSettings, load_image, outline_strokes
+
+image = load_image("photo.jpg")
+strokes = outline_strokes(image, OutlineSettings())
+```
+
+This is a library capability only. It is not wired into `convert`, project
+files or `--style`, and the Sketch Lines defaults are unchanged; part 3 adds
+the user-facing style flag.
+
+---
+
 ## Decision Rationale
 
 ### MVP (18 features) — "Photo → good, plottable SVG"
