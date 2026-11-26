@@ -624,9 +624,9 @@ def test_fit_then_build_gcode_from_aquila_page_with_a_spill(tmp_path: Path) -> N
     drawing.write_text(
         '<svg xmlns="http://www.w3.org/2000/svg" '
         'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
-        'width="190mm" height="190mm" viewBox="0 0 190 190">'
+        'width="170mm" height="170mm" viewBox="0 0 170 170">'
         '<g inkscape:groupmode="layer" inkscape:label="ink">'
-        '<polyline points="10,10 190.13,10 190.13,20"/>'
+        '<polyline points="10,10 170.13,10 170.13,20"/>'
         "</g></svg>",
         encoding="utf-8",
     )
@@ -644,4 +644,4 @@ def test_fit_then_build_gcode_from_aquila_page_with_a_spill(tmp_path: Path) -> N
     assert fitted.changed
     assert fitted.scale == 1.0
     assert fitted.layers[0].pen == "ink"
-    assert produced.startswith("; penpath gcode profile=aquila page=190.000x190.000 ")
+    assert produced.startswith("; penpath gcode profile=aquila page=170.000x170.000 ")

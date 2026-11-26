@@ -13,7 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from penpath.core import build_gcode, get_svg_paper_size, load_profile, parse_svg_layers
+from penpath.core import (
+    build_gcode,
+    get_svg_paper_size,
+    load_profile,
+    parse_svg_layers,
+    with_margin_mm,
+)
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 SVG = FIXTURES / "svg" / "gcode" / "aquila_two_layers.svg"
@@ -83,10 +89,12 @@ def _pen_blocks(lines: list[str]) -> list[list[str]]:
 
 
 def _penpath_text() -> str:
-    """Emit the same two-layer SVG through penpath's built-in Aquila profile."""
+    """Emit the two-layer SVG through the built-in profile with its margin removed."""
     page_size = get_svg_paper_size(SVG)
     assert page_size is not None
-    return build_gcode(parse_svg_layers(SVG), load_profile("aquila"), page_size)
+    # Sergio's reference script ran without a safety margin; the shipped profile keeps 10 mm.
+    profile = with_margin_mm(load_profile("aquila"), 0.0)
+    return build_gcode(parse_svg_layers(SVG), profile, page_size)
 
 
 @pytest.fixture(scope="module")

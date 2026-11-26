@@ -1,8 +1,9 @@
-# Voxelab Aquila profile. Every number and verbatim block comes from sergio's
+# Voxelab Aquila profile. Machine numbers and verbatim blocks come from sergio's
 # reference script: sermelo/penpath, branch aquila-gcode-reference,
 # reference/aquila_gcode/aquila_plot.py (constants and Plot.start/pen/end,
 # proven on the real machine in test 4, 2026-11-18). Only the numbers live here;
-# the reference's Python stays out of penpath.
+# the reference's Python stays out of penpath. bed.margin_mm is penpath's own
+# 10 mm safety margin; the reference script ran without one.
 version: 1
 name: aquila
 description: Voxelab Aquila (Marlin) with the pen holder on the toolhead
@@ -11,7 +12,7 @@ bed:
   size_mm: [220.0, 220.0]
   pen_offset_mm: [-22.7, -28.6]
   nozzle_range_mm: [[0.0, 220.0], [0.0, 220.0]]
-  margin_mm: 0.0
+  margin_mm: 10.0
   page:
     placement: reachable_corner
   invert_y: true

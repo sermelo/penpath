@@ -227,7 +227,7 @@ def _pregenerate(runner: CliRunner) -> None:
     """Create the SVGs the README reuses before the commands that consume them."""
     for argv in (
         ["convert", "photo.jpg", "-o", "plot.svg", "--quiet"],
-        ["convert", "photo.jpg", "-o", "card.svg", "--paper", "190x190", "--quiet"],
+        ["convert", "photo.jpg", "-o", "card.svg", "--paper", "170x170", "--quiet"],
         [
             "convert",
             "photo.jpg",
