@@ -107,3 +107,15 @@ class TestSketchSquaresAlgorithm:
     def test_blank_image_returns_no_strokes(self):
         image = Image.new("L", (100, 100), 255)
         assert sketch_squares(image, SketchSquaresSettings(seed=42)) == []
+
+    def test_rgb_image_input(self):
+        image = Image.new("RGB", (100, 100), (255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((30, 30, 69, 69), fill=(0, 0, 0))
+        lines = sketch_squares(image, SketchSquaresSettings(seed=42, max_strokes=10))
+        assert lines
+        assert all(line.is_valid and line.length > 0 for line in lines)
+        for line in lines:
+            for x, y in line.coords:
+                assert 0 <= x <= 99
+                assert 0 <= y <= 99
