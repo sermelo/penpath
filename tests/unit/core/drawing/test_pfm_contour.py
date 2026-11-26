@@ -56,6 +56,7 @@ def _assert_clean(strokes: list[LineString], image: Image.Image) -> None:
         assert stroke.is_valid
         assert stroke.length > 0.0
         assert len(list(stroke.coords)) >= 2
+        assert stroke.coords[0] == stroke.coords[-1]
         for x, y in stroke.coords:
             assert 0.0 <= x <= width - 1
             assert 0.0 <= y <= height - 1
