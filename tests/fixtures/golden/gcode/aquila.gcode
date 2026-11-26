@@ -1,4 +1,4 @@
-; penpath gcode profile=aquila page=190.000x190.000 z_up=12.500 z_touch=10.000 z_down=9.000
+; penpath gcode profile=aquila page=190.000x190.000 page_origin=7.300,0.000 usable_x=0.000..197.300 usable_y=0.000..191.400 z_up=12.500 z_touch=10.000 z_down=9.000
 ; BEFORE STARTING: paper held down, pen OUT of the clamp. Never home with a pen in.
 ; touch Z 10.0, pen down Z 9.0, up Z 12.5, offset (-22.7, -28.6)
 G21

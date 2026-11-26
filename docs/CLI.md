@@ -463,7 +463,7 @@ penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
 | `--output PATH` | `-o` | `<input>.gcode` | Output file, beside the input SVG |
 | `--profiles PATH` | — | user config | Alternate user profiles YAML file for this run |
 | `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
-| `--fit/--no-fit` | — | `--fit` | Fit a drawing past the drawable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
+| `--fit/--no-fit` | — | `--fit` | Fit a drawing past the usable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
 
 Each Inkscape pen layer (`<g inkscape:groupmode="layer">`) becomes a G-code
 layer in document order, which is the drawing order of the pens. Strokes inside
@@ -492,14 +492,21 @@ and pen lifts measured from the SVG's strokes, plus an estimated plot time
 from the profile's draw, travel and Z feeds (one down and one up per stroke plus
 a final lift).
 
+The first G-code line is a header comment written for `penpath preview`. It
+carries the profile name, page size, the page origin that was used, the usable
+area bounds and the Z heights, for example
+`; penpath gcode profile=aquila page=170.000x170.000 page_origin=17.300,10.000 usable_x=10.000..187.300 usable_y=10.000..181.400 z_up=12.500 ...`.
+The preview reads `page_origin` so a one-run margin override placed through the
+profile is inverted with the same origin the emitter used.
+
 #### Fitting an oversized page
 
 By default `penpath gcode` fits a reviewed page that reaches past the machine's
-drawable area instead of refusing it. `penpath.core.fit_layers_to_drawable`
-maps the strokes into pen space the same way the emitter does, reserves
-`bed.margin_mm` plus the ramp lead-in on every side so ramped landings stay
-reachable, then shifts the drawing the shortest way that fits. It scales the
-drawing down uniformly only when it is larger than the available area. When the
+usable area instead of refusing it. `penpath.core.fit_layers_to_drawable`
+maps the strokes into pen space the same way the emitter does, reserves the four
+per-side `bed.margin_mm` values plus the ramp lead-in on every side so ramped
+landings stay reachable, then shifts the drawing the shortest way that fits. It
+scales the drawing down uniformly only when it is larger than the available area. When the
 fit changes the drawing, one warning goes to stderr naming the overshoot, the
 scale and the applied pen-space shift, for example:
 
@@ -514,12 +521,12 @@ warning is printed. The warning never goes to stdout, so `--dry-run` output is
 still G-code only. No `.gcode` file is written unless the complete document was
 built successfully.
 
-Pass `--no-fit` to keep the strict check: a point outside the drawable area
-(minus `bed.margin_mm`) then fails with exit 3, naming its coordinates, the
-per-axis overshoot and the fix:
+Pass `--no-fit` to keep the strict check: a point outside the usable area (the
+drawable area minus `bed.margin_mm`) then fails with exit 3, naming its
+coordinates, the per-axis overshoot and the fix:
 
 ```
-Error: point (x=197.431, y=180.000) mm is outside the drawable area X 0.000..197.300, Y 0.000..191.400 mm; overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
+Error: point (x=197.431, y=180.000) mm is outside the usable area X 0.000..197.300, Y 0.000..191.400 mm (drawable area minus a 0.000 mm margin); overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
 ```
 
 #### Ramped landing
@@ -534,14 +541,14 @@ stroke start. The lead-in and lead-out are above the paper and are not previewed
 as ink: `penpath preview` clips Z-interpolated moves at `z_touch`, so the G-code
 PNG still matches the reviewed SVG. The G-code is written in nozzle coordinates
 (`nozzle = pen - bed.pen_offset_mm`) and every emitted point, including the
-lead-in and lead-out, is checked against the drawable area. A profile without
+lead-in and lead-out, is checked against the usable area. A profile without
 `ramp_mm` keeps the plain travel → pen-down → draw → pen-up stroke and produces
 exactly the same G-code as before. `pen.z_touch` must be above `pen.z_down` and
 `pen.z_hover` must not be below `pen.z_touch` when ramping.
 
 Exit codes: **2** for a missing or unknown `--profile` (the message lists the
 available profiles), **3** for an unreadable or invalid profile file, a drawing
-that cannot be fitted, or (with `--no-fit`) a point outside the drawable area,
+that cannot be fitted, or (with `--no-fit`) a point outside the usable area,
 and 1 for other file errors.
 
 #### Examples
@@ -983,8 +990,8 @@ optional; the shipped `generic.yaml` is a smaller, complete profile.
 | `bed.size_mm` | Physical bed `[X, Y]` in millimetres; both must be positive. |
 | `bed.pen_offset_mm` | Pen position relative to the nozzle; the emitted G-code uses `nozzle = pen - offset`. Defaults to `[0, 0]`. |
 | `bed.nozzle_range_mm` | Optional `[[xmin, xmax], [ymin, ymax]]` for where the nozzle may travel. The drawable area is this range shifted by the pen offset and clipped to the bed; without it the bed itself is drawable. |
-| `bed.margin_mm` | Keep every point this far inside the drawable area. Defaults to `0`. |
-| `bed.page.placement` | `fixed` puts the page bottom-left at `origin_mm`; `reachable_corner` puts the page bottom-right at the drawable area's front-right corner. |
+| `bed.margin_mm` | Safety margin inside the drawable area: one non-negative number for all four sides, or `[top, right, bottom, left]` (four non-negative numbers). In pen space top is the back/max Y, right is max X, bottom is the front/min Y and left is min X. Defaults to `0`. The drawable area inset by these margins is the **usable area**, used by fitting, `reachable_corner` placement, the strict point check and the G-code header. |
+| `bed.page.placement` | `fixed` puts the page bottom-left at `origin_mm`; `reachable_corner` puts the page bottom-right at the usable area's front-right corner. |
 | `bed.page.origin_mm` | Pen-space page origin used with `placement: fixed`. |
 | `bed.invert_y` | `true` when machine Y grows up while SVG Y grows down. Defaults to `true`. |
 | `feed.travel_mm_s` / `feed.draw_mm_s` | G0 / G1 speed in mm per second; both must be positive. |
@@ -1027,8 +1034,8 @@ come from the profile's pen-space fields instead.
 
 With `placement: fixed`, the page's bottom-left corner sits at
 `bed.page.origin_mm`. With `placement: reachable_corner`, the page's
-bottom-right corner sits at the drawable area's front-right corner
-(`x = drawable_x_max - page_width`, `y = drawable_y_min`). Stroke points map as:
+bottom-right corner sits at the usable area's front-right corner
+(`x = usable_x_max - page_width`, `y = usable_y_min`). Stroke points map as:
 
 ```
 X_pen = page_origin_x + x_svg
@@ -1038,9 +1045,10 @@ Y_pen = page_origin_y + y_svg                 # invert_y: false
 
 For the example above, the pen offset `[-22.7, -28.6]` on a 220 x 220 mm bed
 with a 0..220 nozzle range gives a drawable area of X 0..197.3 mm and Y
-0..191.4 mm. Coordinates are written with three decimals (0.001 mm); a point
-outside the drawable area (minus `margin_mm`) fails the run with its
-coordinates instead of writing G-code the machine cannot follow.
+0..191.4 mm, which `bed.margin_mm` insets to the usable area. Coordinates are
+written with three decimals (0.001 mm); a point outside the usable area fails
+the run with its coordinates instead of writing G-code the machine cannot
+follow.
 
 ---
 
