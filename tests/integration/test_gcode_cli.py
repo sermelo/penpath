@@ -49,6 +49,22 @@ def card(tmp_path: Path) -> Path:
     return target
 
 
+@pytest.fixture
+def slightly_outside_card(tmp_path: Path) -> Path:
+    """A 190x190 page whose rightmost point sits 0.131 mm past the Aquila area."""
+    drawing = tmp_path / "card.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg"
+ xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+ width="190mm" height="190mm" viewBox="0 0 190 190">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 190.131,10"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+    return drawing
+
+
 def _user_profile(tmp_path: Path, name: str, body: str) -> Path:
     """Write a user profiles file with one machine under ``name``."""
     path = tmp_path / "profiles.yaml"
@@ -182,7 +198,8 @@ pen:
     )
 
     result = runner.invoke(
-        main, ["gcode", str(card), "--profile", "tiny", "--profiles", str(profiles)]
+        main,
+        ["gcode", str(card), "--profile", "tiny", "--profiles", str(profiles), "--no-fit"],
     )
 
     assert result.exit_code == 3
@@ -290,10 +307,80 @@ def test_gcode_aquila_dry_run_keeps_the_reference_blocks(runner: CliRunner) -> N
         assert line in result.stdout
 
 
-def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
-    runner: CliRunner, tmp_path: Path
+def test_gcode_fits_slightly_oversized_page_by_default(
+    runner: CliRunner, slightly_outside_card: Path
 ) -> None:
-    """The built-in Aquila refuses a pen point past its reference reach."""
+    """The reported repro: a page `convert` accepted now plots on the Aquila."""
+    result = runner.invoke(main, ["gcode", str(slightly_outside_card), "--profile", "aquila"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == ""
+    assert slightly_outside_card.with_suffix(".gcode").is_file()
+    assert "Warning: drawing is" in result.stderr
+    assert "past the aquila drawable area" in result.stderr
+    assert "fitted with scale 1.000 and shift (-0.881, 0.000) mm" in result.stderr
+
+
+def test_gcode_no_fit_rejects_slightly_oversized_page_with_fix(
+    runner: CliRunner, slightly_outside_card: Path
+) -> None:
+    """The strict opt-out names the 0.131 mm overshoot and how to fix it."""
+    result = runner.invoke(
+        main, ["gcode", str(slightly_outside_card), "--profile", "aquila", "--no-fit"]
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert "overshoot x=0.131 mm, y=0.000 mm" in result.stderr
+    assert "Pass --fit (the default) or use a smaller --paper." in result.stderr
+    assert not slightly_outside_card.with_suffix(".gcode").exists()
+
+
+def test_gcode_dry_run_with_fit_keeps_stdout_gcode_only(
+    runner: CliRunner, slightly_outside_card: Path
+) -> None:
+    result = runner.invoke(
+        main, ["gcode", str(slightly_outside_card), "--profile", "aquila", "--dry-run", "--fit"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.startswith("; penpath gcode profile=aquila ")
+    assert all(
+        line.startswith((";", "G", "M")) for line in result.stdout.splitlines() if line.strip()
+    )
+    assert "Warning:" not in result.stdout
+    assert "Warning:" in result.stderr
+    assert not slightly_outside_card.with_suffix(".gcode").exists()
+
+
+def test_gcode_fit_within_tolerance_leaves_drawing_alone(runner: CliRunner, tmp_path: Path) -> None:
+    """An overrun inside FIT_TOLERANCE_MM changes nothing and prints no warning."""
+    drawing = tmp_path / "within_tolerance.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg"
+ xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+ width="190mm" height="190mm" viewBox="0 0 190 190">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 189.28,10"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+
+    fitted = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--dry-run", "--fit"]
+    )
+    strict = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--dry-run", "--no-fit"]
+    )
+
+    assert fitted.exit_code == 0, fitted.stderr
+    assert strict.exit_code == 0, strict.stderr
+    assert "Warning:" not in fitted.stderr
+    assert fitted.stdout == strict.stdout
+
+
+def test_gcode_fits_far_point_by_default(runner: CliRunner, tmp_path: Path) -> None:
+    """A point 9 mm outside is fitted rather than rejected with the default."""
     drawing = tmp_path / "outside.svg"
     drawing.write_text(
         """<svg xmlns="http://www.w3.org/2000/svg"
@@ -306,6 +393,30 @@ def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
     )
 
     result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == ""
+    assert drawing.with_suffix(".gcode").is_file()
+    assert "Warning: drawing is" in result.stderr
+    assert "fitted with scale 1.000 and shift (-9.750, 0.000) mm" in result.stderr
+
+
+def test_gcode_aquila_rejects_point_outside_machine_drawable_area(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """The built-in Aquila refuses a pen point past its reference reach with --no-fit."""
+    drawing = tmp_path / "outside.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg"
+ xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+ width="190mm" height="190mm" viewBox="0 0 190 190">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
+ fill="none" stroke="#000000" stroke-width="0.3"><polyline points="10,10 199,10"/></g>
+</svg>""",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila", "--no-fit"])
 
     assert result.exit_code == 3
     assert result.stdout == ""
@@ -343,7 +454,16 @@ pen:
     )
 
     result = runner.invoke(
-        main, ["gcode", str(drawing), "--profile", "offset", "--profiles", str(profiles)]
+        main,
+        [
+            "gcode",
+            str(drawing),
+            "--profile",
+            "offset",
+            "--profiles",
+            str(profiles),
+            "--no-fit",
+        ],
     )
 
     assert result.exit_code == 3
@@ -355,5 +475,5 @@ def test_gcode_help_lists_its_options(runner: CliRunner) -> None:
     result = runner.invoke(main, ["gcode", "--help"])
 
     assert result.exit_code == 0
-    for option in ("--profile", "--profiles", "--dry-run", "-o, --output"):
+    for option in ("--profile", "--profiles", "--dry-run", "--fit", "--no-fit", "-o, --output"):
         assert option in result.stdout
