@@ -60,10 +60,13 @@ from penpath.core.models import (
     SketchLinesPFM,
 )
 from penpath.core.output import (
+    FIT_TOLERANCE_MM,
+    FitResult,
     GcodeError,
     GcodeLayer,
     PointOutsideBedError,
     build_gcode,
+    fit_layers_to_drawable,
     lead_in_mm,
     page_origin_mm,
 )
@@ -115,6 +118,7 @@ Project.model_rebuild()
 
 __all__ = [
     "DEFAULT_PAPER_DPI",
+    "FIT_TOLERANCE_MM",
     "MAX_WORKING_LONGEST_PX",
     "MIN_WORKING_LONGEST_PX",
     "PIXEL_SETTING_FIELDS",
@@ -125,6 +129,7 @@ __all__ = [
     "FeedProfile",
     "FilterPipeline",
     "FilterStep",
+    "FitResult",
     "GcodeError",
     "GcodeHeader",
     "GcodeLayer",
@@ -165,6 +170,7 @@ __all__ = [
     "compute_likeness",
     "compute_machine_cost",
     "contrast",
+    "fit_layers_to_drawable",
     "gamma",
     "gaussian_blur",
     "gcode_to_strokes",

@@ -22,6 +22,7 @@ type Bounds = tuple[Coordinate, Coordinate]
 
 COORDINATE_DECIMALS: Final = 3
 SECONDS_PER_MINUTE: Final = 60
+FIT_TOLERANCE_MM: Final = 0.05
 
 
 class GcodeError(ValueError):
@@ -46,6 +47,32 @@ class GcodeLayer:
 
     pen: str
     polylines: Sequence[Polyline]
+
+
+@dataclass(frozen=True, slots=True)
+class FitResult:
+    """The outcome of fitting a drawing to a machine's drawable area.
+
+    Parameters
+    ----------
+    layers : Sequence[GcodeLayer]
+        Fitted layers in SVG page millimetres, ready for ``build_gcode``. The
+        input sequence is returned as-is when nothing changed.
+    scale : float
+        Uniform scale applied in pen space, never above 1.
+    offset_mm : tuple[float, float]
+        Pen-space translation applied after scaling, in millimetres.
+    overshoot_mm : tuple[float, float]
+        Per-axis distance the original drawing exceeded the drawable area, in mm.
+    changed : bool
+        Whether the layers were transformed.
+    """
+
+    layers: Sequence[GcodeLayer]
+    scale: float
+    offset_mm: Coordinate
+    overshoot_mm: Coordinate
+    changed: bool
 
 
 def _format_mm(value: float) -> str:
@@ -223,19 +250,54 @@ def _pen_change_lines(profile: MachineProfile, values: dict[str, str]) -> list[s
 
 
 def _check_pen_point(point: Coordinate, profile: MachineProfile, drawable: Bounds) -> None:
-    """Reject a pen-space point outside the drawable area minus the bed margin."""
+    """Reject a pen-space point outside the drawable area minus the bed margin.
+
+    The fit tolerance absorbs float rounding at the edge; a point further out
+    reports how far past each axis it lies.
+    """
     margin = profile.bed.margin_mm
     (xmin, ymin), (xmax, ymax) = drawable
     x_pen, y_pen = point
+    x_lo, x_hi = xmin + margin, xmax - margin
+    y_lo, y_hi = ymin + margin, ymax - margin
     if not (
-        xmin + margin - 1e-9 <= x_pen <= xmax - margin + 1e-9
-        and ymin + margin - 1e-9 <= y_pen <= ymax - margin + 1e-9
+        x_lo - FIT_TOLERANCE_MM <= x_pen <= x_hi + FIT_TOLERANCE_MM
+        and y_lo - FIT_TOLERANCE_MM <= y_pen <= y_hi + FIT_TOLERANCE_MM
     ):
+        x_past = max(0.0, x_lo - x_pen, x_pen - x_hi)
+        y_past = max(0.0, y_lo - y_pen, y_pen - y_hi)
         raise PointOutsideBedError(
             f"point (x={_format_mm(x_pen)}, y={_format_mm(y_pen)}) mm is outside "
-            f"the drawable area X {_format_mm(xmin + margin)}..{_format_mm(xmax - margin)}, "
-            f"Y {_format_mm(ymin + margin)}..{_format_mm(ymax - margin)} mm"
+            f"the drawable area X {_format_mm(x_lo)}..{_format_mm(x_hi)}, "
+            f"Y {_format_mm(y_lo)}..{_format_mm(y_hi)} mm; "
+            f"overshoot x={_format_mm(x_past)} mm, y={_format_mm(y_past)} mm"
         )
+
+
+def _svg_to_pen(
+    point: Coordinate,
+    page_height_mm: float,
+    origin: Coordinate,
+    profile: MachineProfile,
+) -> Coordinate:
+    """Map one SVG page point to pen space with the emitter's origin and Y flip."""
+    x_svg, y_svg = point
+    y_page = page_height_mm - y_svg if profile.bed.invert_y else y_svg
+    return (origin[0] + x_svg, origin[1] + y_page)
+
+
+def _pen_to_svg(
+    point: Coordinate,
+    page_height_mm: float,
+    origin: Coordinate,
+    profile: MachineProfile,
+) -> Coordinate:
+    """Invert :func:`_svg_to_pen` for a fitted pen-space point."""
+    x_pen, y_pen = point
+    y_page = y_pen - origin[1]
+    if profile.bed.invert_y:
+        y_page = page_height_mm - y_page
+    return (x_pen - origin[0], y_page)
 
 
 def _pen_points(
@@ -247,11 +309,10 @@ def _pen_points(
 ) -> list[Coordinate]:
     """Map a page polyline to checked pen-space points."""
     result: list[Coordinate] = []
-    for x_svg, y_svg in polyline:
-        x_pen = origin[0] + x_svg
-        y_pen = origin[1] + (page_height_mm - y_svg if profile.bed.invert_y else y_svg)
-        _check_pen_point((x_pen, y_pen), profile, drawable)
-        result.append((x_pen, y_pen))
+    for point in polyline:
+        pen_point = _svg_to_pen(point, page_height_mm, origin, profile)
+        _check_pen_point(pen_point, profile, drawable)
+        result.append(pen_point)
     return result
 
 
@@ -324,6 +385,114 @@ def _ramped_path(
     return result
 
 
+def _shortest_shift(low: float, high: float, target_low: float, target_high: float) -> float:
+    """Return the smallest translation placing an interval inside its target."""
+    if low < target_low:
+        return target_low - low
+    if high > target_high:
+        return target_high - high
+    return 0.0
+
+
+def fit_layers_to_drawable(
+    layers: Sequence[GcodeLayer],
+    profile: MachineProfile,
+    page_size_mm: Coordinate,
+    tolerance_mm: float = FIT_TOLERANCE_MM,
+) -> FitResult:
+    """Fit a drawing into the profile's drawable area without distorting it.
+
+    Page points are mapped to pen space exactly as :func:`build_gcode` maps
+    them, then confined to the drawable area minus ``bed.margin_mm`` and minus
+    the ramp's lead-in on every side, so a ramped stroke's lead-in and lead-out
+    stay reachable too. A drawing already inside that area (within
+    ``tolerance_mm``) is returned untouched. Otherwise it is shifted the
+    shortest way that fits, or uniformly scaled down and shifted when it is
+    larger than the available area. Scaling happens in pen space: the profile's
+    lead distance itself is never scaled.
+
+    Parameters
+    ----------
+    layers : Sequence[GcodeLayer]
+        Layers of polylines in SVG page millimetres, in drawing order.
+    profile : MachineProfile
+        Validated machine profile; the only source of machine values.
+    page_size_mm : tuple[float, float]
+        SVG page width and height in millimetres, used for the Y flip and page origin.
+    tolerance_mm : float
+        Slop allowed at the drawable boundary, by default ``FIT_TOLERANCE_MM``.
+
+    Returns
+    -------
+    FitResult
+        The fitted layers, the pen-space transform and the overshoot found.
+
+    Raises
+    ------
+    GcodeError
+        The profile has no drawable area left after the margin and ramp lead-in.
+    """
+    drawable = _drawable_area(profile)
+    origin = page_origin_mm(profile, page_size_mm)
+    page_height = page_size_mm[1]
+    inset = profile.bed.margin_mm + (lead_in_mm(profile) or 0.0)
+    (xmin, ymin), (xmax, ymax) = drawable
+    x_lo, x_hi = xmin + inset, xmax - inset
+    y_lo, y_hi = ymin + inset, ymax - inset
+    unchanged = FitResult(layers, 1.0, (0.0, 0.0), (0.0, 0.0), False)
+
+    pen_points = [
+        _svg_to_pen(point, page_height, origin, profile)
+        for layer in layers
+        for polyline in layer.polylines
+        if len(polyline) >= 2
+        for point in polyline
+    ]
+    if not pen_points:
+        return unchanged
+    min_x = min(point[0] for point in pen_points)
+    max_x = max(point[0] for point in pen_points)
+    min_y = min(point[1] for point in pen_points)
+    max_y = max(point[1] for point in pen_points)
+    overshoot = (
+        max(0.0, x_lo - min_x, max_x - x_hi),
+        max(0.0, y_lo - min_y, max_y - y_hi),
+    )
+    if overshoot[0] <= tolerance_mm and overshoot[1] <= tolerance_mm:
+        return unchanged
+
+    width, height = x_hi - x_lo, y_hi - y_lo
+    if width <= 0.0 or height <= 0.0:
+        raise GcodeError(
+            f"Profile {profile.name!r} has no drawable area left after bed.margin_mm "
+            "and the ramp lead-in; use a larger drawable area"
+        )
+    drawing_width, drawing_height = max_x - min_x, max_y - min_y
+    scale = min(
+        1.0,
+        width / drawing_width if drawing_width > 0.0 else 1.0,
+        height / drawing_height if drawing_height > 0.0 else 1.0,
+    )
+    offset = (
+        _shortest_shift(scale * min_x, scale * max_x, x_lo, x_hi),
+        _shortest_shift(scale * min_y, scale * max_y, y_lo, y_hi),
+    )
+
+    def fitted(point: Coordinate) -> Coordinate:
+        pen_point = _svg_to_pen(point, page_height, origin, profile)
+        pen = (scale * pen_point[0] + offset[0], scale * pen_point[1] + offset[1])
+        return _pen_to_svg(pen, page_height, origin, profile)
+
+    fitted_layers = [
+        GcodeLayer(
+            layer.pen,
+            [tuple(fitted(point) for point in polyline) for polyline in layer.polylines],
+        )
+        for layer in layers
+    ]
+    return FitResult(fitted_layers, scale, offset, overshoot, True)
+
+
 def build_gcode(
     layers: Sequence[GcodeLayer],
     profile: MachineProfile,
@@ -358,7 +527,9 @@ def build_gcode(
     Raises
     ------
     PointOutsideBedError
-        A point is outside the drawable area (minus the profile margin).
+        A point is more than ``FIT_TOLERANCE_MM`` outside the drawable area
+        (minus the profile margin); the error names the point, the limits and
+        the per-axis overshoot.
     """
     used_layers = [layer for layer in layers if any(len(line) >= 2 for line in layer.polylines)]
     layer_count = len(used_layers)
@@ -429,10 +600,13 @@ def build_gcode(
 
 
 __all__ = [
+    "FIT_TOLERANCE_MM",
+    "FitResult",
     "GcodeError",
     "GcodeLayer",
     "PointOutsideBedError",
     "build_gcode",
+    "fit_layers_to_drawable",
     "lead_in_mm",
     "page_origin_mm",
 ]
