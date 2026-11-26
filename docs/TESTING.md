@@ -537,11 +537,13 @@ no-op for images that already cover 0-255, that span at least 7/8 of 0-255
 (224 levels), or that have a range narrower than 16 levels. All five likeness
 references fall into one of those cases, so their converted SVGs are
 **byte-identical to `main`** and the three gate suites report their `main`
-values: `pytest tests/integration/test_sketch_lines_gate.py` reports 6 passed,
+values after the LUC-89 `max_fill` rebase:
+`pytest tests/integration/test_sketch_lines_gate.py` reports 6 passed with the
+LUC-89 baselines (sphere 0.8011, 46 strokes, ink min 0.0004),
 `test_basic_shapes.py` reports 13 passed with every measured value identical,
-and `test_multi_pen_gate.py` reports 12 passed with the same per-pen values as
-LUC-86, including its pre-existing recorded union tone-ratio failure at
-1.6098. No floor was moved. Reproduce with:
+and `test_multi_pen_gate.py` reports 12 passed with its pre-existing recorded
+union tone-ratio failure at 1.5842, inside the harness's pinned tolerance.
+No floor was moved. Reproduce with:
 
 ```bash
 uv run pytest tests/integration/test_sketch_lines_gate.py -s
