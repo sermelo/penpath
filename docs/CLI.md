@@ -48,6 +48,8 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--filter NAME` | `-f` | — | Apply filter (repeatable: `-f grayscale -f threshold`). See **Filters** below. |
 | `--no-auto-orient` | — | `false` | Disable EXIF auto-orientation |
 | `--auto-equalize` / `--no-auto-equalize` | — | `true` | Normalize the working image's luminance range (linear auto levels) once before drawing. Use `--no-auto-equalize` to keep the original tones. |
+| `--background` / `--no-background` | — | mode-dependent | Mask paper-coloured pixels as no ink. On by default with `--palette`, off for a single pen; the flag overrides either mode. |
+| `--background-threshold FLOAT` | — | `10` | Maximum CIE Lab distance from the detected paper colour treated as no ink. Giving it enables masking unless `--no-background` is also given. |
 | `--max-resolution PX` | — | derived | Longest side of the working image in pixels. Overrides the derived value (no clamp) and never enlarges. |
 | `--no-downscale` | — | `false` | Keep the source pixels; do not downscale before drawing |
 
@@ -61,6 +63,21 @@ near-uniform images, so a calibrated plot is unchanged. Pass
 false` in a project file. This is one global pre-separation step, not a `-f`
 filter, so every palette pen uses the same normalization and explicit filters
 keep their meaning.
+
+Background masking follows auto equalization and runs before palette
+separation. Penpath estimates the paper colour from the median colour of a
+thin border ring (falling back to the lightest near-neutral cluster when the
+border is dark), then sets pixels within 10 CIE Lab ΔE of that colour to pure
+white.
+Because white has luminance 255, masked pixels are white in every separated
+pen channel, so no pen can draw the paper. The detected colour and the masked
+percentage go to stderr; `--quiet` silences both. `--no-background` skips the
+step entirely and reproduces the single-pen default output byte for byte. The
+default threshold of 10 ΔE was measured on the synthetic pencil-on-paper
+fixture: after auto equalization paper noise reaches 4.4 ΔE at the 99th
+percentile while the faintest ink starts at 17.4 ΔE, so the cut-off sits well
+below any ink. Lowering it can leave paper noise unmasked; raising it too far
+can eat faint ink.
 
 #### Drawing Options
 
@@ -123,6 +140,9 @@ pixel goes to the pen whose colour is nearest in CIE Lab space, and that pen
 receives a full-size greyscale image holding the luminance of its own pixels
 and white elsewhere. The filters and the drawing algorithm then run once per
 pen, and geometry is simplified, merged and sorted **within that pen only**.
+Paper masking is on by default in palette mode so pale paper never becomes a
+light pen's drawing; `--no-background` turns it off, `--background` forces it
+on for a single pen, and `--background-threshold` tunes the cut-off.
 
 The palette's order is the drawing order and the order of the SVG layers. Each
 pen that produced strokes becomes one Inkscape layer named `layerN`, where `N`
@@ -174,9 +194,12 @@ Done in 20.9 s
 ```
 
 The downscale stage is reported only when the image is actually downscaled, so
-the counter ends at 5 when it is skipped. The working-resolution line is written
-to stderr too. `--quiet` removes all of this, including the "SVG saved to" line;
-errors are still reported on stderr and the SVG is still written.
+the counter ends at 5 when it is skipped. A `[n/N] Masking paper
+background...` stage and a `Paper colour: ...; masked N% of pixels as no ink`
+line appear when masking runs (palette mode by default), raising the counter
+by one. The working-resolution line is written to stderr too. `--quiet`
+removes all of this, including the "SVG saved to" line; errors are still
+reported on stderr and the SVG is still written.
 
 #### Optional: vpype
 
@@ -677,6 +700,8 @@ input:
   path: "photo.jpg"
   auto_orient: true
   auto_equalize: true   # linear levels normalization before drawing (default)
+  background: true             # mask paper before separation (palette default)
+  background_threshold: 10.0   # CIE Lab ΔE treated as paper
 
 filters:
   - grayscale:
@@ -736,6 +761,25 @@ back as `palette:` and an explicit list back as `pens:`. `image.auto_equalize`
 defaults to `true`, so older YAML without the field loads with normalization
 on; set it to `false` to keep the original tones, or pass
 `--auto-equalize` / `--no-auto-equalize` to override it for one run.
+
+The background keys live under `image:` in a file written by `save_yaml`:
+`background: true|false` forces masking on or off, and
+`background_threshold: 10.0` sets the Lab cut-off. Leaving `background` out
+follows the mode: on for `palette:`/`pens:`, off for a single `pen:`. Old files
+without either key load unchanged, and `save_yaml` omits an unset `background`
+so a single-pen project round-trips with today's output. `--background`,
+`--no-background` and `--background-threshold` override the file for one run;
+`--no-background` wins over a threshold on the same command line.
+
+```yaml
+image:
+  path: "photo.jpg"
+  filters:
+    steps: []
+  dpi: 300
+  background: false
+  background_threshold: 4.5
+```
 
 **Minimal Example**:
 ```yaml

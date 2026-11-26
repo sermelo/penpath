@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
@@ -17,6 +18,7 @@ from penpath.cli.progress import StageReporter
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
+from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD, mask_background
 from penpath.core.image.filters import auto_equalize
 from penpath.core.image.load import ImageLoadError, load_image
 from penpath.core.image.pipeline import FilterPipeline, get_filter
@@ -363,6 +365,9 @@ def _run_convert_pipeline(
 ) -> list[list[LineString]]:
     """Draw every pen and return its optimized lines, in pen order."""
     pens = project.palette
+    use_background = (
+        project.image.background if project.image.background is not None else len(pens) > 1
+    )
 
     # Step 1: Load image and plan the working resolution. Placement is derived
     # from the source size so the drawing rectangle does not move when the
@@ -387,7 +392,7 @@ def _run_convert_pipeline(
     if no_downscale:
         resolution = replace(resolution, target_size_px=source_size_px, scale=1.0)
     downscaling = resolution.target_size_px != source_size_px
-    reporter.set_total_stages(5 + int(downscaling))
+    reporter.set_total_stages(5 + int(downscaling) + int(use_background))
     reporter.finish()
 
     working_width, working_height = resolution.target_size_px
@@ -409,6 +414,16 @@ def _run_convert_pipeline(
     # keep their current meaning.
     if project.image.auto_equalize:
         working_image = auto_equalize(working_image)
+
+    if use_background:
+        reporter.start("Masking paper background")
+        masked = mask_background(working_image, threshold=project.image.background_threshold)
+        working_image = masked.image
+        reporter.finish()
+        reporter.message(
+            f"Paper colour: {masked.paper_color}; "
+            f"masked {masked.masked_percent:.1f}% of pixels as no ink"
+        )
 
     # Step 3: Split before filtering, so the default grayscale filter cannot
     # throw away the colour needed to choose a pen.
@@ -524,6 +539,22 @@ def _run_convert_pipeline(
     default=None,
     help="Normalize tonal range before drawing (default: on; use --no-auto-equalize to keep tones)",
 )
+@click.option(
+    "--background/--no-background",
+    "background_flag",
+    default=None,
+    help="Mask paper pixels as no ink (default: on with --palette, off for a single pen)",
+)
+@click.option(
+    "--background-threshold",
+    "background_threshold",
+    type=float,
+    default=None,
+    help=(
+        "Max CIE Lab distance from the paper colour to mask "
+        f"(default: {DEFAULT_BACKGROUND_THRESHOLD:g}; implies --background)"
+    ),
+)
 @click.option("--pfm", "pfm_name", help="PFM algorithm or built-in preset (default: sketch_lines)")
 @click.option(
     "--pfm-setting",
@@ -589,6 +620,8 @@ def convert_cmd(
     filter_specs: tuple[str, ...],
     no_auto_orient: bool,
     auto_equalize_flag: bool | None,
+    background_flag: bool | None,
+    background_threshold: float | None,
     pfm_name: str | None,
     pfm_settings: tuple[str, ...],
     pen_spec: str | None,
@@ -611,6 +644,13 @@ def convert_cmd(
     if max_resolution_px is not None and max_resolution_px <= 0:
         raise click.BadParameter(
             "must be a positive number of pixels", param_hint="--max-resolution"
+        )
+
+    if background_threshold is not None and (
+        not math.isfinite(background_threshold) or background_threshold < 0
+    ):
+        raise click.BadParameter(
+            "must be a finite, non-negative Lab distance", param_hint="--background-threshold"
         )
 
     if pen_spec is not None and palette_spec is not None:
@@ -647,6 +687,12 @@ def convert_cmd(
             project.image.dpi = dpi
         if auto_equalize_flag is not None:
             project.image.auto_equalize = auto_equalize_flag
+        if background_flag is not None:
+            project.image.background = background_flag
+        if background_threshold is not None:
+            project.image.background_threshold = background_threshold
+            if background_flag is None:
+                project.image.background = True
         project.image.path = input_path  # Always use CLI input path
     else:
         # Build project from CLI flags and config
@@ -672,6 +718,12 @@ def convert_cmd(
         output = _determine_output_path(
             input_path, str(resolved_output) if resolved_output else None
         )
+        if background_flag is not None:
+            background = background_flag
+        elif palette_spec:
+            background = True
+        else:
+            background = background_threshold is not None
 
         project = Project(
             image=ImageRef(
@@ -679,6 +731,12 @@ def convert_cmd(
                 filters=filter_pipeline,
                 dpi=dpi,
                 auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
+                background=background,
+                background_threshold=(
+                    DEFAULT_BACKGROUND_THRESHOLD
+                    if background_threshold is None
+                    else background_threshold
+                ),
             ),
             paper=paper,
             pen=pen,

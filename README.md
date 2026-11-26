@@ -118,6 +118,11 @@ penpath convert photo.jpg -f grayscale -f "posterize:levels=4,dither=floyd_stein
 # 7/8 of 0-255 are left alone. Keep the original tones with:
 penpath convert photo.jpg --no-auto-equalize
 
+# Palette mode masks pale paper as no ink by default; tune or override it:
+penpath convert photo.jpg --palette stabilo_88 --background-threshold 6
+penpath convert photo.jpg --palette stabilo_88 --no-background
+penpath convert photo.jpg --pen fine --background
+
 # Adjust PFM (Sketch Lines) settings
 penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
 
@@ -393,7 +398,9 @@ penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 
 Each pixel is assigned to the palette pen whose colour is nearest in CIE Lab,
 and that pen receives a full-size greyscale image holding the luminance of its
-own pixels and white elsewhere. Filters, the Sketch Lines PFM and geometry
+own pixels and white elsewhere. Paper-coloured pixels are masked to white
+before separation, so the lightest pen cannot scribble over the page; use
+`--no-background` if you want the old behaviour. Filters, the Sketch Lines PFM and geometry
 optimization then run once per pen, so lines from different pens are never
 sorted together. Every pen that draws becomes one Inkscape layer, named after
 the pen, in palette order:

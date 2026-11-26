@@ -19,8 +19,10 @@ from penpath.core.geometry import (
     simplify_line,
 )
 from penpath.core.image import (
+    DEFAULT_BACKGROUND_THRESHOLD,
     MAX_WORKING_LONGEST_PX,
     MIN_WORKING_LONGEST_PX,
+    BackgroundResult,
     DitherMethod,
     FilterPipeline,
     FilterStep,
@@ -33,6 +35,7 @@ from penpath.core.image import (
     box_blur,
     brightness,
     contrast,
+    detect_paper_color,
     gamma,
     gaussian_blur,
     get_filter,
@@ -40,8 +43,10 @@ from penpath.core.image import (
     invert,
     list_filters,
     load_image,
+    mask_background,
     plan_working_resolution,
     posterize,
+    remove_background,
     separate_palette,
     threshold,
 )
@@ -117,6 +122,7 @@ ImageRef.model_rebuild()
 Project.model_rebuild()
 
 __all__ = [
+    "DEFAULT_BACKGROUND_THRESHOLD",
     "DEFAULT_PAPER_DPI",
     "FIT_TOLERANCE_MM",
     "MAX_WORKING_LONGEST_PX",
@@ -124,6 +130,7 @@ __all__ = [
     "PIXEL_SETTING_FIELDS",
     "PROFILE_FILE_VERSION",
     "PROJECT_FILE_VERSION",
+    "BackgroundResult",
     "BedProfile",
     "DitherMethod",
     "FeedProfile",
@@ -170,6 +177,7 @@ __all__ = [
     "compute_likeness",
     "compute_machine_cost",
     "contrast",
+    "detect_paper_color",
     "fit_layers_to_drawable",
     "gamma",
     "gaussian_blur",
@@ -188,6 +196,7 @@ __all__ = [
     "load_image",
     "load_profile",
     "load_yaml",
+    "mask_background",
     "merge_lines",
     "mm_to_pixels",
     "page_origin_mm",
@@ -198,6 +207,7 @@ __all__ = [
     "plan_working_resolution",
     "posterize",
     "prepare_for_comparison",
+    "remove_background",
     "save_yaml",
     "scale_pixel_settings",
     "separate_palette",

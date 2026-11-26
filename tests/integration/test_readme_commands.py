@@ -57,6 +57,7 @@ _VALUE_OPTIONS = frozenset(
         "--paper",
         "--pfm",
         "--max-resolution",
+        "--background-threshold",
         "--dpi",
         "--config",
         "-c",

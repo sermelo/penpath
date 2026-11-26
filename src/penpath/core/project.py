@@ -264,6 +264,8 @@ def save_yaml(project: Project, path: Path) -> None:
     # Dump to dict with version and metadata
     data = project.model_dump(mode="json")
     data["version"] = PROJECT_FILE_VERSION
+    if data["image"].get("background") is None:
+        del data["image"]["background"]
 
     # Add metadata if not present
     if "metadata" not in data:

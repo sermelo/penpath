@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 import yaml
 
+from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
 from penpath.core.image.pipeline import FilterPipeline
 from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM
 from penpath.core.project import (
@@ -656,6 +657,52 @@ class TestPaletteProjectFiles:
         loaded = load_yaml(path)
         assert loaded.palette == pens
         assert loaded.palette_name is None
+
+
+class TestBackgroundProjectFiles:
+    """Background options load old files unchanged and round-trip when set."""
+
+    def test_old_project_loads_with_mode_defaults(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.image.background is None
+        assert project.image.background_threshold == DEFAULT_BACKGROUND_THRESHOLD
+
+    def test_background_fields_round_trip(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["palette"] = "stabilo_88"
+        data["image"]["background"] = False
+        data["image"]["background_threshold"] = 4.5
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.image.background is False
+        assert project.image.background_threshold == 4.5
+
+        path = tmp_path / "saved.yaml"
+        save_yaml(project, path)
+        saved = yaml.safe_load(path.read_text())
+        assert saved["image"]["background"] is False
+        assert saved["image"]["background_threshold"] == 4.5
+        loaded = load_yaml(path)
+        assert loaded.image.background is False
+        assert loaded.image.background_threshold == 4.5
+
+    def test_unset_background_is_not_written_on_save(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        project = load_yaml(_write_yaml(tmp_path, data))
+        path = tmp_path / "saved.yaml"
+        save_yaml(project, path)
+        saved = yaml.safe_load(path.read_text())
+        assert "background" not in saved["image"]
+        assert load_yaml(path).image.background is None
+
+    def test_negative_threshold_is_rejected(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        data["image"]["background_threshold"] = -1.0
+        with pytest.raises(ProjectLoadError, match="validation failed"):
+            load_yaml(_write_yaml(tmp_path, data))
 
 
 if __name__ == "__main__":
