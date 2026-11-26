@@ -24,6 +24,8 @@ from penpath.presets.pens import PEN_PRESETS
 
 DEFAULT_PX_PER_MM = 10.0
 FALLBACK_PAPER_MM = (210.0, 297.0)
+TRAVEL_COLOR = "#C8C8C8"
+TRAVEL_WIDTH_MM = 0.1
 
 console = Console(stderr=True)
 
@@ -41,7 +43,7 @@ def _pen_styles() -> dict[str, tuple[str, float]]:
 
 
 def _preview_gcode(
-    path: Path, layer_label: str | None
+    path: Path, layer_label: str | None, include_pen_up: bool
 ) -> tuple[list[PenStroke], tuple[float, float]]:
     """Read penpath G-code, undoing the emitter's page and profile transforms."""
     text = path.read_text(encoding="utf-8")
@@ -56,7 +58,9 @@ def _preview_gcode(
         profile.bed.size_mm if profile is not None else FALLBACK_PAPER_MM
     )
     try:
-        strokes = gcode_to_strokes(text, paper_size_mm, profile, _pen_styles(), layer_label)
+        strokes = gcode_to_strokes(
+            text, paper_size_mm, profile, _pen_styles(), layer_label, include_pen_up
+        )
     except GcodePreviewError as exc:
         raise click.ClickException(f"Could not preview G-code: {exc}") from exc
     return strokes, paper_size_mm
@@ -92,31 +96,39 @@ def _preview_gcode(
     default=None,
     help="Only preview this pen layer (layer label or id). Default: all layers.",
 )
+@click.option(
+    "--travel/--no-travel",
+    default=False,
+    show_default=True,
+    help="Draw pen-up travel moves as thin light lines.",
+)
 def preview_cmd(
     drawing: Path,
     output_path: Path,
     px_per_mm: float,
     paper_color: str,
     layer_label: str | None,
+    travel: bool,
 ) -> None:
     """Render a simulated plot of DRAWING to an image.
 
     DRAWING is an SVG or a .gcode file; arcs (G2/G3) are not supported and
     other G-code dialects are out of scope. Strokes are drawn with the core plot
-    simulator at the requested resolution. All messages go to stderr, so stdout
-    stays usable in a pipeline.
+    simulator at the requested resolution. ``--travel`` also draws pen-up moves
+    as thin light lines under the ink; the default stays ink-only. All messages
+    go to stderr, so stdout stays usable in a pipeline.
     """
     if px_per_mm <= 0:
         raise click.BadParameter("must be greater than zero", param_hint="--dpi")
 
     if drawing.suffix.lower() == ".gcode":
         try:
-            strokes, (width_mm, height_mm) = _preview_gcode(drawing, layer_label)
+            strokes, (width_mm, height_mm) = _preview_gcode(drawing, layer_label, travel)
         except OSError as exc:
             raise click.ClickException(f"Could not read G-code: {exc}") from exc
     else:
         try:
-            strokes = parse_svg_strokes(drawing, layer=layer_label)
+            strokes = parse_svg_strokes(drawing, layer=layer_label, include_pen_up=travel)
         except (ET.ParseError, OSError, ValueError) as exc:
             raise click.ClickException(f"Could not parse SVG: {exc}") from exc
         width_mm, height_mm = _paper_size_mm(drawing)
@@ -130,6 +142,8 @@ def preview_cmd(
             paper_height_mm=height_mm,
             paper_color=paper_color,
             dpi_px_per_mm=px_per_mm,
+            travel_color=TRAVEL_COLOR if travel else None,
+            travel_width_mm=TRAVEL_WIDTH_MM,
         )
     except ValueError as exc:
         raise click.BadParameter(str(exc), param_hint="--paper-color") from exc

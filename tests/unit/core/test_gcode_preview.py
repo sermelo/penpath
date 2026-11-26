@@ -192,6 +192,52 @@ def test_gcode_to_strokes_ignores_the_ramp_lead_in_and_lead_out() -> None:
     assert strokes[0].polyline[-1] == points[-1]
 
 
+def _two_separated_strokes_gcode(second_x: str = "50.000") -> str:
+    return (
+        HEADER
+        + "G0 Z9.000\nG0 X10.000 Y90.000\nG1 X20.000 Y90.000\nG0 Z12.500\n"
+        + f"G0 X{second_x} Y90.000\nG0 Z9.000\nG1 X60.000 Y90.000\nG0 Z12.500\n"
+    )
+
+
+def test_gcode_to_strokes_default_excludes_travel() -> None:
+    strokes = gcode_to_strokes(_two_separated_strokes_gcode(), (100.0, 100.0))
+
+    assert len(strokes) == 2
+    assert all(not stroke.pen_up for stroke in strokes)
+
+
+def test_gcode_to_strokes_include_pen_up_inserts_two_point_travel() -> None:
+    strokes = gcode_to_strokes(
+        _two_separated_strokes_gcode(),
+        (100.0, 100.0),
+        pen_styles={"black": ("#FF0000", 0.4)},
+        include_pen_up=True,
+    )
+
+    assert [stroke.pen_up for stroke in strokes] == [False, True, False]
+    travel = strokes[1]
+    assert travel.polyline == [(20.0, 10.0), (50.0, 10.0)]
+    assert travel.color == "#FF0000"
+    assert travel.width_mm == 0.4
+
+
+@pytest.mark.parametrize(
+    ("second_x", "expected_travel"),
+    [("20.005", False), ("20.020", True)],
+)
+def test_gcode_to_strokes_include_pen_up_uses_0_01mm_gap_rule(
+    second_x: str, expected_travel: bool
+) -> None:
+    strokes = gcode_to_strokes(
+        _two_separated_strokes_gcode(second_x),
+        (100.0, 100.0),
+        include_pen_up=True,
+    )
+
+    assert any(stroke.pen_up for stroke in strokes) is expected_travel
+
+
 def test_gcode_to_strokes_clips_z_interpolated_moves_at_touch_height() -> None:
     text = (
         HEADER

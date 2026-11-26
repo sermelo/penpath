@@ -147,6 +147,8 @@ penpath convert photo.jpg --no-vpype
 
 # Preview the simulated plot as an image
 penpath preview plot.svg -o preview.png --dpi 10
+# Also show pen-up travel as thin light lines (default stays ink-only)
+penpath preview plot.svg -o travel_preview.png --travel
 
 # Evaluate likeness, machine cost and ink coverage (JSON for scripts)
 penpath evaluate photo.jpg plot.svg

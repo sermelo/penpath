@@ -239,6 +239,21 @@ compared; the input SVGs for those tests are in `tests/fixtures/svg/gcode/`.
 - **SSIM**: ≥0.95 vs golden PNG render (if preview implemented)
 - **Pixel diff**: ≤1% pixels differ by >5/255
 
+### Preview pen-up travel (LUC-136)
+
+Travel rendering is **opt-in** with `penpath preview --travel`; the default
+(`--no-travel`) stays ink-only and must keep producing a byte-for-byte identical
+PNG. The default G-code-versus-SVG PNG equality test runs without the flag for
+that reason. With the flag on, pen-up moves are straight two-point strokes with
+the shared 0.01 mm gap rule, drawn as thin light grey (0.1 mm, `#C8C8C8`) under
+the ink: a test for each input format compares the PNG with and without the flag,
+checks that every inked pixel is identical, and checks that travel-only pixels
+are light grey rather than black. A further test checks `--travel` together with
+`--layer`, and `tests/integration/test_preview_evaluate.py` drives the CLI the way
+a user does. The images in `docs/images/luc-136/` show the same `source.svg`
+rendered ink-only, with `--travel`, and with `--travel` from its generated
+G-code; the faint grey lines connect the four separated shapes.
+
 ### Likeness Scoring (LUC-30)
 - **Measure**: Structural Similarity Index (SSIM) from scikit-image
 - **Target size**: 256×256 pixels — balances detail retention with noise suppression

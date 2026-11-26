@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 type LayerMetrics = dict[str, float | int]
 type MachineCostResult = dict[str, dict[str, LayerMetrics] | LayerMetrics]
 
+CONTIGUITY_EPSILON_MM = 0.01
+
 
 @dataclass(frozen=True, slots=True)
 class CoverageResult:
@@ -91,6 +93,40 @@ def _count_short_segments(polyline: Sequence[tuple[float, float]], threshold_mm:
         if hypot(x2 - x1, y2 - y1) < threshold_mm:
             count += 1
     return count
+
+
+def insert_pen_up_moves(strokes: Sequence[PenStroke]) -> list[PenStroke]:
+    """Insert straight pen-up travel strokes between non-contiguous strokes.
+
+    Parameters
+    ----------
+    strokes : Sequence[PenStroke]
+        Drawn strokes in plotting order.
+
+    Returns
+    -------
+    list[PenStroke]
+        The same strokes with a two-point travel stroke before each stroke whose
+        start is more than ``CONTIGUITY_EPSILON_MM`` from the previous stroke's
+        end. A travel stroke takes the following stroke's colour and width.
+    """
+    with_travel: list[PenStroke] = []
+    for index, stroke in enumerate(strokes):
+        if index > 0:
+            previous = strokes[index - 1]
+            end_x, end_y = previous.polyline[-1]
+            start_x, start_y = stroke.polyline[0]
+            if hypot(start_x - end_x, start_y - end_y) > CONTIGUITY_EPSILON_MM:
+                with_travel.append(
+                    PenStroke(
+                        polyline=[(end_x, end_y), (start_x, start_y)],
+                        width_mm=stroke.width_mm,
+                        color=stroke.color,
+                        pen_up=True,
+                    )
+                )
+        with_travel.append(stroke)
+    return with_travel
 
 
 def compute_machine_cost(
@@ -227,13 +263,15 @@ def simulate_plot(
     paper_height_mm: float,
     paper_color: str = "#FFFFFF",
     dpi_px_per_mm: float = 96 / 25.4,
+    travel_color: str | None = None,
+    travel_width_mm: float = 0.1,
 ) -> Image.Image:
     """Simulate a pen plot by rendering strokes to a PIL Image.
 
     Parameters
     ----------
     strokes : Sequence[PenStroke]
-        List of pen strokes to render. Only pen-down strokes are drawn.
+        List of pen strokes to render. Only pen-down strokes are drawn as ink.
     paper_width_mm : float
         Paper width in millimetres.
     paper_height_mm : float
@@ -243,6 +281,12 @@ def simulate_plot(
     dpi_px_per_mm : float, optional
         Pixels per millimetre for the output image.
         Default is 96 DPI = 96/25.4 ≈ 3.7795 px/mm.
+    travel_color : str | None, optional
+        When set, draw pen-up strokes first in this colour at
+        ``travel_width_mm``, then draw ink over them. ``None`` (the default)
+        leaves pen-up strokes invisible and reproduces the ink-only output.
+    travel_width_mm : float, optional
+        Width of pen-up travel lines when ``travel_color`` is set. Default 0.1.
 
     Returns
     -------
@@ -251,7 +295,7 @@ def simulate_plot(
 
     Notes
     -----
-    - Pen-up strokes are not rendered (they represent travel moves).
+    - Pen-up strokes are not rendered unless ``travel_color`` is set.
     - Stroke width is converted from mm to pixels using dpi_px_per_mm.
     - Coordinates are in mm with (0, 0) at top-left of paper.
     """
@@ -261,6 +305,14 @@ def simulate_plot(
     # Create image with paper background
     img = Image.new("RGB", (width_px, height_px), paper_color)
     draw = ImageDraw.Draw(img)
+
+    if travel_color is not None:
+        travel_width_px = max(1, round(travel_width_mm * dpi_px_per_mm))
+        for stroke in strokes:
+            if not stroke.pen_up or len(stroke.polyline) < 2:
+                continue
+            coords_px = [(x * dpi_px_per_mm, y * dpi_px_per_mm) for x, y in stroke.polyline]
+            draw.line(coords_px, fill=travel_color, width=travel_width_px, joint="curve")
 
     for stroke in strokes:
         if stroke.pen_up:
@@ -291,5 +343,6 @@ __all__ = [
     "PenStroke",
     "compute_layer_coverage",
     "compute_machine_cost",
+    "insert_pen_up_moves",
     "simulate_plot",
 ]
