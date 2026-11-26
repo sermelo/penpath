@@ -163,11 +163,13 @@ stroke; it is a state change, not a different landing.
 3. **Structural pen-up moves.** The reference assumes the pen is already up
    after each pen change and uses `G1 … F6000` for travel, `G1 Z… F600` for Z;
    penpath's state machine emits `G0 Z12.500` before the first stroke and uses
-   `G0` for travel and Z moves, with the feed on the first drawing `G1` of each
-   stroke only. So the reference repeats F1500 on every drawing move (829 times
-   on the circle SVG) while penpath sets it 12 times, once per stroke; F600 and
-   F6000 counts drop for the same reason. The XY path and the Z heights are the
-   same.
+   `G0` for travel and Z moves, with `F6000`/`F600` on those `G0` moves and the
+   drawing `F1500` on the first `G1` of each stroke only. So the reference
+   repeats F1500 on every drawing move (829 times on the circle SVG) while
+   penpath sets it 12 times, once per stroke. Travel and Z feedrates are
+   otherwise identical (F6000 appears 5 times in both outputs on the two-layer
+   SVG); the remaining spelling difference is `G0` where the reference writes
+   `G1`, which Marlin treats the same. The XY path and Z heights are the same.
 4. **Page placement.** Both put a 190 mm page at pen (7.3, 0.0). The reference
    derives this from vpype's pixel sizes (96 px/in) and its default `at`;
    penpath reads millimetres from the reviewed SVG's `width`/`height` and places

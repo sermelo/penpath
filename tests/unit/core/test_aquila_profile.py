@@ -89,6 +89,19 @@ def test_aquila_pen_change_matches_reference() -> None:
     ]
 
 
+def test_aquila_travel_and_z_moves_carry_reference_feeds() -> None:
+    """Plan travels run at F6000 and Z lifts at F600, as the reference emits them."""
+    plan_moves = [line for line in _gcode_lines() if line.startswith("G0 ")]
+    assert plan_moves
+    assert all(" F" in line for line in plan_moves)
+    assert [line for line in plan_moves if line.startswith("G0 X")] == ["G0 X39.250 Y208.600 F6000"]
+    assert [line for line in plan_moves if line.startswith("G0 Z")] == [
+        "G0 Z12.500 F600",
+        "G0 Z10.500 F600",
+        "G0 Z12.500 F600",
+    ]
+
+
 def test_aquila_end_block_parks_and_has_no_m2() -> None:
     """The reference parks the head and disables the steppers; it has no M2."""
     lines = _gcode_lines()

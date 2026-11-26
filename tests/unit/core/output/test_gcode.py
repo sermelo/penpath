@@ -60,19 +60,29 @@ def test_build_gcode_emits_profile_values_and_pen_state_machine() -> None:
         "G90\n"
         "; layer 1/1 pen=ink\n"
         "; begin\n"
-        "G0 Z4.000\n"
-        "G0 X1.000 Y58.000\n"
-        "G0 Z1.000\n"
+        "G0 Z4.000 F3600\n"
+        "G0 X1.000 Y58.000 F3600\n"
+        "G0 Z1.000 F3600\n"
         "G1 X3.000 Y58.000 F1800\n"
         "G1 X3.000 Y56.000\n"
-        "G0 Z4.000\n"
-        "G0 X10.000 Y50.000\n"
-        "G0 Z1.000\n"
+        "G0 Z4.000 F3600\n"
+        "G0 X10.000 Y50.000 F3600\n"
+        "G0 Z1.000 F3600\n"
         "G1 X11.000 Y50.000 F1800\n"
-        "G0 Z4.000\n"
+        "G0 Z4.000 F3600\n"
         "; done\n"
         "M2\n"
     )
+
+
+def test_build_gcode_plan_moves_always_carry_a_feed() -> None:
+    """No plain or ramped plan move is a bare G0 inheriting the last drawing feed."""
+    layers = _one_layer(((10.0, 10.0), (20.0, 10.0)), ((30.0, 30.0), (40.0, 30.0)))
+    for profile in (_profile(), _ramped_profile()):
+        produced = build_gcode(layers, profile, (100.0, 100.0))
+        plan_moves = [line for line in produced.splitlines() if line.startswith("G0 ")]
+        assert plan_moves
+        assert all(" F" in line for line in plan_moves)
 
 
 def test_build_gcode_keeps_pen_up_between_layers_without_repeating_z() -> None:
@@ -83,11 +93,11 @@ def test_build_gcode_keeps_pen_up_between_layers_without_repeating_z() -> None:
 
     produced = build_gcode(layers, _profile(), (10.0, 10.0))
 
-    assert produced.count("G0 Z4.000") == 3
-    assert produced.count("G0 Z1.000") == 2
+    assert produced.count("G0 Z4.000 F3600") == 3
+    assert produced.count("G0 Z1.000 F3600") == 2
     assert "; layer 1/2 pen=first" in produced
     assert "; layer 2/2 pen=second" in produced
-    assert produced.index("; layer 2/2") < produced.index("G0 X3.000 Y7.000")
+    assert produced.index("; layer 2/2") < produced.index("G0 X3.000 Y7.000 F3600")
 
 
 def test_build_gcode_flips_y_into_pen_space() -> None:
@@ -95,7 +105,7 @@ def test_build_gcode_flips_y_into_pen_space() -> None:
 
     produced = build_gcode(_one_layer(((1.0, 2.0), (3.0, 4.0))), profile, (50.0, 60.0))
 
-    assert "G0 X6.000 Y65.000\n" in produced
+    assert "G0 X6.000 Y65.000 F3600\n" in produced
     assert "G1 X8.000 Y63.000 F1800\n" in produced
 
 
@@ -110,7 +120,7 @@ def test_build_gcode_can_keep_svg_y_direction() -> None:
 
     produced = build_gcode(_one_layer(((1.0, 2.0), (3.0, 4.0))), profile, (50.0, 60.0))
 
-    assert "G0 X6.000 Y9.000\n" in produced
+    assert "G0 X6.000 Y9.000 F3600\n" in produced
     assert "G1 X8.000 Y11.000 F1800\n" in produced
 
 
@@ -125,7 +135,7 @@ def test_build_gcode_converts_pen_coordinates_to_nozzle_coordinates() -> None:
 
     produced = build_gcode(_one_layer(((10.0, 20.0), (12.0, 20.0))), profile, (100.0, 200.0))
 
-    assert "G0 X32.700 Y208.600\n" in produced
+    assert "G0 X32.700 Y208.600 F3600\n" in produced
     assert "G1 X34.700 Y208.600 F1800\n" in produced
 
 
@@ -141,7 +151,7 @@ def test_build_gcode_places_page_at_reachable_corner() -> None:
 
     produced = build_gcode(_one_layer(((10.0, 20.0), (12.0, 20.0))), profile, (100.0, 150.0))
 
-    assert "G0 X130.000 Y158.600\n" in produced
+    assert "G0 X130.000 Y158.600 F3600\n" in produced
     assert "G1 X132.000 Y158.600 F1800\n" in produced
 
 
@@ -156,7 +166,7 @@ def test_build_gcode_clips_drawable_area_to_restricted_nozzle_range() -> None:
 
     produced = build_gcode(_one_layer(((100.0, 100.0), (101.0, 100.0))), profile, (200.0, 200.0))
 
-    assert "G0 X110.000 Y110.000\n" in produced
+    assert "G0 X110.000 Y110.000 F3600\n" in produced
     with pytest.raises(PointOutsideBedError) as info:
         build_gcode(_one_layer(((115.0, 100.0), (116.0, 100.0))), profile, (200.0, 200.0))
     assert "X 10.000..110.000, Y 10.000..110.000" in str(info.value)
@@ -240,9 +250,9 @@ def test_build_gcode_generic_profile_comes_from_the_builtin_yaml(tmp_path: Path)
         "; penpath gcode profile=generic page=210.000x297.000 z_up=5.000 z_down=0.000\n"
     )
     assert "G21\nG90\nG28\n" in produced
-    assert "G0 Z5.000\nG0 X1.000 Y296.000\nG0 Z0.000\n" in produced
+    assert "G0 Z5.000 F6000\nG0 X1.000 Y296.000 F6000\nG0 Z0.000 F6000\n" in produced
     assert "G1 X2.000 Y296.000 F3000\n" in produced
-    assert produced.endswith("G0 Z5.000\nM2\n")
+    assert produced.endswith("G0 Z5.000 F6000\nM2\n")
 
 
 def test_build_gcode_does_not_mutate_profile_or_layers() -> None:
@@ -432,15 +442,15 @@ def test_build_gcode_ramped_stroke_lands_and_lifts_while_moving() -> None:
         "z_up=5.000 z_touch=2.000 z_down=1.000\n"
         "G21\nG90\n"
         "; layer 1/1 pen=ink\n"
-        "G0 Z5.000\n"
-        "G0 X10.000 Y93.000\n"
-        "G0 Z3.000\n"
+        "G0 Z5.000 F600\n"
+        "G0 X10.000 Y93.000 F3600\n"
+        "G0 Z3.000 F600\n"
         "G1 X12.000 Y93.000 Z2.000 F1800\n"
         "G1 X14.000 Y93.000 Z1.000\n"
         "G1 X20.000 Y93.000 Z1.000\n"
         "G1 X22.000 Y93.000 Z2.000\n"
         "G1 X24.000 Y93.000 Z3.000\n"
-        "G0 Z5.000\n"
+        "G0 Z5.000 F600\n"
         "M2\n"
     )
 
@@ -462,8 +472,8 @@ def test_build_gcode_ramp_clamps_a_short_stroke_without_dividing_by_zero() -> No
         _one_layer(((10.0, 10.0), (12.0, 10.0))), _ramped_profile(), (100.0, 100.0)
     )
 
-    assert produced.index("G0 Z5.000") < produced.index("G1 X")
-    assert produced.rstrip().endswith("G0 Z5.000\nM2")
+    assert produced.index("G0 Z5.000 F600") < produced.index("G1 X")
+    assert produced.rstrip().endswith("G0 Z5.000 F600\nM2")
 
 
 def test_build_gcode_ramp_skips_a_stroke_with_no_movement() -> None:
@@ -478,7 +488,7 @@ def test_build_gcode_without_ramp_keeps_the_plain_stroke_with_touch_and_hover() 
 
     produced = build_gcode(_one_layer(((1.0, 1.0), (2.0, 1.0))), profile, (10.0, 10.0))
 
-    assert "G0 Z1.000\nG1 X2.000 Y9.000 F1800\n" in produced
+    assert "G0 Z1.000 F3600\nG1 X2.000 Y9.000 F1800\n" in produced
     assert "Z3.000" not in produced
 
 
@@ -522,7 +532,7 @@ def test_fit_layers_to_drawable_shifts_a_page_spill_without_scaling() -> None:
     assert fitted.overshoot_mm == pytest.approx((0.13, 0.0))
     assert fitted.offset_mm == pytest.approx((-0.13, 0.0))
     assert fitted.layers[0].pen == "ink"
-    assert "G0 X190.000 Y180.000\n" in build_gcode(fitted.layers, profile, (190.0, 190.0))
+    assert "G0 X190.000 Y180.000 F3600\n" in build_gcode(fitted.layers, profile, (190.0, 190.0))
 
 
 def test_fit_layers_to_drawable_scales_a_drawing_larger_than_the_bed() -> None:
@@ -538,7 +548,7 @@ def test_fit_layers_to_drawable_scales_a_drawing_larger_than_the_bed() -> None:
     assert fitted.overshoot_mm == pytest.approx((100.0, 100.0))
     assert fitted.offset_mm == (0.0, 0.0)
     assert [layer.pen for layer in fitted.layers] == ["first", "second"]
-    assert "G0 X0.000 Y100.000\n" in build_gcode(fitted.layers, _profile(), (200.0, 200.0))
+    assert "G0 X0.000 Y100.000 F3600\n" in build_gcode(fitted.layers, _profile(), (200.0, 200.0))
 
 
 def test_fit_layers_to_drawable_reserves_the_ramp_lead_at_the_edge() -> None:
@@ -581,7 +591,7 @@ def test_build_gcode_tolerates_float_rounding_at_the_drawable_edge(
     layers = _one_layer(((x, 10.0), (x, 20.0)))
 
     if accepted:
-        assert "G0 X100.040 Y90.000\n" in build_gcode(layers, _profile(), (100.0, 100.0))
+        assert "G0 X100.040 Y90.000 F3600\n" in build_gcode(layers, _profile(), (100.0, 100.0))
     else:
         with pytest.raises(PointOutsideBedError, match=r"overshoot x=0\.060 mm"):
             build_gcode(layers, _profile(), (100.0, 100.0))
