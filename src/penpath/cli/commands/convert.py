@@ -6,7 +6,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import click
 from pydantic import ValidationError
@@ -32,6 +32,16 @@ from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper
 from penpath.presets.pens import get_pen
 from penpath.presets.pfms import DEFAULT_PFM, get_pfm_preset, list_pfm_presets
+
+_VALID_PEN_TYPES: tuple[str, ...] = tuple(
+    str(item) for item in get_args(Pen.model_fields["pen_type"].annotation)
+)
+_PEN_FIELD_HINTS: dict[str, str] = {
+    "width_mm": "a width in millimetres greater than 0 and at most 10",
+    "color": "a #RRGGBB hex colour or a named CSS colour",
+    "pen_type": f"one of {', '.join(_VALID_PEN_TYPES)}",
+}
+_PEN_FORMAT = "WIDTH[,COLOR[,TYPE]]"
 
 
 def _parse_filter_spec(spec: str) -> tuple[str, dict[str, str]]:
@@ -101,11 +111,15 @@ def _parse_pfm_settings(settings: Iterable[str]) -> dict[str, str]:
 
 
 def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
-    """Resolve pen from spec (preset name or inline 'width,color,type')."""
+    """Resolve a preset name or inline 'WIDTH[,COLOR[,TYPE]]' to a Pen.
+
+    Preset names win over inline parsing. The three inline fields are validated by
+    ``Pen``; an invalid field becomes a BadParameter naming that field and what it
+    accepts instead of a generic "Unknown pen".
+    """
     if pen_spec is None:
         pen_spec = config.default_pen
 
-    # Check if it's a preset name in config
     config_pen_names = [p.name for p in config.pens.values()]
     if pen_spec in config_pen_names:
         pen_config = config.get_pen(pen_spec)
@@ -117,7 +131,6 @@ def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
             pen_type="rollerball",
         )
 
-    # Check built-in presets
     try:
         pen_config = get_pen(pen_spec)
         return Pen(
@@ -130,26 +143,31 @@ def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
     except ValueError:
         pass
 
-    # Parse inline format: width,color,type
-    parts = pen_spec.split(",")
-    if len(parts) >= 2:
-        try:
-            width_mm = float(parts[0])
-            color = parts[1]
-            pen_type = parts[2] if len(parts) > 2 else "rollerball"
-            return Pen(
-                name=f"inline-{pen_spec.replace(',', '-')}",
-                width_mm=width_mm,
-                color=color,
-                opacity=1.0,
-                pen_type=pen_type,  # type: ignore
-            )
-        except (ValueError, IndexError):  # fmt: skip
-            pass
+    parts = [part.strip() for part in pen_spec.split(",")]
+    if not 1 <= len(parts) <= 3:
+        raise click.BadParameter(
+            f"expected inline format '{_PEN_FORMAT}': at most three comma-separated "
+            f"fields, got {len(parts)}",
+            param_hint="--pen",
+        )
 
-    raise click.BadParameter(
-        f"Unknown pen: '{pen_spec}'. Use a preset name or inline format 'width,color,type'"
-    )
+    values: dict[str, object] = {
+        "name": "-".join(parts),
+        "width_mm": parts[0],
+        "color": parts[1] if len(parts) > 1 else "#000000",
+        "pen_type": parts[2] if len(parts) > 2 else "rollerball",
+    }
+    try:
+        return Pen.model_validate(values)
+    except ValidationError as e:
+        error = e.errors()[0]
+        field = str(error["loc"][0]) if error.get("loc") else "pen"
+        value = values.get(field, pen_spec)
+        hint = _PEN_FIELD_HINTS.get(field, f"a preset name or inline '{_PEN_FORMAT}'")
+        raise click.BadParameter(
+            f"invalid {field} '{value}': {error['msg']}. Accepted: {hint}",
+            param_hint="--pen",
+        ) from e
 
 
 def _resolve_palette(palette_spec: str) -> Palette:
@@ -545,7 +563,15 @@ def _run_convert_pipeline(
     multiple=True,
     help="PFM setting override (repeatable). Format: KEY=VALUE",
 )
-@click.option("--pen", "pen_spec", help="Pen preset or inline 'width,color,type'")
+@click.option(
+    "--pen",
+    "pen_spec",
+    help=(
+        "Pen preset or inline 'WIDTH[,COLOR[,TYPE]]' (default: fine). "
+        "Colour: #RRGGBB or named CSS colour. "
+        "Types: ballpoint, fineliner, fountain, brush, marker, rollerball, gel"
+    ),
+)
 @click.option(
     "--palette",
     "palette_spec",

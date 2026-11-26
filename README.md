@@ -112,7 +112,7 @@ penpath convert input.jpg output.svg
 penpath convert input.jpg -o output.svg
 
 # Apply image filters before drawing
-penpath convert photo.jpg -f grayscale -f "threshold:levels=4,dither=floyd_steinberg"
+penpath convert photo.jpg -f grayscale -f "posterize:levels=4,dither=floyd_steinberg"
 
 # Tonal range is normalized automatically; images already spanning at least
 # 7/8 of 0-255 are left alone. Keep the original tones with:
@@ -130,7 +130,7 @@ penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
 penpath convert photo.jpg -s max_fill=100 -o full-range.svg
 
 # Choose pen and paper
-penpath convert photo.jpg --pen fineliner_03 --paper a4
+penpath convert photo.jpg --pen fine --paper a4
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
@@ -147,9 +147,12 @@ penpath gcode plot.svg --profile generic -o plot.gcode
 penpath gcode plot.svg --profile generic --dry-run > plot.gcode
 # A multi-pen SVG becomes one G-code layer per used pen, in layer order, with
 # one pen-change block before each layer that follows the first
+penpath convert photo.jpg -o palette_plot.svg --palette stabilo_88 -s seed=42
 penpath gcode palette_plot.svg --profile generic -o palette_plot.gcode
 # The built-in aquila profile drives sergio's Voxelab Aquila: it parks the page
-# against the drawable corner, ramps each landing and pauses to set every pen
+# against the drawable corner, ramps each landing and pauses to set every pen.
+# Lay the card out on a 190x190 mm page so it fits the Aquila bed:
+penpath convert photo.jpg -o card.svg --paper 190x190 -s seed=42
 penpath gcode card.svg --profile aquila -o card.gcode
 
 # Check the G-code without a machine: the PNG matches the SVG preview
@@ -223,12 +226,11 @@ input:
 filters:
   - grayscale:
       method: luminance
-  - threshold:
+  - posterize:
       levels: 4
       dither: floyd_steinberg
-  - blur:
+  - gaussian_blur:
       radius: 1.0
-      type: gaussian
 
 pfm:
   name: sketch_lines
@@ -244,11 +246,11 @@ pfm:
     seed: null
 
 pen:
-  name: default
+  name: fine
   # or inline:
   # width_mm: 0.3
   # color: "#000000"
-  # type: fineliner
+  # pen_type: fineliner
 
 paper:
   name: a4
@@ -281,9 +283,9 @@ output:
 
 ```bash
 penpath convert photo.jpg -o art.svg \
-  -f grayscale -f "threshold:levels=6,dither=floyd_steinberg" \
+  -f grayscale -f "posterize:levels=6,dither=floyd_steinberg" \
   -s line_density=0.4 -s shading_enabled=true -s seed=12345 \
-  --pen fineliner_03 --paper a4
+  --pen 0.4,#000000,fineliner --paper a4
 ```
 
 ### Project-Based Iteration
@@ -368,20 +370,26 @@ penpath convert photo.jpg -s seed=42 -o plot2.svg
 
 ### Pens
 
-| Name | Width | Color | Type |
-|------|-------|-------|------|
-| `default` | 0.3mm | Black | fineliner |
-| `fineliner_03` | 0.3mm | Black | fineliner |
-| `fineliner_05` | 0.5mm | Black | fineliner |
-| `rollerball_05` | 0.5mm | Black | rollerball |
-| `rollerball_07` | 0.7mm | Black | rollerball |
-| `fountain_f` | 0.4mm | Black | fountain |
-| `fountain_m` | 0.6mm | Black | fountain |
-| `marker_10` | 1.0mm | Black | marker |
-| `red_03` | 0.3mm | Red | fineliner |
-| `blue_03` | 0.3mm | Blue | fineliner |
+| Name | Width (mm) | Colour |
+|------|------------|--------|
+| `fine` (default) | 0.3 | black |
+| `medium` | 0.5 | black |
+| `bold` | 0.8 | black |
+| `extra_fine` | 0.2 | black |
+| `brush` | 1.0 | black |
+| `red_fine` | 0.3 | red |
+| `blue_fine` | 0.3 | blue |
+| `green_fine` | 0.3 | green |
 
-**Inline format:** `WIDTH,COLOR,TYPE` — e.g., `0.4,#FF6600,fountain`
+**Inline format:** `WIDTH[,COLOR[,TYPE]]` — width in millimetres, colour as
+`#RRGGBB` or a named CSS colour, type one of `ballpoint`, `fineliner`,
+`fountain`, `brush`, `marker`, `rollerball`, `gel` (default `rollerball`):
+
+```bash
+penpath convert photo.jpg --pen 0.4
+penpath convert photo.jpg --pen 0.4,#FF6600
+penpath convert photo.jpg --pen 0.4,#000000,fineliner
+```
 
 ### Palettes: one SVG layer per pen
 
@@ -483,7 +491,7 @@ User config at `~/.config/penpath/config.toml`:
 ```toml
 # penpath user config
 default_paper = "a4"
-default_pen = "default"
+default_pen = "fine"
 default_pfm = "sketch_lines"
 vpype_path = "vpype"
 output_dir = "."
@@ -496,7 +504,6 @@ Manage with:
 penpath config show      # View current config
 penpath config init      # Create default config
 penpath config edit      # Open in $EDITOR
-penpath config set default_paper a3
 ```
 
 ### Machine profiles
@@ -504,9 +511,10 @@ penpath config set default_paper a3
 Machine profiles hold bed, feed and pen values for a plotter. Two built-ins
 ship: `generic` (a plain Z-lifted plotter) and `aquila` (the Voxelab Aquila with
 a pen offset, a ramped landing and a touch-spot pen change; its numbers come
-from sergio's `aquila-gcode-reference` script). List the built-ins and your own
-machines with `penpath info profiles`; the file format and an example are in
-[docs/CLI.md](docs/CLI.md#machine-profile-format).
+from sergio's `aquila-gcode-reference` script). The Aquila profile pauses for
+each pen with `M0`; never use `M25` to pause on this firmware. List the built-ins
+and your own machines with `penpath info profiles`; the file format and an
+example are in [docs/CLI.md](docs/CLI.md#machine-profile-format).
 
 ---
 

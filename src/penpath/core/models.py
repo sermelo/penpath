@@ -27,17 +27,18 @@ class Pen(BaseModel):
         Pen color as hex string (e.g., "#000000") or named CSS color.
     opacity : float
         Pen opacity (0.0 - 1.0).
-    pen_type : Literal["ballpoint", "fountain", "brush", "marker", "rollerball", "gel"]
-        Physical pen type for reference.
+    pen_type : Literal["ballpoint", "fineliner", "fountain", "brush", "marker", "rollerball", "gel"]
+        Physical pen type for reference. The accepted types are ballpoint, fineliner,
+        fountain, brush, marker, rollerball and gel.
     """
 
     name: str = Field(..., min_length=1)
     width_mm: float = Field(..., gt=0.0, le=10.0)
     color: str = Field(default="#000000")
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
-    pen_type: Literal["ballpoint", "fountain", "brush", "marker", "rollerball", "gel"] = Field(
-        default="rollerball"
-    )
+    pen_type: Literal[
+        "ballpoint", "fineliner", "fountain", "brush", "marker", "rollerball", "gel"
+    ] = Field(default="rollerball")
 
     @field_validator("color")
     @classmethod
