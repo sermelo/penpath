@@ -312,6 +312,19 @@ def test_pen_change_between_skips_the_first_layer() -> None:
     assert "; layer 1/2 pen=first\nM117" not in produced
 
 
+def test_generic_profile_pen_change_keeps_an_empty_pause(tmp_path: Path) -> None:
+    """The built-in generic pen-swap profile emits a bare M0 and the pen name on M117."""
+    profile = load_profile("generic", profiles_path=tmp_path / "profiles.yaml")
+    assert profile.pen_change.mode == "between"
+
+    produced = build_gcode(_two_layers(), profile, (210.0, 297.0))
+
+    lines = produced.splitlines()
+    assert lines.count("M0") == 1
+    assert not any(line.startswith("M0 ") for line in lines)
+    assert [line for line in lines if line.startswith("M117 ")] == ["M117 second"]
+
+
 def test_pen_change_each_pauses_before_every_used_layer() -> None:
     profile = _profile(pen_change={"mode": "each", "steps": [{"message": "{pen}"}, {"pause": ""}]})
 

@@ -328,7 +328,7 @@ def test_gcode_aquila_dry_run_keeps_the_reference_blocks(runner: CliRunner) -> N
     for line in (
         "M84 S0 ; no stepper timeout during the pauses",
         "G1 X212.700 Y40.600 F6000",
-        "M0 Pen 1: stabilo_88_black. Touch paper, tighten, press knob",
+        "M0 Pen 1: stabilo_88_black. Fit pen, touch paper, tighten clamp, press knob",
         "G1 X0.000 Y220.000 F6000 ; head left, bed forward: paper free to take out",
         "M117 Plot done",
     ):

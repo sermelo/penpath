@@ -27,6 +27,9 @@ REFERENCE = FIXTURES / "golden" / "gcode" / "aquila_reference_two_layers.gcode"
 
 NUMBER = re.compile(r"-?\d+\.\d+")
 COMMAND = re.compile(r"^(G\d+)\b")
+MESSAGE = re.compile(r"^(M117|M0)\b")
+REFERENCE_INSTRUCTION = "Touch paper, tighten, press knob"
+AQUILA_INSTRUCTION = "Fit pen, touch paper, tighten clamp, press knob"
 
 
 def _normalize(line: str) -> str:
@@ -69,9 +72,9 @@ def _end_block(lines: list[str]) -> list[str]:
     return [_normalize(line) for line in lines[start:] if not line.startswith(";")]
 
 
-def _pen_blocks(lines: list[str]) -> list[list[str]]:
-    """Return each pen's change block from its comment through the post-pause lift."""
-    blocks: list[list[str]] = []
+def _pen_block_ranges(lines: list[str]) -> list[tuple[int, int]]:
+    """Return (start, stop) slices for each pen's change block."""
+    ranges: list[tuple[int, int]] = []
     for index, line in enumerate(lines):
         if not line.startswith("; ---- pen "):
             continue
@@ -82,10 +85,26 @@ def _pen_blocks(lines: list[str]) -> list[list[str]]:
         )
         lift = message + 1
         assert COMMAND.match(lines[lift]) is not None
-        blocks.append(
-            [_normalize(item) for item in lines[index : lift + 1] if not item.startswith(";")]
-        )
-    return blocks
+        ranges.append((index, lift + 1))
+    return ranges
+
+
+def _machine_line(line: str) -> str:
+    """Keep an operator message's command but drop its human-facing text."""
+    match = MESSAGE.match(line)
+    return match.group(1) if match else _normalize(line)
+
+
+def _pen_blocks(lines: list[str]) -> list[list[str]]:
+    """Return each pen's change block with operator text removed, in order.
+
+    Comments, moves, beeps and the pause are still compared in order; only the
+    human ``M117``/``M0`` wording is penpath's own and is asserted separately.
+    """
+    return [
+        [_machine_line(item) for item in lines[start:stop]]
+        for start, stop in _pen_block_ranges(lines)
+    ]
 
 
 def _penpath_text() -> str:
@@ -117,6 +136,33 @@ def test_aquila_reference_pen_changes_match_in_order(
     assert _pen_blocks(produced) == _pen_blocks(reference)
     assert len(_pen_blocks(produced)) == 2
     assert sum(line.startswith("M0 ") for line in produced) == 2
+
+
+def test_aquila_only_pen_change_operator_text_differs_from_reference(
+    outputs: tuple[list[str], list[str]],
+) -> None:
+    """The M0 sentence is the only pen-change text penpath changed from the reference."""
+    reference, produced = outputs
+
+    def operator_lines(text_lines: list[str]) -> list[str]:
+        return [
+            line
+            for start, stop in _pen_block_ranges(text_lines)
+            for line in text_lines[start:stop]
+            if MESSAGE.match(line)
+        ]
+
+    ref_messages = operator_lines(reference)
+    pen_messages = operator_lines(produced)
+    assert [line for line in ref_messages if line.startswith("M117 ")] == [
+        line for line in pen_messages if line.startswith("M117 ")
+    ]
+    ref_pauses = [line for line in ref_messages if line.startswith("M0 ")]
+    pen_pauses = [line for line in pen_messages if line.startswith("M0 ")]
+    assert len(ref_pauses) == len(pen_pauses) == 2
+    assert pen_pauses == [
+        line.replace(REFERENCE_INSTRUCTION, AQUILA_INSTRUCTION) for line in ref_pauses
+    ]
 
 
 def test_aquila_reference_end_block_parks_without_m2(

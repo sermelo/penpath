@@ -100,9 +100,11 @@ Taken from `reference/aquila_gcode/README.md` and `aquila_plot.py`
       0.85 mm above the bed.
 - [ ] The saved mesh is loaded with no fade (`M420 S1 Z0`).
 - [ ] At each `M0` pause the head is at the touch spot **(190, 12)** mm in pen
-      space, at Z 10.0: put the pen in, slide it down onto the paper (a scrap of
-      plastic under the tip avoids a dot; pull it out once the pen has lifted
-      and started moving), tighten the clamp, and press the knob. Sometimes two
+      space, at Z 10.0. The message reads
+      `M0 Pen N: <pen>. Fit pen, touch paper, tighten clamp, press knob`: fit
+      the pen into the clamp, slide it down onto the paper (a scrap of plastic
+      under the tip avoids a dot; pull it out once the pen has lifted and
+      started moving), tighten the clamp, and press the knob. Sometimes two
       presses are needed. The first pen is set here too, not just colour changes.
       **The spot sits inside the 10 mm safety margin on purpose**: paper and
       magnets must not cover it. It is not a drawing point and is not checked
@@ -166,7 +168,7 @@ with penpath's output from the same SVG and the margin-0 profile copy.
 | Check | Reference `svg_plot.py` | `penpath gcode --profile aquila` |
 |---|---|---|
 | Start block (`G21` … `G1 Z12.5 F600`) | identical | identical after the 3-decimal formatting below |
-| Pen change (first and second pen) | `; ---- pen N: name ----`, lift, travel to (190, 12), touch, beeps, `M0`, messages, lift | same lines in the same order, plus `; pen change` and `; layer N/2 pen=…` comments |
+| Pen change (first and second pen) | `; ---- pen N: name ----`, lift, travel to (190, 12), touch, beeps, `M0`, messages, lift | same commands, moves and beeps in the same order, plus `; pen change` and `; layer N/2 pen=…` comments; only the `M0` operator sentence differs (below) |
 | End block (Z80 → X0 Y220 → beeps → `M84 S120`, `M84` → done) | identical, no `M2` | identical after formatting, no `M2` |
 | Page placement | page at pen (7.3, 0.0); right/front edges of the drawable area | same origin from `reachable_corner` with the margin-0 override |
 | Coordinates | 16 XY points (two-layer SVG); 843 on the generated circle SVG | same 16 / 843 points; largest difference 0.001 mm |
@@ -224,6 +226,17 @@ stroke; it is a state change, not a different landing.
    the usable area (drawable area minus `bed.margin_mm`, 10 mm in the shipped
    profile). The pen-change touch spot is not a drawing point and is not checked.
    A page that does not fit fails in both, with different messages.
+8. **Pen-change `M0` wording.** The reference says
+   `M0 Pen N: <pen>. Touch paper, tighten, press knob`, which assumes the pen
+   is already fitted. Penpath says
+   `M0 Pen N: <pen>. Fit pen, touch paper, tighten clamp, press knob`: `Fit pen`
+   covers both the first fit before `G28` and a later swap, and `tighten clamp`
+   names the part on the Aquila's inline holder. The `M117` status messages are
+   unchanged (LUC-143). Sergio's output stays verbatim in
+   `tests/fixtures/golden/gcode/aquila_reference_two_layers.gcode`; the
+   equivalence test strips the human `M117`/`M0` text when comparing the
+   pen-change commands, moves, beeps and pause in order, and separately asserts
+   that this sentence is the only pen-change text that differs.
 
 None of these differences changes the machine values: bed, offset, Z heights,
 ramp, feeds, touch spot, start, pen-change and end blocks all come from the
@@ -290,6 +303,5 @@ validation run.
   resolution depends on paper size. That is the intended behaviour and is
   tracked as LUC-142: with `--max-resolution` fixed, the same settings draw the
   same strokes scaled into the smaller page. The other gaps noted in this run
-  (a bed/page in the G-code preview, an outline/contour mode for portraits and
-  the `M0` text for inline pens) have their own follow-ups or remain open
-  checks.
+  (a bed/page in the G-code preview and an outline/contour mode for portraits)
+  have their own follow-ups or remain open checks.
