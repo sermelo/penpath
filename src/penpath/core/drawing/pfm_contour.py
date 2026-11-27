@@ -1,4 +1,4 @@
-"""Library-only contour tracing for thresholded or posterised images."""
+"""Contour tracing for thresholded or posterised images."""
 
 from __future__ import annotations
 
@@ -153,8 +153,8 @@ def contour_strokes(image: Image.Image, settings: ContourSettings) -> list[LineS
     and filtered by shoelace area. Shapely RDP simplification and optional
     corner-preserving smoothing produce the strokes; closed contours stay
     closed and empty, invalid or zero-length results are dropped. Output
-    order is level order then ``find_contours`` order. Library-only: nothing
-    is registered with the PFM registry or exposed in the CLI.
+    order is level order then ``find_contours`` order. It is registered as
+    the ``contour`` PFM, so the CLI can select it with ``--pfm contour``.
 
     Parameters
     ----------

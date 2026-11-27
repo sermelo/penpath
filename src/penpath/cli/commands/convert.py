@@ -6,7 +6,8 @@ import math
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, get_args
+from types import UnionType
+from typing import Any, Literal, Union, get_args, get_origin
 
 import click
 from click.core import ParameterSource
@@ -254,6 +255,29 @@ def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
     )
 
 
+def _coerce_pfm_setting(annotation: object, value: str) -> object:
+    """Convert a CLI string using a settings field's type, not its default."""
+    if annotation is bool:
+        return value.lower() in ("true", "1", "yes", "on")
+    if annotation is int:
+        return int(value)
+    if annotation is float:
+        return float(value)
+    origin = get_origin(annotation)
+    if origin is tuple:
+        args = get_args(annotation)
+        parts = value.split(",")
+        if len(parts) != len(args):
+            raise ValueError(f"expected {len(args)} comma-separated values")
+        return tuple(_coerce_pfm_setting(arg, part) for arg, part in zip(args, parts, strict=True))
+    if origin in (UnionType, Union):
+        for arg in get_args(annotation):
+            if arg is type(None):
+                continue
+            return _coerce_pfm_setting(arg, value)
+    return value
+
+
 def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSettingsUnion:
     """Resolve PFM settings from a PFM name or preset and overrides."""
     if pfm_name is None:
@@ -263,7 +287,7 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSetti
     presets = list_pfm_presets()
     if pfm_name not in registered and pfm_name not in presets:
         raise click.BadParameter(
-            f"Unknown PFM: '{pfm_name}'. Available PFMs: {registered}, presets: {presets}"
+            f"Unknown PFM or preset: '{pfm_name}'. Available PFMs: {registered}, presets: {presets}"
         )
 
     # Keep the fields the preset or caller actually set so the drawing can tell
@@ -283,18 +307,9 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSetti
     for key, value_str in pfm_settings.items():
         if key not in base_settings:
             raise click.BadParameter(f"Unknown PFM setting: '{key}'")
-        current_value = base_settings[key]
+        annotation = settings_model.model_fields[key].annotation
         try:
-            if isinstance(current_value, bool):
-                base_settings[key] = value_str.lower() in ("true", "1", "yes", "on")
-            elif isinstance(current_value, int):
-                base_settings[key] = int(value_str)
-            elif isinstance(current_value, float):
-                base_settings[key] = float(value_str)
-            elif isinstance(current_value, tuple):
-                base_settings[key] = tuple(float(p) for p in value_str.split(","))
-            else:
-                base_settings[key] = value_str
+            base_settings[key] = _coerce_pfm_setting(annotation, value_str)
         except (TypeError, ValueError) as e:
             raise click.BadParameter(
                 f"Invalid value '{value_str}' for PFM setting '{key}': {e}",
@@ -609,7 +624,14 @@ def _run_convert_pipeline(
     is_flag=True,
     help="Choose the chroma multiplier from the image and palette; --saturation wins",
 )
-@click.option("--pfm", "pfm_name", help="PFM algorithm or built-in preset (default: sketch_lines)")
+@click.option(
+    "--pfm",
+    "pfm_name",
+    help=(
+        "PFM algorithm (sketch_lines or contour) or built-in preset "
+        "(default: sketch_lines). Run 'penpath info pfms' to list them."
+    ),
+)
 @click.option(
     "--pfm-setting",
     "-s",

@@ -49,7 +49,7 @@ penpath/
 └── __main__.py             # `python -m penpath` entry
 ```
 
-**Data Flow**: `convert` command → load image → filter pipeline → PFM (Sketch Lines) → geometry ops (simplify → merge → sort) → vpype pipeline → SVG export
+**Data Flow**: `convert` command → load image → filter pipeline → PFM (Sketch Lines or Contour) → geometry ops (simplify → merge → sort) → vpype pipeline → SVG export
 
 ---
 
@@ -104,6 +104,7 @@ published the before/after evidence.
 - [x] `core/drawing/registry.py` — `PFMRegistry` with `sketch_lines` entry; extensible for later PFMs
 - [x] Unit tests: deterministic output with fixed seed, parameter bounds, output geometry validity
 - [x] Integration gate: `tests/integration/test_sketch_lines_gate.py` asserts the floors for all five reference images with the shipped defaults
+- [x] `core/drawing/pfm_contour.py` ships as a registered `contour` PFM with its own settings, presets and `-s` support (LUC-144/145); the geometry and SVG layers stay shared with sketch_lines
 
 ### Phase 3: Geometry Optimization (2 tickets)
 - [ ] `core/geometry/simplify.py` — `simplify(lines, tolerance_mm, paper_dpi) → lines` via `shapely.simplify`
@@ -184,7 +185,7 @@ Eight parts in order, from the approved LUC-51 plan; one pull request each:
 ## Out of Scope (MVP)
 
 - GUI / preview window
-- Additional PFMs (Sketch Squares, Spiral, Contour)
+- Additional PFMs (Sketch Squares, Spiral)
 - GCode / HPGL / DXF export
 - Batch directory processing
 - Plugin system

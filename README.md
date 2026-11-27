@@ -77,7 +77,7 @@ writes the final SVG: vpype contributes geometry only.
 
 | Concept | Description |
 |---------|-------------|
-| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. MVP includes `sketch_lines` (ported from DrawingBotV3). |
+| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines: `sketch_lines` (ported from DrawingBotV3) or `contour` (scikit-image + Shapely outlines). |
 | **Palette** | An ordered set of pens. Each pixel is drawn by its nearest palette colour; each used pen becomes one SVG layer. |
 | **Filters** | Image preprocessing: grayscale, threshold, blur, contrast, etc. Applied in order before PFM. |
 | **Geometry optimization** | Simplify (RDP), merge (collinear join), sort (greedy NN + 2-opt) — runs automatically. |
@@ -415,13 +415,30 @@ penpath convert photo.jpg --pen "0.4,#FF6600"
 penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 ```
 
+### PFMs and Contour presets
+
+`--pfm` selects `sketch_lines` (the default hatching algorithm) or `contour`,
+which traces clean outlines with scikit-image and Shapely. Each PFM accepts its
+own `-s KEY=VALUE` settings; `penpath info pfms` lists every PFM, its defaults
+and its presets.
+
+| Preset | PFM | Character |
+|--------|-----|-----------|
+| `contour_portrait` | `contour` | Four threshold levels for internal detail; tuned on a face. |
+| `contour_silhouette` | `contour` | One threshold and a larger minimum speck size for a few bold outlines. |
+
+```bash
+penpath convert photo.jpg --pfm contour -o outlines.svg
+penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg
+```
+
 ### Palettes: one SVG layer per pen
 
 Each pixel is assigned to the palette pen whose colour is nearest in CIE Lab,
 and that pen receives a full-size greyscale image holding the luminance of its
 own pixels and white elsewhere. Paper-coloured pixels are masked to white
 before separation, so the lightest pen cannot scribble over the page; use
-`--no-background` if you want the old behaviour. Filters, the Sketch Lines PFM and geometry
+`--no-background` if you want the old behaviour. Filters, the selected PFM and geometry
 optimization then run once per pen, so lines from different pens are never
 sorted together. Every pen that draws becomes one Inkscape layer, named after
 the pen, in palette order:
