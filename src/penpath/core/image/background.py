@@ -13,7 +13,9 @@ of its own colour regions.
 
 With ``method="global"`` a pixel is paper when its CIE Lab distance (CIE76,
 D65) from that single detected colour is at most
-``DEFAULT_BACKGROUND_THRESHOLD``. With ``method="local"`` (the default) the
+``DEFAULT_BACKGROUND_THRESHOLD``. The same global test is exposed as
+:func:`background_mask` and reused by scoring so paper versus ink has one
+definition. With ``method="local"`` (the default) the
 image is first reduced to a longest side of 80 px, thin ink is removed with a
 radius-4 median filter, dense hatching is kept from becoming fake paper with
 a radius-6 grey closing, and the result is upsampled into a smooth per-pixel
@@ -159,6 +161,48 @@ def _background_mask(
     return mask
 
 
+def background_mask(
+    image: Image.Image,
+    *,
+    paper_color: str | None = None,
+    threshold: float = DEFAULT_BACKGROUND_THRESHOLD,
+) -> NDArray[np.bool_]:
+    """Return the boolean mask of pixels close to the paper colour.
+
+    This is the single definition of global paper versus ink: a pixel is paper
+    when its CIE76 (D65) Lab distance from the paper colour is at most
+    ``threshold``. Darker and more saturated pixels are farther away and are
+    therefore ink. The paper colour is detected with
+    :func:`detect_paper_color` unless one is given.
+
+    Parameters
+    ----------
+    image : PIL.Image.Image
+        Loaded image; alpha, when present, is ignored.
+    paper_color : str | None, optional
+        Paper colour as ``#RRGGBB`` or a CSS colour name. Detected when omitted.
+    threshold : float, optional
+        Maximum CIE76 Delta-E distance from the paper colour treated as paper.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean array with shape ``(height, width)`` that is ``True`` for paper.
+
+    Raises
+    ------
+    ValueError
+        If the image has no pixels, the colour cannot be parsed, or the
+        threshold is negative or not finite.
+    """
+    _validate_threshold(threshold)
+    rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    if rgb.size == 0:
+        raise ValueError("background_mask needs an image with at least one pixel")
+    paper = paper_color if paper_color is not None else detect_paper_color(image)
+    return _background_mask(rgb, _parse_paper_color(paper), threshold)
+
+
 def _local_paper_field(rgb: NDArray[np.uint8]) -> NDArray[np.uint8]:
     """Estimate a smooth paper colour per pixel, with thin ink removed."""
     height, width = rgb.shape[:2]
@@ -251,7 +295,7 @@ def mask_background(
 
     if method == "global":
         paper = paper_color if paper_color is not None else detect_paper_color(image)
-        mask = _background_mask(rgb, _parse_paper_color(paper), threshold)
+        mask = background_mask(image, paper_color=paper, threshold=threshold)
     else:
         field = (
             np.broadcast_to(_parse_paper_color(paper_color), rgb.shape)
@@ -306,6 +350,7 @@ def remove_background(
 __all__ = [
     "DEFAULT_BACKGROUND_THRESHOLD",
     "BackgroundResult",
+    "background_mask",
     "detect_paper_color",
     "mask_background",
     "remove_background",

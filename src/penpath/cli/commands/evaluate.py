@@ -17,6 +17,7 @@ from penpath.core import (
     compute_layer_coverage,
     compute_likeness,
     compute_machine_cost,
+    compute_masked_likeness,
     get_image_placement,
     get_layer_pen_names,
     get_svg_paper_size,
@@ -127,12 +128,15 @@ def evaluate_cmd(
     """Evaluate DRAWING_SVG against the original IMAGE.
 
     The SVG is simulated at the chosen resolution, cropped to the recorded
-    image placement, and scored with greyscale SSIM and edge SSIM. Greyscale
-    SSIM misses pale ink on a near-blank page; edge SSIM compares Sobel edge
-    maps instead and penalises spurious structure. Machine cost, ink coverage
-    and the pen name from the SVG layer are reported per pen layer and in
-    total; a layer covering most of the page warns on stderr. With --json,
-    only a JSON object is written to stdout.
+    image placement, and scored with greyscale SSIM over the whole page,
+    greyscale SSIM over the source image's ink only, and edge SSIM. Whole-page
+    greyscale SSIM misses pale ink on a near-blank page and rewards agreeing
+    with mostly-white paper; ink-only SSIM averages the same SSIM map over the
+    source ink pixels instead. Edge SSIM compares Sobel edge maps and penalises
+    spurious structure. Machine cost, ink coverage and the pen name from the
+    SVG layer are reported per pen layer and in total; a layer covering most of
+    the page warns on stderr. With --json, only a JSON object is written to
+    stdout.
     """
     if px_per_mm <= 0:
         raise click.BadParameter("must be greater than zero", param_hint="--dpi")
@@ -179,6 +183,12 @@ def evaluate_cmd(
         placement_rect,
         dpi_px_per_mm=px_per_mm,
     )
+    masked_likeness = compute_masked_likeness(
+        simulated,
+        original,
+        placement_rect,
+        dpi_px_per_mm=px_per_mm,
+    )
     edge_likeness = compute_edge_likeness(
         simulated,
         original,
@@ -207,7 +217,12 @@ def evaluate_cmd(
     if as_json:
         click.echo(
             json.dumps(
-                {"likeness": likeness, "edge_likeness": edge_likeness, "machine_cost": cost},
+                {
+                    "likeness": likeness,
+                    "masked_likeness": masked_likeness,
+                    "edge_likeness": edge_likeness,
+                    "machine_cost": cost,
+                },
                 indent=2,
             )
         )
@@ -218,7 +233,8 @@ def evaluate_cmd(
     table = Table(title="Likeness", show_header=True, header_style="bold")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", justify="right")
-    table.add_row("SSIM", f"{likeness:.4f}")
+    table.add_row("SSIM (whole page)", f"{likeness:.4f}")
+    table.add_row("SSIM (ink only)", f"{masked_likeness:.4f}")
     table.add_row("Edge SSIM", f"{edge_likeness:.4f}")
     console.print(table)
     console.print()

@@ -159,9 +159,9 @@ penpath preview plot.svg -o preview.png --dpi 10
 # Also show pen-up travel as thin light lines (default stays ink-only)
 penpath preview plot.svg -o travel_preview.png --travel
 
-# Evaluate likeness, machine cost and ink coverage (JSON for scripts)
+# Evaluate whole-page and ink-only SSIM, machine cost and ink coverage
 penpath evaluate photo.jpg plot.svg
-penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
+penpath evaluate photo.jpg plot.svg --json | jq '{likeness, masked_likeness}'
 
 # Turn the reviewed SVG into G-code for a machine profile (stdout stays empty)
 penpath gcode plot.svg --profile generic -o plot.gcode
@@ -355,10 +355,10 @@ penpath convert photo.jpg -f grayscale -f threshold --no-vpype -o debug.svg
 penpath convert photo.jpg -o plot.svg
 # Render a preview at 10 px/mm on cream paper
 penpath preview plot.svg -o preview.png --dpi 10 --paper-color "#FFFDD0"
-# Check likeness against the original (SSIM + machine cost)
+# Check likeness against the original (whole-page, ink-only and edge SSIM + machine cost)
 penpath evaluate photo.jpg plot.svg
 # Machine-readable output for scripts and agents
-penpath evaluate photo.jpg plot.svg --json | jq '{likeness, total: .machine_cost.total}'
+penpath evaluate photo.jpg plot.svg --json | jq '{likeness, masked_likeness, total: .machine_cost.total}'
 ```
 
 The machine-cost table includes a `Pen` column with the Inkscape layer name
@@ -368,6 +368,11 @@ includes `pen` and `ink_coverage_pct` per layer, and `ink_coverage_pct` in
 the layer and suggesting
 `--background-threshold` / `--saturation`); `--coverage-warn 0` silences it.
 Warnings never change the exit code or the JSON on stdout.
+
+`SSIM (ink only)` (`masked_likeness` in JSON) averages SSIM over the source
+image's ink pixels, using the paper colour detected from that source. It stays
+low for a near-blank plot on a mostly-white page where whole-page SSIM stays
+high; ink the plot adds outside the source mask is reported by coverage instead.
 
 ### Worked Example: Photo → SVG → Preview
 
@@ -381,7 +386,7 @@ penpath convert tests/fixtures/images/reference/photo.jpg -o photo_plot.svg -s s
 # Render the simulated plot as an image
 penpath preview photo_plot.svg -o photo_preview.png --dpi 10
 
-# Score likeness (SSIM 0.5099 with these defaults) and machine cost
+# Score likeness (whole-page SSIM 0.5099 with these defaults), ink-only SSIM and machine cost
 penpath evaluate tests/fixtures/images/reference/photo.jpg photo_plot.svg
 ```
 
