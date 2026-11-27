@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 
 import pytest
 from PIL import Image, ImageDraw
 from shapely import LineString
 
+from penpath.core.drawing import pfm_sketch_squares as squares_module
+from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings, sketch_squares
 
 
@@ -32,6 +35,7 @@ class TestSketchSquaresSettings:
         assert settings.min_length == 2.0
         assert settings.max_length == 40.0
         assert settings.max_fill == 80.0
+        assert settings.white_threshold == 0.92
         assert settings.seed is None
         assert settings.max_strokes is None
 
@@ -63,6 +67,13 @@ class TestSketchSquaresSettings:
         assert SketchSquaresSettings(max_fill=1.0).max_fill == 1.0
         assert SketchSquaresSettings(max_fill=100.0).max_fill == 100.0
 
+    def test_white_threshold_bounds(self):
+        with pytest.raises(ValueError):
+            SketchSquaresSettings(white_threshold=-0.01)
+        with pytest.raises(ValueError):
+            SketchSquaresSettings(white_threshold=1.01)
+        assert SketchSquaresSettings(white_threshold=1.0).white_threshold == 1.0
+
     def test_length_bounds(self):
         with pytest.raises(ValueError):
             SketchSquaresSettings(min_length=0.0)
@@ -72,6 +83,26 @@ class TestSketchSquaresSettings:
 
 class TestSketchSquaresAlgorithm:
     """Tests for the sketch_squares algorithm."""
+
+    def test_white_threshold_is_forwarded_to_the_shared_engine(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: list[float] = []
+
+        def fake_engine(
+            image: Image.Image,
+            settings: SketchLinesSettings,
+            angle_provider: Callable[..., float],
+            shading_enabled: bool,
+            squiggle_enabled: bool,
+            shading_threshold: float,
+        ) -> list[LineString]:
+            captured.append(settings.white_threshold)
+            return []
+
+        monkeypatch.setattr(squares_module, "_run_sketch_engine", fake_engine)
+        sketch_squares(Image.new("L", (20, 20), 255), SketchSquaresSettings(white_threshold=0.75))
+        assert captured == [0.75]
 
     def test_same_seed_produces_identical_strokes(self):
         image = _dark_square_image()

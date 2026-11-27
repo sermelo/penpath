@@ -65,6 +65,12 @@ class TestResolvePFM:
             max_strokes=300,
         )
 
+    @pytest.mark.parametrize("pfm", ("sketch_lines", "sketch_squares"))
+    def test_white_threshold_override_reaches_both_pfms(self, pfm: str) -> None:
+        settings = _resolve_pfm(pfm, {"white_threshold": "0.9"}).to_typed_settings()
+        assert isinstance(settings, (SketchLinesSettings, SketchSquaresSettings))
+        assert settings.white_threshold == 0.9
+
     def test_boolean_and_tuple_overrides_for_sketch_lines(self) -> None:
         pfm = _resolve_pfm(
             "sketch_lines",

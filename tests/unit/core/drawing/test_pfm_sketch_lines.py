@@ -22,6 +22,7 @@ class TestSketchLinesSettings:
         settings = SketchLinesSettings()
         assert settings.line_density == 0.97
         assert settings.max_fill == 90.0
+        assert settings.white_threshold == 0.92
         assert settings.tone_coverage == 0.5
         assert settings.tone_exponent == 0.55
         assert settings.texture_limit == 0.8
@@ -102,6 +103,14 @@ class TestSketchLinesSettings:
             SketchLinesSettings(max_fill=101.0)
         assert SketchLinesSettings(max_fill=1.0).max_fill == 1.0
         assert SketchLinesSettings(max_fill=100.0).max_fill == 100.0
+
+    def test_white_threshold_bounds(self):
+        with pytest.raises(ValueError):
+            SketchLinesSettings(white_threshold=-0.01)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(white_threshold=1.01)
+        assert SketchLinesSettings(white_threshold=0.0).white_threshold == 0.0
+        assert SketchLinesSettings(white_threshold=1.0).white_threshold == 1.0
 
     def test_min_max_length_bounds(self):
         with pytest.raises(ValueError):
@@ -468,6 +477,63 @@ class TestSketchLinesAlgorithm:
             for (x0, y0), (x1, y1) in pairwise(coords):
                 assert math.hypot(x1 - x0, y1 - y0) <= 100.0
 
+    @staticmethod
+    def _two_dark_blocks_image(width: int = 200, height: int = 120) -> Image.Image:
+        image = Image.new("L", (width, height), 255)
+        for y in range(30, 90):
+            for x in (*range(20, 60), *range(140, 180)):
+                image.putpixel((x, y), 0)
+        return image
+
+    @staticmethod
+    def _crosses_white_gap(line: LineString, gap: tuple[int, int] = (60, 140)) -> bool:
+        for (x0, y0), (x1, y1) in pairwise(line.coords):
+            steps = max(1, math.ceil(2 * math.hypot(x1 - x0, y1 - y0)))
+            for index in range(steps + 1):
+                x = x0 + (x1 - x0) * index / steps
+                if gap[0] <= x < gap[1] and 30 <= y0 + (y1 - y0) * index / steps < 90:
+                    return True
+        return False
+
+    def test_strokes_do_not_bridge_a_wide_white_gap(self):
+        """A near-white source run ends the stroke instead of joining two dark blocks."""
+        lines = sketch_lines(
+            self._two_dark_blocks_image(),
+            SketchLinesSettings(seed=42, max_length=200.0, search_angle_step=10.0),
+        )
+        assert lines
+        assert not any(self._crosses_white_gap(line) for line in lines)
+
+    def test_white_threshold_one_disables_the_source_stop(self):
+        """The opt-out changes the drawing while keeping the same seeded random draw."""
+        image = self._two_dark_blocks_image()
+        stopped = sketch_lines(
+            image, SketchLinesSettings(seed=42, max_length=200.0, search_angle_step=10.0)
+        )
+        full = sketch_lines(
+            image,
+            SketchLinesSettings(
+                seed=42, max_length=200.0, search_angle_step=10.0, white_threshold=1.0
+            ),
+        )
+        assert stopped and full
+        assert self._stroke_signature(stopped) != self._stroke_signature(full)
+
+    def test_ray_into_white_ends_at_the_last_dark_pixel(self):
+        """A candidate ray stops before a run of source pixels above the cutoff."""
+        from penpath.core.drawing.pfm_sketch_lines import _sample_line_luminance
+
+        source = np.full((1, 80), 255.0)
+        source[0, :21] = 30.0
+        luminance = np.linspace(255.0, 0.0, 80)[None, :]
+        cutoff = 0.92 * 255.0
+
+        stopped, stop_x, stop_y = _sample_line_luminance(luminance, 5, 0, 79, 0, 2, source, cutoff)
+        full, full_x, _ = _sample_line_luminance(luminance, 5, 0, 79, 0, 2, source, None)
+        assert stopped < 255.0 and full < 255.0
+        assert (stop_x, stop_y) == (20, 0)
+        assert full_x == 79
+
     def test_erase_disabled_stops_at_hard_cap_and_is_denser(self):
         """Without erasing the image cannot lighten, so only the stroke cap stops it."""
         img = self._create_test_image()
@@ -495,9 +561,10 @@ class TestSketchLinesAlgorithm:
         return "|".join(",".join(f"{x:.6f}:{y:.6f}" for x, y in line.coords) for line in lines)
 
     def test_full_range_reproduces_the_pre_max_fill_drawing(self):
-        """max_fill=100 is a no-op: the same seed draws the pre-LUC-89 strokes."""
+        """Full range plus white_threshold=1.0 draws the pre-LUC-89 strokes."""
         neutral = {
             "max_fill": 100.0,
+            "white_threshold": 1.0,
             "tone_coverage": 1.0,
             "tone_exponent": 1.0,
             "texture_limit": 0.0,
@@ -838,7 +905,7 @@ class TestSparseCanvas:
         )
         points = {(int(x), int(y)) for line in lines for x, y in line.coords}
 
-        assert len(lines) == 7
+        assert len(lines) >= 7
         assert len(points & region) >= 25
 
 

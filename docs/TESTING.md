@@ -683,6 +683,56 @@ The 600 px repro previews used for the before/after visual check are committed
 under [`docs/images/luc-128/`](../images/luc-128/): `face_before.png` →
 `face_after.png` and `photo_before.png` → `photo_after.png`.
 
+### White-source pen lift (LUC-193, 2026-11-27)
+
+The shared sketch engine now stops a ray and its stroke at the last source
+pixel below `white_threshold = 0.92` (about 235/255) before a run of eight or
+more consecutive pixels at or above that level. The source is the grayscale
+image the PFM receives, before the working copy is erased and before `max_fill`
+is clamped, so earlier ink cannot make a later stroke stop early. Segments end
+on the near side of the run; the next segment starts from there and stops in
+the same way, so no segment bridges the white gap. `white_threshold=1.0` is the
+opt-out and reproduces the pre-change drawing.
+
+The gate measures white ink with a new definition in
+`tests/integration/sketch_lines_gate.py`: sample every simulated stroke at
+0.1 mm, map page millimetres to source pixels through the placement rectangle
+recorded in the SVG, skip samples within 1 mm of that rectangle's border, and
+divide the number of samples on source pixels with luminance > 0.92 by all
+samples. The definition and the eight-pixel run are recorded in
+`docs/DECISIONS.md`. `test_sketch_lines_gate.py` prints the value for both
+photos and asserts `face.jpg < 0.01`.
+
+| image | white ink before | white ink after | masked SSIM before | masked SSIM after | floor |
+|-------|-----------------:|----------------:|-------------------:|------------------:|------:|
+| `face.jpg` | 0.00108 | **0.00094** | 0.606646 | **0.608484** | 0.606646 |
+| `photo.jpg` | 0.00040 | 0.00041 | 0.533972 | 0.533972 | 0.533972 |
+
+"Before" is this branch with `-s white_threshold=1.0`, which reproduces the
+`main` measurement from the same harness at seed 42. The reference floors of
+0.47 face / 0.49 photo are older than these baselines, so the measured `main`
+values are the floors; neither photo drops below its floor. The other three
+Sketch Lines references keep their LUC-47 floors (circle 0.5385, gradient
+0.5275, sphere 0.7957 SSIM) and the Sketch Squares gate stays green with its
+unchanged floors; Squares inherits the rule through its engine settings. The
+palette gate's three sparse-layer pins moved with the new rule (blue 62 → 61
+strokes, light green 20 → 21, purple 10 → 10) while every enforced floor stayed
+unchanged.
+
+The 3 px/mm convert/preview renders used for the visual check are committed
+under [`docs/images/luc-168/`](../images/luc-168/):
+[`face.png`](../images/luc-168/face.png) shows the astronaut's white suit left
+as blank paper with the visor, patches and surrounding hatching intact;
+[`photo.png`](../images/luc-168/photo.png) shows the pale sky blank while the
+mountain ridge, forest and lake stay hatched.
+
+Reproduce with:
+
+```bash
+uv run pytest tests/integration/test_sketch_lines_gate.py \
+  tests/integration/test_sketch_squares_gate.py -s
+```
+
 ### Auto equalization on by default (LUC-90, 2026-11-25)
 
 `convert` stretches the working image's luminance range `[lo, hi]` to

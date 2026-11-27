@@ -31,6 +31,7 @@ _NEARLY_BLANK_MEAN = 252.5
 _BLANK_CANVAS_MEAN = 254.0
 _TONE_DESIRED_LUMINANCE = 254.2
 _TEXTURED_FRACTION = 0.18
+_WHITE_STOP_RUN = 8
 _LEGACY_MAX_FILL = 80.0
 _LEGACY_LINE_DENSITY = 0.75
 
@@ -54,6 +55,12 @@ class SketchLinesSettings(BaseModel):
         darker than ``255 * (1 - max_fill / 100)`` is treated as black. 100
         keeps the full range; the shipped default is lower so solid black
         areas stay plottable.
+    white_threshold : float
+        Luminance fraction (0 - 1) above which source pixels are blank paper.
+        Rays and strokes stop at the last darker pixel before a run of at least
+        eight such pixels, using the original grayscale source rather than the
+        erasing working image. The default 0.92 is about 235/255; 1.0 opts out
+        of the rule.
     tone_coverage : float
         Fraction of each pixel's distance to white that may be spent on ink
         (0 - 1). 1 keeps the legacy rule where a pixel is drawn until it is
@@ -120,6 +127,7 @@ class SketchLinesSettings(BaseModel):
 
     line_density: float = Field(default=0.97, ge=0.01, le=10.0)
     max_fill: float = Field(default=90.0, ge=1.0, le=100.0)
+    white_threshold: float = Field(default=0.92, ge=0.0, le=1.0)
     tone_coverage: float = Field(default=0.5, ge=0.0, le=1.0)
     tone_exponent: float = Field(default=0.55, ge=0.0, le=2.0)
     texture_limit: float = Field(default=0.8, ge=0.0, le=1.0)
@@ -245,14 +253,20 @@ def _sample_rays(
     dxs: NDArray[np.int64],
     dys: NDArray[np.int64],
     min_length: int,
+    source: NDArray[np.float64] | None = None,
+    white_cutoff: float | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.int64]]:
     """Apply the running-mean endpoint rule to a batch of rays at once.
 
     Following ``LuminanceTestLine.addSample``, each endpoint is the pixel where
     the mean of all sampled pixels so far is lowest, considering only prefixes
     longer than ``min_length``. Reaching the image edge ends a ray and uses its
-    last in-bounds pixel rather than reporting a failure. A ray with no prefix
-    long enough reports white so it cannot win as the darkest candidate.
+    last in-bounds pixel rather than reporting a failure. When ``source`` and
+    ``white_cutoff`` are given, the first run of at least ``_WHITE_STOP_RUN``
+    source pixels at or above the cutoff also ends the ray, at the last darker
+    pixel before it; a dark pixel beyond that run cannot be reached. A ray with
+    no prefix long enough reports white so it cannot win as the darkest
+    candidate.
     """
     h, w = luminance.shape
     lengths = np.maximum(np.abs(dxs), np.abs(dys)) + 1
@@ -268,6 +282,17 @@ def _sample_rays(
     has_outside = outside.any(axis=1)
     edge = np.argmax(outside, axis=1)
     last = np.where(has_outside, edge - 1, lengths - 1)
+    if source is not None and white_cutoff is not None:
+        source_values = source[np.clip(ys, 0, h - 1), np.clip(xs, 0, w - 1)]
+        blocked = inside & (source_values >= white_cutoff)
+        run = np.zeros_like(blocked)
+        if blocked.shape[1] >= _WHITE_STOP_RUN:
+            windows = [
+                blocked[:, offset : blocked.shape[1] - _WHITE_STOP_RUN + 1 + offset]
+                for offset in range(_WHITE_STOP_RUN)
+            ]
+            run[:, : windows[0].shape[1]] = np.logical_and.reduce(windows)
+        last = np.where(run.any(axis=1), np.minimum(last, np.argmax(run, axis=1) - 1), last)
     valid = np.arange(n_max)[None, :] <= last[:, None]
 
     values = np.where(valid, luminance[np.clip(ys, 0, h - 1), np.clip(xs, 0, w - 1)], 0.0)
@@ -291,6 +316,8 @@ def _sample_line_luminance(
     x1: int,
     y1: int,
     min_length: int,
+    source: NDArray[np.float64] | None = None,
+    white_cutoff: float | None = None,
 ) -> tuple[float, int, int]:
     """Walk one ray and return its lowest running mean and the pixel where it occurs."""
     if (x1, y1) == (x0, y0):
@@ -302,6 +329,8 @@ def _sample_line_luminance(
         np.array([x1 - x0], dtype=np.int64),
         np.array([y1 - y0], dtype=np.int64),
         min_length,
+        source,
+        white_cutoff,
     )
     return float(lum[0]), int(end_x[0]), int(end_y[0])
 
@@ -344,13 +373,15 @@ def _find_darkest_line(
     start_angle: float,
     num_tests: int,
     shading_angle: float,
+    source: NDArray[np.float64] | None = None,
+    white_cutoff: float | None = None,
 ) -> tuple[float, int, int]:
     """Search candidate rays from (x0, y0) and return the darkest endpoint found.
 
     With ``shading`` only the two opposite directions separated by
     ``shading_angle`` are tested; otherwise ``num_tests`` rays cover the full
-    circle. Rays are not clamped: the edge rule lives in
-    :func:`_sample_line_luminance`, which uses the last in-bounds pixel.
+    circle. Rays are not clamped: the edge and white-source rules live in
+    :func:`_sample_rays`, which uses the last eligible pixel.
     """
     best_lum = _WHITE
     best_x, best_y = x0, y0
@@ -364,7 +395,9 @@ def _find_darkest_line(
     radians = np.radians(np.asarray(angles, dtype=np.float64))
     dxs = np.trunc(np.cos(radians) * max_length).astype(np.int64)
     dys = np.trunc(np.sin(radians) * max_length).astype(np.int64)
-    lums, end_xs, end_ys = _sample_rays(luminance, x0, y0, dxs, dys, min_length)
+    lums, end_xs, end_ys = _sample_rays(
+        luminance, x0, y0, dxs, dys, min_length, source, white_cutoff
+    )
 
     best = int(np.argmin(lums))
     if lums[best] < best_lum:
@@ -478,6 +511,7 @@ class _SketchEngineSettings(Protocol):
 
     line_density: float
     max_fill: float
+    white_threshold: float
     min_length: float
     max_length: float
     erase_enabled: bool
@@ -518,11 +552,14 @@ def _run_sketch_engine(
 
     The provider is called after the segment length is drawn, with the RNG, the
     current pixel and the segment index, so Sketch Lines keeps its exact random
-    draw order while other PFMs can supply a deterministic angle field.
+    draw order while other PFMs can supply a deterministic angle field. Ray
+    endpoints are capped at runs of near-white source pixels, so a stroke never
+    bridges blank paper even when an earlier stroke erased the pixels around it.
     """
     rng = random.Random(settings.seed)
     gray = image.convert("L") if image.mode != "L" else image
     working = np.asarray(gray, dtype=np.float64).copy()
+    source = working.copy()
     h, w = working.shape
     if h == 0 or w == 0:
         return []
@@ -554,6 +591,7 @@ def _run_sketch_engine(
     if black_point > 0.0:
         np.maximum(working, black_point, out=working)
 
+    white_cutoff = settings.white_threshold * _WHITE if settings.white_threshold < 1.0 else None
     min_len = int(max(1, settings.min_length))
     max_len = int(max(min_len, settings.max_length))
     line_density = max(0.01, line_density)
@@ -642,6 +680,8 @@ def _run_sketch_engine(
                 start_angle,
                 num_tests,
                 180.0,
+                source,
+                white_cutoff,
             )
 
             if (next_x, next_y) == (current_x, current_y):
@@ -708,8 +748,10 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     Strokes are returned in image pixel coordinates (origin top-left) and are
     always inside the image. Drawing lightens the working image, so the run
     stops when its average luminance reaches the target given by
-    ``line_density``. The search score is a per-pixel source-tone ink budget
-    lowered as strokes spend it: pixels darker than their local surroundings
+    ``line_density``. Segments stop at the last source pixel below
+    ``white_threshold``, so near-white source areas stay blank paper. The search
+    score is a per-pixel source-tone ink budget lowered as strokes spend it:
+    pixels darker than their local surroundings
     keep more budget, while textured dark pixels lose part of theirs to
     ``texture_limit``, so dark areas keep white gaps instead of saturating.
     Flat shapes and near-white pixels keep a small budget so every part of the
