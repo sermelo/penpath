@@ -132,6 +132,14 @@ produces exactly one layer. Consumers should
 read the `<g id="layerN">` groups with an XML parser rather than feeding the
 SVG back through `vpype read` (see `docs/CLI.md`).
 
+Part 2 (LUC-166) adds a final black key edge layer: `key_layer_strokes(image)`
+reuses the `outline` saved look's edge settings to trace the working colour
+image once after masking and saturation and before separation. `convert` joins
+those strokes to the palette's near-black pen (or appends a `key` pen when none
+exists) before geometry optimization, so the edges share the last black layer.
+`--key-layer`/`--no-key-layer` override the mode default (on with a palette, off
+for one pen); `ImageRef.key_layer` carries the tri-state value in project YAML.
+
 ### Phase 5: Project File & Convert Command (2 tickets)
 - [ ] `core/project.py` — `Project` Pydantic model (image, filters, PFM, pens, paper, output), `load_yaml/save_yaml`
 - [ ] `cli/commands/convert.py` — `penpath convert`:

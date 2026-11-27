@@ -702,12 +702,17 @@ before separation, so the lightest pen cannot scribble over the page; use
 optimization then run once per pen, so lines from different pens are never
 sorted together. Every pen that draws becomes one Inkscape layer, named after
 the pen, in drawing order — light ink first, dark ink later and a near-black pen
-last. Palette order only assigns colours and breaks ties between equally light
-pens:
+last. A final black key layer traces the image's edges on top of the colours by
+default in palette mode. Palette order only assigns colours and breaks ties
+between equally light pens:
 
 ```bash
 # Photo -> SVG with one layer per used pen (the Christmas-card workflow)
 penpath convert photo.jpg -o card.svg --palette stabilo_88 -s seed=42
+
+# The black key edge layer is on in palette mode; turn it off if you want only colours
+penpath convert photo.jpg -o card_key.svg --palette stabilo_88 -s seed=42 --key-layer
+penpath convert photo.jpg -o card_no_key.svg --palette stabilo_88 -s seed=42 --no-key-layer
 
 # See the pens, colours and drawing order
 penpath info palettes
@@ -734,8 +739,9 @@ instead of `pen:`. Pens draw light → dark with a near-black pen last, and the
 SVG layers follow that order; the palette's own order only assigns colours and
 breaks ties. An unused pen gets no layer, so a twelve-pen palette may yield
 fewer than twelve layers. Without `--palette`, the single default pen draws the
-whole image and produces one layer, exactly as before. `--pen` and `--palette`
-are mutually exclusive.
+whole image and produces one layer, exactly as before, unless `--key-layer` is
+given, which appends the black edge layer as the last layer. `--pen` and
+`--palette` are mutually exclusive.
 
 The built-in `stabilo_88` palette in drawing order (all 0.4 mm), also reported
 by `penpath info palettes`:

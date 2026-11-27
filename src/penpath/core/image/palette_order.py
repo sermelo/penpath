@@ -29,6 +29,27 @@ def _relative_luminance(color: str) -> float:
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
 
+def is_near_black_pen(pen: Pen) -> bool:
+    """Return whether a pen's ink counts as near-black for drawing order.
+
+    Parameters
+    ----------
+    pen : Pen
+        Pen whose colour is tested.
+
+    Returns
+    -------
+    bool
+        True when the pen's sRGB relative luminance is at most 0.02.
+
+    Raises
+    ------
+    ValueError
+        If the pen colour cannot be parsed as a CSS colour.
+    """
+    return _relative_luminance(pen.color) <= _NEAR_BLACK_LUMINANCE
+
+
 def order_pens_for_drawing(pens: list[Pen]) -> list[Pen]:
     """Order pens from light to dark ink, with near-black pens last.
 
@@ -57,4 +78,4 @@ def order_pens_for_drawing(pens: list[Pen]) -> list[Pen]:
     return [pen for pen, _ in drawing] + [pen for pen, _ in near_black]
 
 
-__all__ = ["order_pens_for_drawing"]
+__all__ = ["is_near_black_pen", "order_pens_for_drawing"]

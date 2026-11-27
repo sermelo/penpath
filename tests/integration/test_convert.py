@@ -638,7 +638,7 @@ output_path: "{output}"
         assert palette_result.exit_code == 0, palette_result.output
         assert _stroke_geometry(plain) != _stroke_geometry(palette)
 
-    def test_project_pens_list_uses_the_first_pen_once(
+    def test_project_pens_list_uses_the_first_pen_and_a_key_layer(
         self, runner: CliRunner, reference_image: Path, tmp_path: Path
     ) -> None:
         output = tmp_path / "from_pens.svg"
@@ -677,7 +677,8 @@ output_path: "{output}"
         assert 'inkscape:label="first"' in svg
         assert 'stroke="#FF0000"' in svg
         assert "second" not in svg
-        assert svg.count('inkscape:groupmode="layer"') == 1  # one used pen
+        assert 'inkscape:label="key"' in svg
+        assert svg.count('inkscape:groupmode="layer"') == 2  # first pen + key layer
 
     def test_project_pen_and_palette_is_a_clear_error(
         self, runner: CliRunner, reference_image: Path, tmp_path: Path

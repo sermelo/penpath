@@ -18,13 +18,14 @@ from shapely import LineString
 from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
+from penpath.core.drawing.key_layer import key_layer_strokes
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD, mask_background
 from penpath.core.image.filters import auto_equalize
 from penpath.core.image.load import ImageLoadError, load_image
-from penpath.core.image.palette_order import order_pens_for_drawing
+from penpath.core.image.palette_order import is_near_black_pen, order_pens_for_drawing
 from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
 from penpath.core.image.saturation import NO_BOOST_FACTOR, adapt_saturation, boost_saturation
@@ -474,6 +475,7 @@ def _run_convert_pipeline(
     saturation_active = use_palette and (
         project.image.saturation != NO_BOOST_FACTOR or project.image.palette_adapt
     )
+    use_key_layer = project.image.key_layer if project.image.key_layer is not None else use_palette
 
     # Step 1: Load image and plan the working resolution. Placement is derived
     # from the source size so the drawing rectangle does not move when the
@@ -511,7 +513,9 @@ def _run_convert_pipeline(
     if no_downscale:
         resolution = replace(resolution, target_size_px=source_size_px, scale=1.0)
     downscaling = resolution.target_size_px != source_size_px
-    reporter.set_total_stages(5 + int(downscaling) + int(use_background) + int(saturation_active))
+    reporter.set_total_stages(
+        5 + int(downscaling) + int(use_background) + int(saturation_active) + int(use_key_layer)
+    )
     reporter.finish()
 
     working_width, working_height = resolution.target_size_px
@@ -566,6 +570,14 @@ def _run_convert_pipeline(
             mode = "palette-adapted"
         reporter.message(f"Saturation factor: {factor:.2f} ({mode})")
 
+    # The key pass traces the working colour image once, before separation, so
+    # it sees the same masking and chroma boost as the palette channels.
+    key_lines: list[LineString] = []
+    if use_key_layer:
+        reporter.start("Tracing key edges")
+        key_lines = key_layer_strokes(working_image)
+        reporter.finish()
+
     # Step 3: Split before filtering, so the default grayscale filter cannot
     # throw away the colour needed to choose a pen.
     reporter.start("Applying filters")
@@ -599,6 +611,21 @@ def _run_convert_pipeline(
     position_by_id = {id(pen): index for index, pen in enumerate(pens)}
     lines_by_pen = [lines_by_pen[position_by_id[id(pen)]] for pen in drawing_pens]
     pens = drawing_pens
+
+    # In palette mode the key strokes share the near-black pen, which drawing
+    # order puts last. A single pen or a palette without black gets its own
+    # appended "key" pen so the edges land in a separate final layer.
+    if use_key_layer:
+        if use_palette and pens and is_near_black_pen(pens[-1]):
+            lines_by_pen[-1] = [*lines_by_pen[-1], *key_lines]
+        else:
+            key_pen = Pen(
+                name="key",
+                width_mm=min(pen.width_mm for pen in pens),
+                color="#000000",
+            )
+            pens = [*pens, key_pen]
+            lines_by_pen = [*lines_by_pen, key_lines]
 
     if not any(lines_by_pen):
         reporter.message("Warning: No lines generated", style="yellow")
@@ -786,6 +813,12 @@ def _run_convert_pipeline(
     ),
 )
 @click.option(
+    "--key-layer/--no-key-layer",
+    "key_layer_flag",
+    default=None,
+    help="Trace a final black edge layer (default: on with --palette, off for a single pen)",
+)
+@click.option(
     "--paper",
     "paper_spec",
     help="Paper preset or inline 'WIDTHxHEIGHT[,MARGINS]' (one margin or top,right,bottom,left)",
@@ -865,6 +898,7 @@ def convert_cmd(
     pfm_settings: tuple[str, ...],
     pen_spec: str | None,
     palette_spec: str | None,
+    key_layer_flag: bool | None,
     paper_spec: str | None,
     margin_spec: str | None,
     fit_mode: Literal["fit", "fill", "none"] | None,
@@ -949,6 +983,8 @@ def convert_cmd(
             project.image.auto_equalize = auto_equalize_flag
         if background_flag is not None:
             project.image.background = background_flag
+        if key_layer_flag is not None:
+            project.image.key_layer = key_layer_flag
         if background_threshold is not None:
             project.image.background_threshold = background_threshold
             if background_flag is None:
@@ -1010,6 +1046,7 @@ def convert_cmd(
                 background_method=background_method,
                 saturation=saturation,
                 palette_adapt=palette_adapt and not explicit_saturation,
+                key_layer=key_layer_flag,
             ),
             paper=paper,
             pen=pen,

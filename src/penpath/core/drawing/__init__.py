@@ -1,5 +1,6 @@
 """Drawing module for penpath - PFM implementations."""
 
+from penpath.core.drawing.key_layer import key_layer_strokes
 from penpath.core.drawing.outline import OutlineSettings, outline_strokes
 from penpath.core.drawing.pfm_contour import ContourSettings, contour_strokes
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
@@ -25,6 +26,7 @@ __all__ = [
     "contour_strokes",
     "get_pfm",
     "get_registry",
+    "key_layer_strokes",
     "list_pfms",
     "outline_strokes",
     "register_pfm",

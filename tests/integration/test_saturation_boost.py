@@ -74,7 +74,7 @@ class TestBoostAtTheCLI:
         assert _stroke_count(output, GREEN) > 0
         assert _stroke_count(output, BLUE) == 0
         assert "Saturation factor: 3.00 (palette-adapted)" in result.output
-        assert "[3/7] Adapting saturation to palette" in result.output
+        assert "[3/8] Adapting saturation to palette" in result.output
 
     def test_manual_saturation_uses_green_and_reports_the_factor(
         self, runner: CliRunner, tmp_path: Path
@@ -84,7 +84,7 @@ class TestBoostAtTheCLI:
         assert result.exit_code == 0, result.output
         assert _stroke_count(output, GREEN) > 0
         assert "Saturation factor: 2.00 (manual)" in result.output
-        assert "[3/7] Boosting saturation" in result.output
+        assert "[3/8] Boosting saturation" in result.output
 
     def test_explicit_saturation_wins_over_palette_adapt(
         self, runner: CliRunner, tmp_path: Path
