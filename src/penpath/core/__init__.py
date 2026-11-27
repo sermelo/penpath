@@ -6,6 +6,7 @@ from penpath.core.contact_sheet import (
     render_contact_sheet,
 )
 from penpath.core.drawing import (
+    PALETTE_ANGLE_STEP_DEG,
     PIXEL_SETTING_FIELDS,
     ContourSettings,
     HatchSettings,
@@ -18,6 +19,7 @@ from penpath.core.drawing import (
     scale_pixel_settings,
     spiral_strokes,
     stipple,
+    with_angle_offset,
 )
 from penpath.core.gcode_preview import (
     GcodeHeader,
@@ -182,6 +184,7 @@ __all__ = [
     "MAX_RENDER_MEGAPIXELS",
     "MAX_WORKING_LONGEST_PX",
     "MIN_WORKING_LONGEST_PX",
+    "PALETTE_ANGLE_STEP_DEG",
     "PIXEL_SETTING_FIELDS",
     "PROFILE_FILE_VERSION",
     "PROJECT_FILE_VERSION",
@@ -312,5 +315,6 @@ __all__ = [
     "stipple",
     "threshold",
     "usable_area",
+    "with_angle_offset",
     "with_margin_mm",
 ]

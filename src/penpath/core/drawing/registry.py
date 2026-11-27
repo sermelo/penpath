@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from penpath.core.drawing.pfm_contour import ContourSettings, contour_strokes
+from penpath.core.drawing.pfm_hatch import HatchSettings, hatch_strokes
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings, sketch_squares
 from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
@@ -132,6 +133,7 @@ register_pfm("contour", contour_strokes, ContourSettings)
 register_pfm("sketch_squares", sketch_squares, SketchSquaresSettings)
 register_pfm("stipple", stipple, StippleSettings)
 register_pfm("spiral_sawtooth", spiral_strokes, SpiralSettings)
+register_pfm("hatch", hatch_strokes, HatchSettings)
 
 __all__ = [
     "PFMRegistry",

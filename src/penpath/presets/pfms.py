@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from penpath.core.contact_sheet import ContactSheetEntry
 from penpath.core.drawing.pfm_contour import ContourSettings
+from penpath.core.drawing.pfm_hatch import HatchSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
 from penpath.core.drawing.pfm_spiral import SpiralSettings
@@ -161,6 +162,16 @@ SPIRAL_PRESETS: dict[str, SpiralSettings] = {
     "parabolic": SpiralSettings(spiral_type="parabolic"),
 }
 
+HATCH_PRESETS: dict[str, HatchSettings] = {
+    "default": HatchSettings(angles=(45.0, 135.0), thresholds=(0.25, 0.5)),
+    "crosshatch": HatchSettings(),
+    "fine": HatchSettings(spacing=0.6),
+    "single": HatchSettings(
+        angles=(45.0, 45.0, 45.0, 45.0),
+        variable_spacing=True,
+    ),
+}
+
 DEFAULT_PFM = "default"
 
 PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
@@ -215,6 +226,9 @@ for _preset_name, _preset_settings in SKETCH_SQUARES_PRESETS.items():
 
 for _spiral_name, _spiral_settings in SPIRAL_PRESETS.items():
     register_pfm_preset(f"spiral_sawtooth:{_spiral_name}", "spiral_sawtooth", _spiral_settings)
+
+for _hatch_name, _hatch_settings in HATCH_PRESETS.items():
+    register_pfm_preset(f"hatch:{_hatch_name}", "hatch", _hatch_settings)
 
 PFM_PRESET_TYPES: dict[str, str] = {
     **{f"sketch_lines:{name}": "sketch_lines" for name in PFM_PRESETS},
@@ -273,9 +287,9 @@ def list_presets_for_pfm(pfm_type: str) -> list[str]:
 def list_sheet_entries() -> list[ContactSheetEntry]:
     """Build the default entry and every preset entry for each registered PFM.
 
-    A preset named exactly ``default`` is skipped: the PFM's own default entry
-    already covers the legacy sketch_lines alias. Each entry gets fresh
-    settings so callers can change one without affecting another.
+    A preset named ``default`` or qualified ``PFM:default`` is skipped: the
+    PFM's own default entry already draws those settings. Each entry gets
+    fresh settings so callers can change one without affecting another.
 
     Returns
     -------
@@ -287,7 +301,7 @@ def list_sheet_entries() -> list[ContactSheetEntry]:
         _, model = get_pfm(pfm)
         entries.append(ContactSheetEntry(pfm=pfm, preset=None, settings=model()))
         for preset in list_presets_for_pfm(pfm):
-            if preset == "default":
+            if preset == "default" or preset.endswith(":default"):
                 continue
             settings = get_pfm_preset_settings(preset).model_copy(deep=True)
             entries.append(ContactSheetEntry(pfm=pfm, preset=preset, settings=settings))
@@ -361,6 +375,7 @@ def get_pfm_preset_by_id(preset_id: str) -> tuple[str, BaseModel]:
 
 __all__ = [
     "DEFAULT_PFM",
+    "HATCH_PRESETS",
     "PFM_PRESETS",
     "PFM_PRESET_OWNERS",
     "PFM_PRESET_TYPES",
