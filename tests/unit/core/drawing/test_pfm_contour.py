@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Callable
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
@@ -14,8 +17,16 @@ from penpath.core import ContourSettings, contour_strokes, load_image
 from penpath.core.drawing import contour_strokes as drawing_contour_strokes
 from penpath.core.drawing.pfm_contour import ContourSettings as ModuleContourSettings
 from penpath.core.drawing.pfm_contour import contour_strokes as module_contour_strokes
+from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
+from penpath.core.models import Paper
+from penpath.presets.pfms import get_pfm_preset_settings
 
-REFERENCE_IMAGES = Path(__file__).resolve().parents[4] / "tests/fixtures/images/reference"
+TEST_IMAGES = Path(__file__).resolve().parents[4] / "tests/fixtures/images"
+REFERENCE_IMAGES = TEST_IMAGES / "reference"
+COLOUR_IMAGES = TEST_IMAGES / "colour"
+MAX_BORDER_RUN = 0.20
+BORDER_TOLERANCE_PX = 1.5
+A4 = Paper(name="a4", width_mm=210.0, height_mm=297.0)
 
 
 def _image(gray: np.ndarray) -> Image.Image:
@@ -48,6 +59,20 @@ def _tones() -> np.ndarray:
     return image
 
 
+def _frame() -> Image.Image:
+    image = _image(_blank())
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, 127, 127), fill=0)
+    draw.rectangle((30, 30, 90, 90), fill=255)
+    return image
+
+
+def _edge_square() -> Image.Image:
+    image = _image(_blank())
+    ImageDraw.Draw(image).rectangle((0, 20, 40, 100), fill=0)
+    return image
+
+
 def _assert_clean(strokes: list[LineString], image: Image.Image) -> None:
     assert strokes
     width, height = image.size
@@ -56,10 +81,26 @@ def _assert_clean(strokes: list[LineString], image: Image.Image) -> None:
         assert stroke.is_valid
         assert stroke.length > 0.0
         assert len(list(stroke.coords)) >= 2
-        assert stroke.coords[0] == stroke.coords[-1]
         for x, y in stroke.coords:
             assert 0.0 <= x <= width - 1
             assert 0.0 <= y <= height - 1
+
+
+def _border_run_fraction(stroke: LineString, width: float, height: float) -> dict[str, float]:
+    """Share of each image edge followed by one stroke's segment lengths."""
+    tolerance = BORDER_TOLERANCE_PX
+    edges: dict[str, tuple[Callable[[float, float], bool], float]] = {
+        "left": (lambda x, y: abs(x) <= tolerance, height - 1.0),
+        "right": (lambda x, y: abs(x - width + 1.0) <= tolerance, height - 1.0),
+        "top": (lambda x, y: abs(y) <= tolerance, width - 1.0),
+        "bottom": (lambda x, y: abs(y - height + 1.0) <= tolerance, width - 1.0),
+    }
+    lengths = dict.fromkeys(edges, 0.0)
+    for (x1, y1), (x2, y2) in pairwise(stroke.coords):
+        for name, (near_edge, edge_length) in edges.items():
+            if near_edge(x1, y1) and near_edge(x2, y2):
+                lengths[name] += math.hypot(x2 - x1, y2 - y1) / edge_length
+    return lengths
 
 
 class TestContourSettings:
@@ -121,6 +162,30 @@ class TestContourStrokes:
         assert stroke.coords[0] == stroke.coords[-1]
         assert stroke.bounds == (19.5, 19.5, 100.5, 100.5)
 
+    def test_all_dark_image_yields_no_border_rectangle(self) -> None:
+        dark = Image.fromarray(np.zeros((64, 64), dtype=np.uint8))
+        assert contour_strokes(dark, ContourSettings()) == []
+
+    def test_dark_frame_keeps_the_hole_outline_and_drops_the_frame(self) -> None:
+        image = _frame()
+        strokes = contour_strokes(image, ContourSettings())
+        _assert_clean(strokes, image)
+        assert len(strokes) == 1
+        assert strokes[0].coords[0] == strokes[0].coords[-1]
+        assert strokes[0].bounds == (29.5, 29.5, 90.5, 90.5)
+
+    def test_square_touching_one_edge_stays_open_along_that_edge(self) -> None:
+        image = _edge_square()
+        strokes = contour_strokes(image, ContourSettings())
+        _assert_clean(strokes, image)
+        assert len(strokes) == 1
+        stroke = strokes[0]
+        assert stroke.coords[0] != stroke.coords[-1]
+        assert stroke.bounds == (0.0, 19.5, 40.5, 100.5)
+        runs = _border_run_fraction(stroke, *image.size)
+        assert runs["left"] < MAX_BORDER_RUN
+        assert runs["right"] < MAX_BORDER_RUN
+
     def test_black_disc_yields_closed_contour(self) -> None:
         strokes = contour_strokes(_image(_disc()), ContourSettings())
         _assert_clean(strokes, _image(_disc()))
@@ -174,3 +239,36 @@ class TestContourStrokes:
         image = load_image(REFERENCE_IMAGES / name)
         strokes = contour_strokes(image, ContourSettings())
         _assert_clean(strokes, image)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        REFERENCE_IMAGES / "photo.jpg",
+        REFERENCE_IMAGES / "face.jpg",
+        COLOUR_IMAGES / "christmas_tree.jpg",
+    ],
+)
+@pytest.mark.parametrize("preset", ["default", "contour_portrait", "contour_silhouette"])
+def test_no_stroke_follows_the_image_border(path: Path, preset: str) -> None:
+    """A contour preset never draws a rectangle along the image edge (LUC-170)."""
+    if preset == "default":
+        settings = ContourSettings()
+    else:
+        preset_settings = get_pfm_preset_settings(preset)
+        assert isinstance(preset_settings, ContourSettings)
+        settings = preset_settings
+
+    source = load_image(path)
+    resolution = plan_working_resolution(source.size, A4, pen_width_mm=0.3, max_longest_px=512)
+    working = apply_working_resolution(source, resolution)
+    width, height = working.size
+    strokes = contour_strokes(working, settings)
+    _assert_clean(strokes, working)
+
+    failures: list[str] = []
+    for number, stroke in enumerate(strokes):
+        for edge, fraction in _border_run_fraction(stroke, width, height).items():
+            if fraction > MAX_BORDER_RUN:
+                failures.append(f"stroke {number} follows {edge} for {fraction:.0%}")
+    assert not failures, f"{path.name}/{preset}: " + "; ".join(failures[:5])

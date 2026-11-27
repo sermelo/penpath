@@ -93,6 +93,28 @@ def _enclosed_area(coords: list[tuple[float, float]]) -> float:
     return abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in pairs)) / 2.0
 
 
+def _inside_runs(
+    coords: list[tuple[float, float]],
+    max_x: float,
+    max_y: float,
+) -> list[list[tuple[float, float]]]:
+    """Split a closed contour into the runs that lie inside the image box."""
+    runs: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = []
+    for point in coords:
+        if 0.0 <= point[0] <= max_x and 0.0 <= point[1] <= max_y:
+            current.append(point)
+        elif current:
+            runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+    if len(runs) > 1 and runs[-1][-1] == runs[0][0]:
+        runs[0] = runs[-1] + runs[0][1:]
+        runs.pop()
+    return runs
+
+
 def _smooth_coords(
     coords: list[tuple[float, float]],
     closed: bool,
@@ -149,12 +171,16 @@ def contour_strokes(image: Image.Image, settings: ContourSettings) -> list[LineS
 
     For each ascending level the greyscale image is thresholded into a dark
     mask, padded with background so contours close, traced with
-    ``find_contours``, shifted into image coordinates, clamped to the image
-    and filtered by shoelace area. Shapely RDP simplification and optional
-    corner-preserving smoothing produce the strokes; closed contours stay
-    closed and empty, invalid or zero-length results are dropped. Output
-    order is level order then ``find_contours`` order. It is registered as
-    the ``contour`` PFM, so the CLI can select it with ``--pfm contour``.
+    ``find_contours`` and shifted into image coordinates. Contours whose points
+    leave the image box are split at that border: the padding-following part
+    is dropped and each remaining run becomes an open stroke, so ink touching
+    the edge keeps its inward outline without drawing a rectangle along it.
+    Contours entirely inside the box stay closed. The original contour's
+    shoelace area filters specks before the split; Shapely RDP simplification
+    and optional corner-preserving smoothing then produce the strokes. Empty,
+    invalid and zero-length results are dropped. Output order is level order
+    then ``find_contours`` order. It is registered as the ``contour`` PFM, so
+    the CLI can select it with ``--pfm contour``.
 
     Parameters
     ----------
@@ -191,24 +217,26 @@ def contour_strokes(image: Image.Image, settings: ContourSettings) -> list[LineS
             raw = [(float(column - 1), float(row - 1)) for row, column in contour]
             if len(raw) < 3 or _enclosed_area(raw) < settings.turd_size:
                 continue
-            coords = [(min(max(x, 0.0), max_x), min(max(y, 0.0), max_y)) for x, y in raw]
-            closed = coords[0] == coords[-1]
-            simplified: list[tuple[float, float]] = [
-                (float(point[0]), float(point[1]))
-                for point in LineString(coords)
-                .simplify(settings.simplify_tolerance, preserve_topology=True)
-                .coords
-            ]
-            if len(simplified) < 2:
-                continue
-            if closed and simplified[0] != simplified[-1]:
-                simplified.append(simplified[0])
-            if settings.opticurve and settings.smoothing > 0.0:
-                simplified = _smooth_coords(simplified, closed, settings)
-            stroke = LineString(simplified)
-            if stroke.is_empty or not stroke.is_valid or stroke.length <= 0.0:
-                continue
-            strokes.append(stroke)
+            closed = all(0.0 <= x <= max_x and 0.0 <= y <= max_y for x, y in raw)
+            for coords in _inside_runs(raw, max_x, max_y):
+                if len(coords) < 2:
+                    continue
+                simplified: list[tuple[float, float]] = [
+                    (float(point[0]), float(point[1]))
+                    for point in LineString(coords)
+                    .simplify(settings.simplify_tolerance, preserve_topology=True)
+                    .coords
+                ]
+                if len(simplified) < 2:
+                    continue
+                if closed and simplified[0] != simplified[-1]:
+                    simplified.append(simplified[0])
+                if settings.opticurve and settings.smoothing > 0.0:
+                    simplified = _smooth_coords(simplified, closed, settings)
+                stroke = LineString(simplified)
+                if stroke.is_empty or not stroke.is_valid or stroke.length <= 0.0:
+                    continue
+                strokes.append(stroke)
 
     return strokes
 
