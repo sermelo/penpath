@@ -1894,11 +1894,13 @@ Each committed PNG was opened with `read` and compared with the original
 `convert ... --pfm spiral_sawtooth:<preset> -s seed=42 --paper 190x190,0 --pen
 0.4,#000000,fineliner` followed by `penpath preview --dpi 60` (11400 px square).
 The 570 px versions below are downscaled copies of those renders, as in
-`docs/images/luc-128/`. Santa was used for every preset because its hat, glasses
-and beard give more structure to look for; `face.jpg` was also rendered.
+`docs/images/luc-128/`. Santa was used for every preset, including the algorithm
+defaults, because its hat, glasses and beard give more structure to look for;
+`face.jpg` was also rendered.
 
 | preset | preview | What is visible |
 |--------|---------|-----------------|
+| `default` | [santa_spiral_default.png](../images/luc-138/santa_spiral_default.png) | Elliptical rings with short radial teeth; a pale wedge at upper left hints at the white beard/brim, with dark bands on the right and bottom. The hat, glasses and nose are not resolved. |
 | `fine` | [santa_spiral_fine.png](../images/luc-138/santa_spiral_fine.png) | Tight elliptical rings with short radial teeth; the dark hat, coat and background crowd the top and right, and a pale wedge at upper left suggests the white beard/brim. Glasses, nose and hat shape are not resolved. |
 | `bold` | [santa_spiral_bold.png](../images/luc-138/santa_spiral_bold.png) | Wider rings with much longer sawteeth: heavy black bands on the right and bottom, a large light wedge on the left and a small white halo at the centre. Santa's facial features are lost in the texture, but the dark/light masses still read. |
 | `parabolic` | [santa_spiral_parabolic.png](../images/luc-138/santa_spiral_parabolic.png) | Two sets of tighter rings with fine teeth, a dense dark top and bottom and a light upper-left wedge where the beard/brim sits; the four-pass ring pattern is visible, glasses and nose are not. |
