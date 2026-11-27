@@ -188,7 +188,7 @@ with `--max-resolution PX` and keep the same settings: the working strokes are
 then identical and export maps them into the smaller page's rectangle, so paper
 size only scales the result. For example, the strokes drawn on 190x107 mm paper
 with a 0.4 mm pen are reproduced on 130x73 mm paper by passing
-`--max-resolution 475 --pen 0.4,#000000,fineliner` together with the smaller
+`--max-resolution 475 --pen "0.4,#000000,fineliner"` together with the smaller
 page.
 
 `--max-resolution PX` replaces the derived value without clamping (and still

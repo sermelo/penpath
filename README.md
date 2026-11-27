@@ -227,8 +227,8 @@ smaller size, pin the working resolution with `--max-resolution`; with the same
 settings the strokes are identical and only the page scale changes:
 
 ```bash
-penpath convert photo.jpg -o large.svg --paper 190x107,0 --pen 0.4,#000000,fineliner -s seed=42
-penpath convert photo.jpg -o small.svg --paper 130x73,0 --pen 0.4,#000000,fineliner -s seed=42 --max-resolution 475
+penpath convert photo.jpg -o large.svg --paper 190x107,0 --pen "0.4,#000000,fineliner" -s seed=42
+penpath convert photo.jpg -o small.svg --paper 130x73,0 --pen "0.4,#000000,fineliner" -s seed=42 --max-resolution 475
 ```
 
 ### Progress and quiet mode
