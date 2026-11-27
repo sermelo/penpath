@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -219,6 +220,60 @@ def test_dpi_only_changes_size_with_fit_none(runner: CliRunner, tmp_path: Path) 
         placements.append(get_image_placement(output, SHAPES["square"]))
     assert placements[1].width == pytest.approx(placements[0].width * 72 / 300)
     assert placements[1].height == pytest.approx(placements[0].height * 72 / 300)
+
+
+def test_margin_wins_over_inline_paper_margins(runner: CliRunner, tmp_path: Path) -> None:
+    image_path = tmp_path / "square.png"
+    output = tmp_path / "override.svg"
+    _make_checkerboard(image_path, SHAPES["square"])
+    _convert(
+        runner,
+        image_path,
+        output,
+        paper="190x190,20,5,20,5",
+        mode="fit",
+        margin="8",
+    )
+    assert get_image_placement(output, SHAPES["square"]) == ImagePlacement(8.0, 8.0, 174.0, 174.0)
+
+
+def test_fit_and_margin_through_vpype_match_the_direct_path(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    pytest.importorskip("vpype")
+    if shutil.which("vpype") is None:
+        pytest.skip("vpype executable not found")
+    image_path = tmp_path / "landscape.png"
+    _make_checkerboard(image_path, SHAPES["landscape"])
+    args = [
+        "convert",
+        str(image_path),
+        "--paper",
+        "190x190",
+        "--margin",
+        "5",
+        "--fit",
+        "fill",
+        "--quiet",
+        "-s",
+        "seed=42",
+        "-s",
+        "line_density=2.0",
+    ]
+    direct = tmp_path / "direct.svg"
+    vpype = tmp_path / "vpype.svg"
+    result = runner.invoke(main, [*args, "-o", str(direct), "--no-vpype"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(main, [*args, "-o", str(vpype)])
+    assert result.exit_code == 0, result.output
+
+    assert get_image_placement(vpype, SHAPES["landscape"]) == pytest.approx(
+        get_image_placement(direct, SHAPES["landscape"])
+    )
+    for output in (direct, vpype):
+        min_x, min_y, max_x, max_y = _bbox(output)
+        assert 5.0 - EPS <= min_x <= max_x <= 185.0 + EPS
+        assert 5.0 - EPS <= min_y <= max_y <= 185.0 + EPS
 
 
 def test_inline_paper_keeps_four_per_side_margins(runner: CliRunner, tmp_path: Path) -> None:
