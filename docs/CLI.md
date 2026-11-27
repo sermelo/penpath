@@ -510,10 +510,63 @@ values or out-of-range numbers exit 2 naming the setting.
 
 **Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s ring_spacing=5 -s amplitude=0.8`
 
+#### PFM Settings (Hatch)
+
+Select this PFM with `--pfm hatch` (or a qualified `hatch:PRESET` id). It draws
+straight parallel and cross-hatched lines: darkness `1 - L/255` decides which
+bands draw at each pixel, darker pixels getting more line directions (and,
+optionally, tighter spacing). It is a separate algorithm from `--style hatch`:
+the latter is a *Sketch Lines look* with narrow random-ray angles and tone
+steps, while `--pfm hatch` lays down measured millimetre-spaced lines. The two
+flags are independent; `--style hatch` does not select this PFM.
+
+Every field of `HatchSettings` is accepted by `-s KEY=VALUE`. Lengths are in
+millimetres **on paper**, not image pixels, and the image scale is supplied by
+`convert`; booleans accept the same `true`/`false`, `1`/`0`, `yes`/`no` and
+`on`/`off` spellings as Sketch Lines. Invalid keys, values or out-of-range
+numbers exit 2 with the setting named. `join_runs=true` with `serpentine=false`
+is rejected with a message naming both settings.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `spacing` | float | >0 mm | `1.0` | Distance between parallel lines. The effective spacing is never below the pen width, even if a smaller value is given. |
+| `angles` | tuple | −360–360° each | `45,135,0,90` | Line direction for each band, in degrees; must have the same length as `thresholds`. Bands are drawn in order, so darker areas receive more directions. |
+| `thresholds` | tuple | (0, 1), strictly increasing | `0.2,0.4,0.6,0.8` | Minimum darkness `1 - L/255` at which a band draws; must have the same length as `angles`. |
+| `min_length` | float | >=0 mm | `0.5` | Drop sampled runs shorter than this after gap bridging. |
+| `min_gap` | float | >=0 mm | `0.3` | Bridge gaps shorter than this so a stroke survives small light speckles. |
+| `variable_spacing` | bool | — | `false` | Band `i` uses `spacing * (1 - 0.5 * thresholds[i])`, so darker bands get denser lines; still clamped to the pen width. |
+| `serpentine` | bool | — | `true` | Reverse every other line so the end of one is near the start of the next. |
+| `join_runs` | bool | — | `false` | Join overlapping runs on adjacent lines of a band into continuous zig-zag strokes, drawing the short connectors; fewer pen lifts. Requires `serpentine=true` (otherwise the command exits 2). |
+| `jitter` | float | >=0 mm | `0.0` | Seeded perpendicular wobble; `0` gives perfectly straight parallel lines. |
+| `seed` | int or `null` | any | `null` | Seed for the jitter. Fix it with `-s seed=42` for byte-identical reruns. |
+
+**Examples**:
+
+```bash
+# Two-band hatching; the -s seed makes the jitter reproducible
+penpath convert photo.jpg --pfm hatch:default -s seed=42 -o hatch.svg
+# Four-band cross-hatching (the algorithm defaults)
+penpath convert photo.jpg --pfm hatch:crosshatch -s seed=42 -o crosshatch.svg
+# Finer 0.6 mm lines; include a third band with a 0.6 darkness threshold
+penpath convert photo.jpg --pfm hatch:fine -s angles=45,135,0 -s thresholds=0.2,0.4,0.6
+# Continuous zig-zag strokes on the algorithm defaults (fewer pen lifts)
+penpath convert photo.jpg --pfm hatch -s join_runs=true -o joined.svg
+# Palette: each successive pen's angles rotate by 30 degrees
+penpath convert photo.jpg --pfm hatch:default --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E" -o two_pens.svg
+```
+
+With `--palette`, `convert` calls `penpath.core.drawing.pfm_hatch.with_angle_offset`
+for pen `i` with `i * 30` degrees (`PALETTE_ANGLE_STEP_DEG`), so two pens using
+`hatch:default` draw at 45/135° and 75/165° instead of laying identical lines on
+top of each other. Angles wrap modulo 180°, so a 180° offset restores the
+original settings. The settings model is not mutated. See the
+[Hatch gate](TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27) for measured
+readability, tone and machine cost.
+
 #### PFM Presets (`--pfm NAME`)
 
 `--pfm` accepts a registered algorithm name such as `sketch_lines`,
-`sketch_squares`, `contour`, `stipple` or `spiral_sawtooth`, a legacy bare
+`sketch_squares`, `contour`, `stipple`, `spiral_sawtooth` or `hatch`, a legacy bare
 preset name, or a qualified `PFM:PRESET` id. A preset supplies a bundle of the
 selected PFM's settings and any `-s` override is applied on top with that
 PFM's field types. The qualified ids are unambiguous; bare names are the
@@ -567,6 +620,16 @@ their Sketch Lines meaning):
 | `spiral_sawtooth:bold` | Wider rings and larger teeth for a graphic look (spacing 12 px, amplitude 2, velocity 60–200). |
 | `spiral_sawtooth:parabolic` | Two opposed parabolic branches (`spiral_type=parabolic`). |
 
+Hatch presets (use the qualified id; a bare `default` or `fine` stays a Sketch
+Lines preset):
+
+| Preset id | Character |
+|-----------|-----------|
+| `hatch:default` | Two bands at 45/135° starting at darkness 0.25/0.5, `min_gap=0.5` and `join_runs=true`: the gate's balanced, continuous-stroke look with 5x fewer pen lifts than Sketch Lines. |
+| `hatch:crosshatch` | The algorithm defaults: four bands at 45/135/0/90° and thresholds 0.2/0.4/0.6/0.8, with runs left unjoined. |
+| `hatch:fine` | The crosshatch bands at 0.6 mm spacing instead of 1.0 mm. |
+| `hatch:single` | All four bands at 45° with `variable_spacing=True`, so darker bands pack tighter parallel lines. |
+
 The `-s KEY=VALUE` rule applies to every preset: `-s` wins over the preset's
 value, and an invalid key or value exits 2 naming the setting. The bare legacy
 names (`default`, `fine`, `bold`, and the Contour names) keep their old meaning
@@ -591,13 +654,17 @@ The three Square presets on the free Santa portrait are
 records measured readability, plot cost and the blank/random baselines; visual
 acceptance is by looking at the previews, not by SSIM alone.
 
-The three hatch presets and `squiggly` are style choices: they deliberately
-give up photo likeness for a particular look. `sketch_lines:default` is
-calibrated against the [Sketch Lines gate](TESTING.md#sketch-lines-likeness-gate-luc-47)
-and `stipple_default` against the
-[Stipple gate](TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27);
-Sketch Squares has its own gate linked above. Running `--pfm sketch_squares` or
-`--pfm stipple` with no preset uses the algorithm defaults above.
+The three *Sketch Lines* hatch presets (`sketch_lines:crosshatch`,
+`sketch_lines:hatch_horizontal`, `sketch_lines:hatch_vertical`) and `squiggly`
+are style choices: they deliberately give up photo likeness for a particular
+look and are not the `hatch` PFM. `sketch_lines:default` is calibrated against
+the [Sketch Lines gate](TESTING.md#sketch-lines-likeness-gate-luc-47),
+`stipple_default` against the
+[Stipple gate](TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27),
+and `hatch:default`/`hatch:crosshatch` against the
+[Hatch gate](TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27); Sketch
+Squares has its own gate linked above. Running `--pfm sketch_squares`,
+`--pfm stipple` or `--pfm hatch` with no preset uses that algorithm's defaults.
 
 #### Filters (Applied in Order)
 
@@ -634,6 +701,10 @@ penpath convert photo.jpg -o grid.svg --pfm sketch_squares:crosshatch-grid -s se
 # Continuous-line Spiral Sawtooth (algorithm defaults, a preset, or -s overrides)
 penpath convert photo.jpg -o spiral.svg --pfm spiral_sawtooth
 penpath convert photo.jpg -o spiral_fine.svg --pfm spiral_sawtooth:fine
+
+# Straight / cross-hatched lines are a PFM, not --style hatch (a Sketch Lines look)
+penpath convert photo.jpg -o hatch.svg --pfm hatch:default -s seed=42
+penpath convert photo.jpg -o crosshatch.svg --pfm hatch:crosshatch -s seed=42
 
 # Using project file
 penpath convert --project my_project.yaml

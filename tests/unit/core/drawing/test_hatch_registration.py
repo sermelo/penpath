@@ -72,11 +72,14 @@ class TestHatchPresets:
         settings.spacing = 99.0
         assert HATCH_PRESETS["fine"].spacing == 0.6
 
-    def test_default_has_two_directions_at_default_spacing(self) -> None:
+    def test_default_joins_two_directions_with_wider_gap_bridging(self) -> None:
         settings = HATCH_PRESETS["default"]
         assert settings.spacing == 1.0
         assert settings.angles == (45.0, 135.0)
         assert settings.thresholds == (0.25, 0.5)
+        assert settings.min_gap == 0.5
+        assert settings.join_runs is True
+        assert settings.serpentine is True
 
     def test_crosshatch_uses_default_angles_and_thresholds(self) -> None:
         settings = HATCH_PRESETS["crosshatch"]
