@@ -48,6 +48,7 @@ class TestHatchSettings:
         assert settings.min_gap == 0.3
         assert settings.variable_spacing is False
         assert settings.serpentine is True
+        assert settings.join_runs is False
         assert settings.jitter == 0.0
         assert settings.seed is None
 
@@ -88,6 +89,10 @@ class TestHatchSettings:
         assert settings.angles == (0.0,)
         assert settings.thresholds == (0.5,)
 
+    def test_join_runs_requires_serpentine(self) -> None:
+        with pytest.raises(ValueError, match="join_runs requires serpentine=True"):
+            HatchSettings(join_runs=True, serpentine=False)
+
 
 class TestHatchScaleValidation:
     @pytest.mark.parametrize("scale", [0.0, -1.0])
@@ -111,11 +116,11 @@ class TestHatchAlgorithm:
         expected = {0.0, 45.0, 90.0, 135.0}
         seen: set[float] = set()
         for stroke in strokes:
-            (x0, y0), (x1, y1) = stroke.coords
-            angle = math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180.0
-            chosen = min(expected, key=lambda item: abs(item - angle))
-            assert abs(angle - chosen) < 1.0
-            seen.add(chosen)
+            for (x0, y0), (x1, y1) in pairwise(stroke.coords):
+                angle = math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180.0
+                chosen = min(expected, key=lambda item: abs(item - angle))
+                if abs(angle - chosen) < 1.0:
+                    seen.add(chosen)
         assert seen == expected
 
     def test_points_inside_image_and_no_zero_length(self) -> None:
@@ -137,7 +142,6 @@ class TestHatchAlgorithm:
             angles=(0.0,),
             thresholds=(0.5,),
             spacing=0.001,
-            serpentine=False,
         )
         assert len(strokes) >= 5
         rows = sorted({round(y, 6) for stroke in strokes for _x, y in stroke.coords})
@@ -162,16 +166,57 @@ class TestHatchAlgorithm:
         assert len(kept) == 2
         assert dropped == []
 
-    def test_serpentine_false_keeps_direction_true_alternates(self) -> None:
+    def test_serpentine_false_keeps_direction_true_reverses(self) -> None:
         image = Image.new("L", (80, 80), 0)
         forward = _hatch(image, angles=(0.0,), thresholds=(0.5,), spacing=2.0, serpentine=False)
         alternating = _hatch(image, angles=(0.0,), thresholds=(0.5,), spacing=2.0, serpentine=True)
         assert len(forward) == len(alternating) >= 3
+        assert all(len(stroke.coords) == 2 for stroke in alternating)
         assert all(stroke.coords[-1][0] > stroke.coords[0][0] for stroke in forward)
         for index, stroke in enumerate(alternating):
             expected_sign = 1 if index % 2 == 0 else -1
             actual_sign = 1 if stroke.coords[-1][0] > stroke.coords[0][0] else -1
             assert actual_sign == expected_sign
+
+    def test_overlapping_lines_join_into_one_stroke(self) -> None:
+        image = Image.new("L", (100, 60), 0)
+        separated = _hatch(image, angles=(0.0,), thresholds=(0.5,), spacing=3.0, serpentine=False)
+        joined = _hatch(
+            image, angles=(0.0,), thresholds=(0.5,), spacing=3.0, serpentine=True, join_runs=True
+        )
+        assert len(separated) == 2
+        assert len(joined) == 1
+        assert len(joined[0].coords) == 2 * len(separated)
+        assert list(joined[0].coords) == [
+            (0.0, 0.0),
+            (99.0, 0.0),
+            (99.0, 30.0),
+            (0.0, 30.0),
+        ]
+
+    def test_non_overlapping_runs_still_lift(self) -> None:
+        image = Image.new("L", (100, 60), 255)
+        for y in range(30):
+            for x in range(5, 26):
+                image.putpixel((x, y), 0)
+        for y in range(30, 60):
+            for x in range(70, 91):
+                image.putpixel((x, y), 0)
+        joined = _hatch(
+            image, angles=(0.0,), thresholds=(0.5,), spacing=3.0, serpentine=True, join_runs=True
+        )
+        assert len(joined) == 2
+        assert all(len(stroke.coords) == 2 for stroke in joined)
+
+    def test_serpentine_false_is_unchanged(self) -> None:
+        image = Image.new("L", (100, 60), 0)
+        strokes = _hatch(image, angles=(0.0,), thresholds=(0.5,), spacing=3.0, serpentine=False)
+        assert len(strokes) == 2
+        assert all(len(stroke.coords) == 2 for stroke in strokes)
+        assert [list(stroke.coords) for stroke in strokes] == [
+            [(0.0, 0.0), (99.0, 0.0)],
+            [(0.0, 30.0), (99.0, 30.0)],
+        ]
 
     def test_density_increases_towards_dark(self) -> None:
         image = _gradient_image(120, 80)
