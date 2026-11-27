@@ -292,7 +292,8 @@ def test_user_can_convert_and_preview_every_preset(tmp_path: Path) -> None:
         png_path = tmp_path / f"santa_{name}.png"
         convert(REFERENCE_DIR / "santa.jpg", preset, svg_path)
         previewed = CliRunner().invoke(
-            cli_main, ["preview", str(svg_path), "-o", str(png_path), "--dpi", "3"]
+            cli_main,
+            ["preview", str(svg_path), "-o", str(png_path), "--px-per-mm", "3"],
         )
         assert previewed.exit_code == 0, previewed.output
         with Image.open(png_path) as opened:
