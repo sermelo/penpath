@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -65,10 +68,7 @@ def _assert_penpath_layout(svg_path: Path, pen_name: str, colour: str, width: st
     assert root.get("height") == "297mm"
     assert root.get("viewBox") == "0 0 210 297"
 
-    rects = root.findall(SVG_NS + "rect")
-    assert len(rects) == 1
-    assert rects[0].get("fill") == "#FFFFFF"
-    assert rects[0] in list(root)
+    assert root.findall(SVG_NS + "rect") == []
 
     groups = list(root.iter(SVG_NS + "g"))
     assert len(groups) == 1
@@ -83,6 +83,57 @@ def _assert_penpath_layout(svg_path: Path, pen_name: str, colour: str, width: st
         assert path.get("fill") == "none"
         assert path.get("stroke") == colour
         assert path.get("stroke-width") == width
+
+
+def _require_vpype() -> None:
+    """Skip the acceptance test when vpype is absent or cannot run here."""
+    pytest.importorskip("vpype")
+    if shutil.which("vpype") is None:
+        pytest.skip("vpype executable not found")
+    probe = subprocess.run(
+        ["vpype", "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode != 0:
+        pytest.skip(f"vpype executable unusable: {probe.stderr.strip()}")
+
+
+def _vpype_bounds_mm(svg_path: Path) -> tuple[float, float, float, float]:
+    """Return the bounds reported by `vpype read <svg> stat`, in millimetres."""
+    result = subprocess.run(
+        ["vpype", "read", str(svg_path), "stat"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    lines = [line for line in result.stdout.splitlines() if "Bounds:" in line]
+    assert lines, result.stdout
+    numbers = r"(?<![A-Za-z0-9_])[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+    boxes = [tuple(float(value) for value in re.findall(numbers, line)[:4]) for line in lines]
+    assert all(len(box) == 4 for box in boxes), result.stdout
+    mm_per_vpype_unit = 25.4 / 96
+    return (
+        min(box[0] for box in boxes) * mm_per_vpype_unit,
+        min(box[1] for box in boxes) * mm_per_vpype_unit,
+        max(box[2] for box in boxes) * mm_per_vpype_unit,
+        max(box[3] for box in boxes) * mm_per_vpype_unit,
+    )
+
+
+def _stroke_bbox_mm(svg_path: Path) -> tuple[float, float, float, float]:
+    """Return the bounding box of the parsed ink, in millimetres."""
+    strokes = parse_svg_strokes(svg_path)
+    assert strokes
+    points = [point for stroke in strokes for point in stroke.polyline]
+    return (
+        min(point[0] for point in points),
+        min(point[1] for point in points),
+        max(point[0] for point in points),
+        max(point[1] for point in points),
+    )
 
 
 class TestPenpathSvgLayout:
@@ -185,3 +236,27 @@ class TestPenpathSvgLayout:
             scores[name] = json.loads(result.stdout)["likeness"]
 
         assert scores["vpype"] == pytest.approx(scores["direct"], abs=0.05)
+
+
+class TestVpypeReadBounds:
+    """`vpype read` sees the drawing, never the page-sized background."""
+
+    @pytest.mark.parametrize(
+        "extra_args",
+        [[], ["--palette", "stabilo_88"]],
+        ids=["single-pen", "palette"],
+    )
+    def test_vpype_read_bounds_match_ink_not_page(
+        self,
+        extra_args: list[str],
+        runner: CliRunner,
+        reference: Path,
+        tmp_path: Path,
+    ) -> None:
+        _require_vpype()
+        plot = tmp_path / "plot.svg"
+        _convert(runner, reference, plot, *extra_args)
+
+        assert ET.parse(plot).getroot().findall(SVG_NS + "rect") == []
+        ink_bbox = _stroke_bbox_mm(plot)
+        assert _vpype_bounds_mm(plot) == pytest.approx(ink_bbox, abs=0.5)
