@@ -11,6 +11,7 @@ from penpath.presets.pfms import (
     get_pfm_preset_settings,
     list_pfm_presets,
     list_presets_for_pfm,
+    list_sheet_entries,
     register_pfm_preset,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "list_pens",
     "list_pfm_presets",
     "list_presets_for_pfm",
+    "list_sheet_entries",
     "register_pfm_preset",
 ]
