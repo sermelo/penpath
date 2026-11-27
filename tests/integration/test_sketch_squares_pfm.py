@@ -237,6 +237,7 @@ class TestInfoPFMs:
             "spiral_sawtooth",
             "hatch",
             "patch_hatch",
+            "tsp",
         }
         assert rows["sketch_lines"]["settings_model"] == "SketchLinesSettings"
         assert rows["sketch_lines"]["presets"]  # legacy bare names still listed

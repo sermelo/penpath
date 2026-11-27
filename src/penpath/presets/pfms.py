@@ -12,6 +12,7 @@ from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
 from penpath.core.drawing.pfm_spiral import SpiralSettings
 from penpath.core.drawing.pfm_stipple import StippleSettings
+from penpath.core.drawing.pfm_tsp import TSPSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 
 PFM_PRESETS: dict[str, SketchLinesSettings] = {
@@ -182,6 +183,11 @@ PATCH_HATCH_PRESETS: dict[str, PatchHatchSettings] = {
     "fast": PatchHatchSettings(join_lines=True),
 }
 
+TSP_PRESETS: dict[str, TSPSettings] = {
+    "default": TSPSettings(),
+    "fine": TSPSettings(point_spacing=0.55, max_points=60000),
+}
+
 DEFAULT_PFM = "default"
 
 PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
@@ -239,6 +245,9 @@ for _spiral_name, _spiral_settings in SPIRAL_PRESETS.items():
 
 for _hatch_name, _hatch_settings in HATCH_PRESETS.items():
     register_pfm_preset(f"hatch:{_hatch_name}", "hatch", _hatch_settings)
+
+for _tsp_name, _tsp_settings in TSP_PRESETS.items():
+    register_pfm_preset(f"tsp:{_tsp_name}", "tsp", _tsp_settings)
 
 for _patch_name, _patch_settings in PATCH_HATCH_PRESETS.items():
     register_pfm_preset(f"patch_hatch:{_patch_name}", "patch_hatch", _patch_settings)
@@ -395,6 +404,7 @@ __all__ = [
     "PFM_PRESET_TYPES",
     "SKETCH_SQUARES_PRESETS",
     "SPIRAL_PRESETS",
+    "TSP_PRESETS",
     "get_pfm_for_preset",
     "get_pfm_preset",
     "get_pfm_preset_by_id",

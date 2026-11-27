@@ -523,6 +523,38 @@ values or out-of-range numbers exit 2 naming the setting.
 
 **Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s ring_spacing=5 -s amplitude=0.8`
 
+#### PFM Settings (TSP Art)
+
+Select this PFM with `--pfm tsp` (or `tsp:default` / `tsp:fine`). It draws the
+whole picture as **one continuous line**: dots are placed with density
+following the image's darkness (weighted Voronoi stippling: weighted random
+samples relaxed with a few Lloyd iterations so they spread evenly), then
+joined into one tour through every dot (nearest neighbour, then 2-opt moves
+between nearby dots so the line does not cross itself). One pen lift for the
+whole drawing. Lengths are in millimetres on paper; the image scale is
+supplied by `convert`.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `point_spacing` | float | >0 mm | `0.8` | Average distance between dots in black areas; lighter tones get proportionally fewer dots. |
+| `tone_gamma` | float | >0 | `2.0` | Exponent on darkness before it sets dot density; higher keeps light areas emptier and the picture more contrasted. |
+| `min_tone` | float | 0–1 | `0.1` | Darkness below which no dots are placed. |
+| `max_points` | int | 100–200000 | `30000` | Cap on the number of dots, which bounds run time. |
+| `relax_iterations` | int | 0–50 | `8` | Lloyd iterations that spread the dots evenly. |
+| `two_opt_passes` | int | 0–20 | `6` | 2-opt passes over each dot's nearest neighbours; removes crossings and long jumps. |
+| `closed` | bool | — | `true` | Return to the first dot, closing the loop. |
+| `seed` | int or `null` | any | `null` | Seed for dot placement; fix it for identical reruns. |
+
+| Preset id | Character |
+|-----------|-----------|
+| `tsp:default` | 0.8 mm dots in black areas, up to 30,000 dots. |
+| `tsp:fine` | 0.55 mm dots, up to 60,000: more detail, a longer plot and run. |
+
+```bash
+penpath convert photo.jpg --pfm tsp -s seed=42 -o one_line.svg
+penpath convert photo.jpg --pfm tsp:fine -s seed=42 -s closed=false -o open_line.svg
+```
+
 #### PFM Settings (Patch Hatch)
 
 Select this PFM with `--pfm patch_hatch` (or a qualified `patch_hatch:PRESET`
