@@ -92,6 +92,7 @@ writes the final SVG: vpype contributes geometry only.
 |---------|---------|
 | `penpath convert` | Photo → SVG (main command) |
 | `penpath preview` | Simulate an SVG or G-code file and save a preview image |
+| `penpath compare` | Draw every PFM and preset on one labelled contact sheet |
 | `penpath evaluate` | Score an SVG's likeness to the original image and its machine cost |
 | `penpath gcode` | Turn a reviewed SVG into machine G-code with a machine profile |
 | `penpath info` | List presets and machine profiles, show image details, inspect config |
@@ -482,7 +483,15 @@ penpath convert photo.jpg --pfm contour -o outlines.svg
 penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg
 penpath convert photo.jpg --pfm stipple_fine --no-vpype -s seed=42 -o dots.svg
 penpath preview dots.svg -o dots.png --dpi 4
+# Every PFM and preset side by side; stdout stays empty
+penpath compare photo.jpg -o compare.png --dpi 2 --max-resolution 64
 ```
+
+The [contact sheet](docs/images/luc-141/contact_sheet.png) below shows the
+catalog on the Santa portrait, including the four Spiral tiles; the labels name
+each PFM and preset, and a failing tile would show its error instead of ink.
+
+![Contact sheet comparing all PFM presets on Santa](docs/images/luc-141/contact_sheet.png)
 
 ### Palettes: one SVG layer per pen
 

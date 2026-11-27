@@ -717,6 +717,73 @@ penpath preview card.gcode -o card_travel.png --travel
 
 ---
 
+### `penpath compare` — Compare PFM styles on one contact sheet
+
+Draw every registered PFM and preset on the same image, one labelled tile each,
+so you can pick a look before plotting. Thin CLI over
+`penpath.core.render_contact_sheet()` and `penpath.presets.list_sheet_entries()`:
+the core downsamples the EXIF-oriented image once, equalizes it to greyscale and
+simulates each entry on a 60 mm wide tile; no SVG or G-code is written.
+
+```bash
+penpath compare INPUT -o OUTPUT [OPTIONS]
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `INPUT` | Raster image (PNG, JPEG, TIFF or BMP) loaded with EXIF orientation |
+
+#### Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--output PATH` | `-o` | — | Output sheet path (required, PNG) |
+| `--dpi FLOAT` | — | `4.0` | Pixels per millimetre for tiles and captions |
+| `--max-resolution INT` | — | `256` | Longest working-image side in pixels; larger images are downscaled, never enlarged |
+| `--columns INT` | — | `4` | Tiles per row |
+| `--paper-color COLOR` | — | `#FFFFFF` | Tile paper colour (hex or named CSS colour) |
+
+`--dpi`, `--max-resolution` and `--columns` must be greater than zero (exit 2
+otherwise, naming the flag); an unreadable image or empty catalog is exit 1.
+There is no per-tile timeout: use the shell's `timeout` and keep
+`--max-resolution` / `--dpi` small for a quick pass.
+
+#### Entry list and dedupe
+
+One default tile per registered PFM plus one per preset of that PFM. A preset
+named exactly `default` is skipped because the PFM's default covers the legacy
+`sketch_lines:default` alias. Entries are sorted by `(pfm, preset)` with deep
+copies of their settings. The catalog has 23 tiles: the original 19 plus four
+`spiral_sawtooth` tiles that appeared when that PFM was registered. A failing
+entry shows `Type: message` on its tile instead of ink.
+
+#### Output and stderr contract
+
+**stdout is always empty.** stderr has one `Failed entry LABEL: Type: message`
+line per failure, then the path, pixel size and entry count; a failed tile still
+exits 0 so one PFM cannot hide the other styles:
+
+```
+Contact sheet saved to sheet.png (1008x2156 px, 23 entries)
+```
+
+See the [readability evidence](TESTING.md#contact-sheet-readability-luc-141-2026-11-27)
+and the [committed sheet](images/luc-141/contact_sheet.png).
+
+#### Examples
+
+```bash
+penpath compare photo.jpg -o sheet.png
+penpath compare photo.jpg -o quick.png --dpi 2 --max-resolution 64 --columns 3
+penpath compare photo.jpg -o cream.png --paper-color "#FFFDD0"
+# Bound a full run with the shell; stdout stays empty either way
+timeout 180 penpath compare santa.jpg -o sheet.png --dpi 4 --max-resolution 256
+```
+
+---
+
 ### `penpath gcode` — SVG → G-code for a machine
 
 Turn a reviewed SVG into machine G-code using a machine profile. Penpath never
