@@ -9,6 +9,11 @@ from penpath.core.drawing.pfm_hatch import (
     hatch_strokes,
     with_angle_offset,
 )
+from penpath.core.drawing.pfm_patch_hatch import (
+    PatchHatchSettings,
+    patch_hatch_strokes,
+    with_layer_angle_offset,
+)
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
 from penpath.core.drawing.pfm_stipple import StippleSettings, stipple
@@ -28,6 +33,7 @@ __all__ = [
     "HatchSettings",
     "OutlineSettings",
     "PFMRegistry",
+    "PatchHatchSettings",
     "SketchLinesSettings",
     "SpiralSettings",
     "StippleSettings",
@@ -38,10 +44,12 @@ __all__ = [
     "key_layer_strokes",
     "list_pfms",
     "outline_strokes",
+    "patch_hatch_strokes",
     "register_pfm",
     "scale_pixel_settings",
     "sketch_lines",
     "spiral_strokes",
     "stipple",
     "with_angle_offset",
+    "with_layer_angle_offset",
 ]
