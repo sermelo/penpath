@@ -513,7 +513,8 @@ Every field of `HatchSettings` is accepted by `-s KEY=VALUE`. Lengths are in
 millimetres **on paper**, not image pixels, and the image scale is supplied by
 `convert`; booleans accept the same `true`/`false`, `1`/`0`, `yes`/`no` and
 `on`/`off` spellings as Sketch Lines. Invalid keys, values or out-of-range
-numbers exit 2 with the setting named.
+numbers exit 2 with the setting named. `join_runs=true` with `serpentine=false`
+is rejected with a message naming both settings.
 
 | Key | Type | Range | Default | Effect |
 |-----|------|-------|---------|--------|
@@ -524,6 +525,7 @@ numbers exit 2 with the setting named.
 | `min_gap` | float | >=0 mm | `0.3` | Bridge gaps shorter than this so a stroke survives small light speckles. |
 | `variable_spacing` | bool | — | `false` | Band `i` uses `spacing * (1 - 0.5 * thresholds[i])`, so darker bands get denser lines; still clamped to the pen width. |
 | `serpentine` | bool | — | `true` | Reverse every other line so the end of one is near the start of the next. |
+| `join_runs` | bool | — | `false` | Join overlapping runs on adjacent lines of a band into continuous zig-zag strokes, drawing the short connectors; fewer pen lifts. Requires `serpentine=true` (otherwise the command exits 2). |
 | `jitter` | float | >=0 mm | `0.0` | Seeded perpendicular wobble; `0` gives perfectly straight parallel lines. |
 | `seed` | int or `null` | any | `null` | Seed for the jitter. Fix it with `-s seed=42` for byte-identical reruns. |
 
@@ -536,6 +538,8 @@ penpath convert photo.jpg --pfm hatch:default -s seed=42 -o hatch.svg
 penpath convert photo.jpg --pfm hatch:crosshatch -s seed=42 -o crosshatch.svg
 # Finer 0.6 mm lines; include a third band with a 0.6 darkness threshold
 penpath convert photo.jpg --pfm hatch:fine -s angles=45,135,0 -s thresholds=0.2,0.4,0.6
+# Continuous zig-zag strokes on the algorithm defaults (fewer pen lifts)
+penpath convert photo.jpg --pfm hatch -s join_runs=true -o joined.svg
 # Palette: each successive pen's angles rotate by 30 degrees
 penpath convert photo.jpg --pfm hatch:default --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E" -o two_pens.svg
 ```
@@ -610,8 +614,8 @@ Lines preset):
 
 | Preset id | Character |
 |-----------|-----------|
-| `hatch:default` | Two bands at 45/135° starting at darkness 0.25/0.5: the gate's balanced look. |
-| `hatch:crosshatch` | The algorithm defaults: four bands at 45/135/0/90° and thresholds 0.2/0.4/0.6/0.8. |
+| `hatch:default` | Two bands at 45/135° starting at darkness 0.25/0.5, `min_gap=0.5` and `join_runs=true`: the gate's balanced, continuous-stroke look with 5x fewer pen lifts than Sketch Lines. |
+| `hatch:crosshatch` | The algorithm defaults: four bands at 45/135/0/90° and thresholds 0.2/0.4/0.6/0.8, with runs left unjoined. |
 | `hatch:fine` | The crosshatch bands at 0.6 mm spacing instead of 1.0 mm. |
 | `hatch:single` | All four bands at 45° with `variable_spacing=True`, so darker bands pack tighter parallel lines. |
 

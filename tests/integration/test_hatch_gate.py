@@ -3,8 +3,7 @@
 The harness in ``hatch_gate.py`` runs the real ``penpath convert`` CLI on A5
 paper with one 0.4 mm black pen. This module turns the measured likeness, tone
 strip, spacing, cost and timing numbers into pass/fail checks. SSIM is evidence
-beside the readability floors, and a strict xfail records the one acceptance
-line the shipped algorithm does not meet yet.
+beside the readability floors, and every acceptance line is enforced.
 """
 
 from __future__ import annotations
@@ -185,13 +184,6 @@ def test_black_image_draws_each_band(preset: str, tmp_path: Path) -> None:
     assert set(band_spacings(strokes, band_angles(preset))) == set(band_angles(preset))
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Unmet LUC-167 acceptance: hatch emits one stroke per line, 551 lifts on photo.jpg "
-        "vs 284 for Sketch Lines (1.94x MORE, not 5x fewer); Architect decision pending"
-    ),
-    strict=True,
-)
 def test_photo_hatch_uses_five_times_fewer_pen_lifts(
     hatch_report_factory: Callable[[str, str], HatchReport],
     tmp_path: Path,

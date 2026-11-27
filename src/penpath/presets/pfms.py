@@ -163,7 +163,9 @@ SPIRAL_PRESETS: dict[str, SpiralSettings] = {
 }
 
 HATCH_PRESETS: dict[str, HatchSettings] = {
-    "default": HatchSettings(angles=(45.0, 135.0), thresholds=(0.25, 0.5)),
+    "default": HatchSettings(
+        angles=(45.0, 135.0), thresholds=(0.25, 0.5), min_gap=0.5, join_runs=True
+    ),
     "crosshatch": HatchSettings(),
     "fine": HatchSettings(spacing=0.6),
     "single": HatchSettings(

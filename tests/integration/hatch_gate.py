@@ -60,6 +60,8 @@ STRIP_TOLERANCE = 0.01
 STRIP_DARK_END_MARGIN = 0.5
 SPACING_TOLERANCE_MM = 0.01
 SPACING_CLUSTER_MM = 0.15
+MIN_HATCH_SEGMENT_MM = 5.0
+"""Ignore the short zig-zag connectors when measuring parallel line spacing."""
 SYNTHETIC_SIZE = 200
 TINY_SEGMENT_MM = 0.5
 
@@ -184,18 +186,24 @@ def band_spacings(
     strokes: Sequence[PenStroke],
     angles: Sequence[float],
 ) -> dict[float, float]:
-    """Return the smallest perpendicular gap between parallel strokes of each band."""
+    """Return the smallest perpendicular gap between parallel line segments of each band.
+
+    Joined serpentine strokes contain short zig-zag connectors; only segments at
+    least ``MIN_HATCH_SEGMENT_MM`` long count as hatch lines.
+    """
     offsets: dict[float, list[float]] = {round(angle, 6): [] for angle in angles}
     for stroke in strokes:
-        first, last = stroke.polyline[0], stroke.polyline[-1]
-        dx, dy = last[0] - first[0], last[1] - first[1]
-        angle = math.degrees(math.atan2(dy, dx)) % 180.0
-        band = min(offsets, key=lambda candidate: abs(candidate - angle))
-        if abs(band - angle) > 1.5:
-            continue
-        theta = math.radians(band)
-        midpoint = ((first[0] + last[0]) / 2.0, (first[1] + last[1]) / 2.0)
-        offsets[band].append(-math.sin(theta) * midpoint[0] + math.cos(theta) * midpoint[1])
+        for first, last in pairwise(stroke.polyline):
+            dx, dy = last[0] - first[0], last[1] - first[1]
+            if math.hypot(dx, dy) < MIN_HATCH_SEGMENT_MM:
+                continue
+            angle = math.degrees(math.atan2(dy, dx)) % 180.0
+            band = min(offsets, key=lambda candidate: abs(candidate - angle))
+            if abs(band - angle) > 1.5:
+                continue
+            theta = math.radians(band)
+            midpoint = ((first[0] + last[0]) / 2.0, (first[1] + last[1]) / 2.0)
+            offsets[band].append(-math.sin(theta) * midpoint[0] + math.cos(theta) * midpoint[1])
     spacings: dict[float, float] = {}
     for band, values in offsets.items():
         ordered = sorted(values)
@@ -339,6 +347,7 @@ def main() -> None:
 __all__ = [
     "GATE_PRESET",
     "GRADIENT_STRIPS",
+    "MIN_HATCH_SEGMENT_MM",
     "PAPER",
     "PAPER_SPEC",
     "PEN_WIDTH_MM",

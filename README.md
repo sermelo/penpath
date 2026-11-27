@@ -659,9 +659,10 @@ penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 `--pfm` selects one of six registered algorithms: `sketch_lines` (the default
 hatching), `sketch_squares` (grid hatching), `contour` (scikit-image + Shapely
 outlines), `stipple` (weighted Poisson-disk dots), `spiral_sawtooth` (one
-continuous sawtooth line) or `hatch` (straight / cross-hatched lines). Each PFM
-accepts its own `-s KEY=VALUE` settings. `--pfm hatch` is different from
-`--style hatch`, which is a Sketch Lines look.
+continuous sawtooth line) or `hatch` (straight / cross-hatched lines, optionally
+joined into continuous zig-zag strokes with `-s join_runs=true`, which requires
+`serpentine=true`). Each PFM accepts its own `-s KEY=VALUE` settings.
+`--pfm hatch` is different from `--style hatch`, which is a Sketch Lines look.
 Use a qualified `PFM:PRESET` id below; bare names are the legacy Sketch Lines,
 Contour and Stipple preset names. `penpath info pfms` is the source of truth: it
 lists every PFM, its defaults and its presets.
@@ -673,7 +674,7 @@ lists every PFM, its defaults and its presets.
 | `contour` | `contour_portrait`, `contour_silhouette` | Four threshold levels for internal detail on a face; one level and a larger minimum speck size for a few bold outlines. |
 | `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. |
 | `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
-| `hatch` | `hatch:default`, `hatch:crosshatch`, `hatch:fine`, `hatch:single` | Straight parallel lines: two directions for `default`, four for `crosshatch`, 0.6 mm spacing for `fine`, or progressively tighter same-direction bands for `single`. |
+| `hatch` | `hatch:default`, `hatch:crosshatch`, `hatch:fine`, `hatch:single` | Straight parallel lines: two joined directions for `default` (`min_gap=0.5`, `join_runs=true`), four unjoined directions for `crosshatch`, 0.6 mm spacing for `fine`, or progressively tighter same-direction bands for `single`. |
 
 Simulated plot previews on the free Santa portrait:
 [sketch_squares:fine](docs/images/luc-88/sketch_squares_plot.png) ·
