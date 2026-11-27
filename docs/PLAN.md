@@ -124,9 +124,11 @@ published the before/after evidence.
 Multi-pen / colour separation is in MVP (sergio approved on 2026-11-24). The
 loader splits the image into one full-size greyscale channel per palette pen
 before filtering; the filter, PFM and geometry optimization then run once per
-pen. `convert --palette stabilo_88` draws in palette order and writes one SVG
-layer per used pen. With no palette the single default pen draws the whole
-image, so the default path still produces exactly one layer. Consumers should
+pen. After the PFM stage `order_pens_for_drawing` orders the pens light → dark
+with near-black pens last (palette order only breaks ties), and the SVG layers
+follow that drawing order; one layer is written per used pen. With no palette
+the single default pen draws the whole image, so the default path still
+produces exactly one layer. Consumers should
 read the `<g id="layerN">` groups with an XML parser rather than feeding the
 SVG back through `vpype read` (see `docs/CLI.md`).
 

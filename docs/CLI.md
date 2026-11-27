@@ -254,14 +254,20 @@ boosted before the split with `--saturation` or `--palette-adapt` so pixels
 below the neutral cut-off join their hue family; the report of the factor used
 is described under **Image Options**.
 
-The palette's order is the drawing order and the order of the SVG layers. Each
-pen that produced strokes becomes one Inkscape layer named `layerN`, where `N`
-counts only the used pens from 1: an unused pen gets no layer and does not
-shift the numbering. The built-in `stabilo_88` palette is listed light → dark
-by `penpath info palettes`; an inline list is used exactly as given. `--pen`
-and `--palette` cannot be combined: penpath reports a usage error instead of
+Pens draw light → dark, with a near-black pen (sRGB relative luminance `<=
+0.02`) always last, so light ink never runs over black ink. The palette's own
+order is only the stable tie-breaker for pens of equal lightness: it never
+changes which pixel a pen receives, because separation still uses the order
+given by `--palette`. Each pen that produced strokes becomes one Inkscape layer
+named `layerN`, where `N` counts only the used pens from 1 in drawing order: an
+unused pen gets no layer and does not shift the numbering. An inline list is
+used exactly as given for separation, but its layers follow ink order.
+`penpath info palettes` reports that drawing order in its `order` column; the
+built-in `stabilo_88` definition table keeps its original order. `--pen` and
+`--palette` cannot be combined: penpath reports a usage error instead of
 choosing one silently. Without `--palette`, the default single pen draws the
-whole image and produces a single layer, exactly as before.
+whole image and produces a single layer, exactly as before. The library helper
+behind both paths is `penpath.core.order_pens_for_drawing(pens)`.
 
 #### Output Options
 
@@ -629,11 +635,12 @@ penpath convert photo.jpg --style sketch -o sketch.svg
 penpath convert photo.jpg --style hatch -o hatch.svg
 penpath convert photo.jpg --style outline -o outline.svg
 
-# Use a built-in palette or an inline ordered list
+# Use a built-in palette or an inline list (list order assigns colours only)
 penpath convert photo.jpg --palette stabilo_88
 penpath convert photo.jpg --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E"
-# The ordered pens become layer1, layer2, ... in drawing order; pens that
-# receive no strokes are skipped, so a palette of twelve may yield fewer layers.
+# The used pens become layer1, layer2, ... in drawing order (light → dark,
+# black last); pens that receive no strokes are skipped, so a palette of
+# twelve may yield fewer layers.
 
 # Paper fit: contain the whole image (the default), cover and crop, or use the
 # image's pixel size at --dpi. On 190x190 the default fit draws 170x170 mm.
@@ -1218,6 +1225,11 @@ profile omits it). `margin_mm` is the profile's raw value: a scalar for a
 uniform margin or `[top, right, bottom, left]` for a per-side margin. The table
 shows a `Margin (mm)` column with the same value, printing `10` or `10/5/10/5`.
 
+`penpath info palettes` lists the pens of each built-in palette with an `order`
+column in drawing order — light ink first, dark ink later and near-black last —
+from `penpath.core.order_pens_for_drawing`. Palette definition order is
+unchanged and still governs colour separation.
+
 `penpath info pfms` lists every registered PFM with its `name`,
 `settings_model`, `default_settings`, its `presets` (legacy bare names for
 `sketch_lines`, `contour` and `stipple`, qualified ids for `sketch_squares` and
@@ -1359,7 +1371,7 @@ pen:
 
 # Instead of `pen`, use a built-in palette:
 # palette: stabilo_88
-# Or an explicit ordered list of pens (drawing order):
+# Or an explicit ordered list of pens (colour assignment; drawing is light → dark):
 # pens:
 #   - name: my_red
 #     width_mm: 0.4
@@ -1671,7 +1683,7 @@ with its coordinates instead of writing G-code the machine cannot follow.
 
 | Name | Pens | Width | Drawing order |
 |------|------|-------|---------------|
-| `stabilo_88` | 12 Stabilo Point 88 colours | 0.4 mm | light → dark, as listed by `penpath info palettes` |
+| `stabilo_88` | 12 Stabilo Point 88 colours | 0.4 mm | light → dark, black last, as listed by `penpath info palettes` |
 
 ---
 

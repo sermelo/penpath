@@ -701,7 +701,9 @@ before separation, so the lightest pen cannot scribble over the page; use
 `--no-background` if you want the old behaviour. Filters, the selected PFM and geometry
 optimization then run once per pen, so lines from different pens are never
 sorted together. Every pen that draws becomes one Inkscape layer, named after
-the pen, in palette order:
+the pen, in drawing order — light ink first, dark ink later and a near-black pen
+last. Palette order only assigns colours and breaks ties between equally light
+pens:
 
 ```bash
 # Photo -> SVG with one layer per used pen (the Christmas-card workflow)
@@ -728,34 +730,36 @@ smaller than 8 px count as unassigned. Percentages are of all image pixels, not
 of the finished drawing.
 
 A project file can use `palette: stabilo_88` or an explicit ordered `pens:` list
-instead of `pen:`. Palette order is drawing order and the layer order. An
-unused pen gets no layer, so a twelve-pen palette may yield fewer than twelve
-layers. Without `--palette`, the single default pen draws the whole image and
-produces one layer, exactly as before. `--pen` and `--palette` are mutually
-exclusive.
+instead of `pen:`. Pens draw light → dark with a near-black pen last, and the
+SVG layers follow that order; the palette's own order only assigns colours and
+breaks ties. An unused pen gets no layer, so a twelve-pen palette may yield
+fewer than twelve layers. Without `--palette`, the single default pen draws the
+whole image and produces one layer, exactly as before. `--pen` and `--palette`
+are mutually exclusive.
 
-The built-in `stabilo_88` palette, in drawing order (all 0.4 mm):
+The built-in `stabilo_88` palette in drawing order (all 0.4 mm), also reported
+by `penpath info palettes`:
 
 | # | Layer label | Colour |
 |--:|-------------|--------|
 | 1 | `stabilo_88_yellow` | `#F7E300` |
-| 2 | `stabilo_88_cyan` | `#00B5B0` |
-| 3 | `stabilo_88_light_blue` | `#8CCFE8` |
-| 4 | `stabilo_88_blue` | `#1B4C9E` |
-| 5 | `stabilo_88_light_green` | `#A9D18E` |
-| 6 | `stabilo_88_purple` | `#6C3B9E` |
-| 7 | `stabilo_88_pink` | `#F2A0BE` |
-| 8 | `stabilo_88_brown` | `#7A4B23` |
-| 9 | `stabilo_88_orange` | `#F4741F` |
-| 10 | `stabilo_88_black` | `#000000` |
-| 11 | `stabilo_88_red` | `#E4002B` |
-| 12 | `stabilo_88_green` | `#00963E` |
+| 2 | `stabilo_88_light_blue` | `#8CCFE8` |
+| 3 | `stabilo_88_light_green` | `#A9D18E` |
+| 4 | `stabilo_88_pink` | `#F2A0BE` |
+| 5 | `stabilo_88_cyan` | `#00B5B0` |
+| 6 | `stabilo_88_orange` | `#F4741F` |
+| 7 | `stabilo_88_green` | `#00963E` |
+| 8 | `stabilo_88_red` | `#E4002B` |
+| 9 | `stabilo_88_brown` | `#7A4B23` |
+| 10 | `stabilo_88_purple` | `#6C3B9E` |
+| 11 | `stabilo_88_blue` | `#1B4C9E` |
+| 12 | `stabilo_88_black` | `#000000` |
 
 ### SVG layout and `vpype read`
 
 Every SVG penpath writes uses millimetres: for A4 the root is
 `width="210mm" height="297mm" viewBox="0 0 210 297"`, and each used pen gets one
-Inkscape layer with `id="layerN"` (N in pen order) and the pen name as
+Inkscape layer with `id="layerN"` (N in drawing order) and the pen name as
 `inkscape:label`. Strokes have `fill="none"`, a hex `stroke` and a millimetre
 `stroke-width`. No background shape is written: paper colour is a
 `preview`/`evaluate` option (`--paper-color`, default `#FFFFFF`), not ink.

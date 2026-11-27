@@ -24,6 +24,7 @@ from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD, mask_background
 from penpath.core.image.filters import auto_equalize
 from penpath.core.image.load import ImageLoadError, load_image
+from penpath.core.image.palette_order import order_pens_for_drawing
 from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
 from penpath.core.image.saturation import NO_BOOST_FACTOR, adapt_saturation, boost_saturation
@@ -593,6 +594,11 @@ def _run_convert_pipeline(
         draw_styled_lines(image, pfm_fn, pfm_settings, project.style) for image in filtered_by_pen
     ]
     reporter.finish()
+
+    drawing_pens = order_pens_for_drawing(pens)
+    position_by_id = {id(pen): index for index, pen in enumerate(pens)}
+    lines_by_pen = [lines_by_pen[position_by_id[id(pen)]] for pen in drawing_pens]
+    pens = drawing_pens
 
     if not any(lines_by_pen):
         reporter.message("Warning: No lines generated", style="yellow")
