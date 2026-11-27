@@ -1620,10 +1620,9 @@ millimetres and segments shorter than 0.5 mm.
 
 ### Measured values
 
-Measured locally on Python 3.12.3 with the command above; CI repeats the gate
-on Python 3.14. vpype is installed but the gate uses `--no-vpype` for speed and
-determinism. Values were refreshed after LUC-170 stopped contours from closing
-along the image border.
+Measured on Python 3.14.10 with the command above; vpype is installed but the
+gate uses `--no-vpype` for speed and determinism. Values were refreshed after
+LUC-170 stopped contours from closing along the image border.
 
 | image | preset | strokes | points | length mm | tiny | tiny share | edge align | matched/sampled | cov W | cov H | bbox |
 |-------|--------|--------:|-------:|----------:|-----:|-----------:|-----------:|----------------:|------:|------:|-----:|
