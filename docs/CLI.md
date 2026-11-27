@@ -446,7 +446,9 @@ out-of-range numbers exit 2 naming the setting, as with Sketch Lines.
 With `--pfm contour` (or a Contour preset), every field of `ContourSettings` is
 accepted by `-s KEY=VALUE`. Booleans use the same `true`/`false`, `1`/`0`,
 `yes`/`no` and `on`/`off` spellings as Sketch Lines; invalid keys, values or
-out-of-range numbers exit 2 with the setting named.
+out-of-range numbers exit 2 with the setting named. Contours that touch the
+image border are left open there instead of closing along it, so ink reaching
+an edge keeps only its inward-facing outline.
 
 | Key | Type | Range | Default | Effect |
 |-----|------|-------|---------|--------|
