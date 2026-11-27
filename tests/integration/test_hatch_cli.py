@@ -82,6 +82,7 @@ def test_convert_hatch_writes_svg_with_physical_scale(
     assert len(seen) == 1
     settings, kwargs = seen[0]
     assert isinstance(settings, HatchSettings)
+    assert settings.angles == HatchSettings().angles
     assert kwargs["pixels_per_mm"] == pytest.approx(300.0 / 25.4)
     assert kwargs["pen_width_mm"] == 0.3
 
