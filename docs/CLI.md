@@ -439,7 +439,7 @@ Sketch Squares presets (use the qualified id; a bare name is rejected):
 The presets on the free Santa portrait are
 [`contour_portrait`](images/luc-139/contour_portrait.png) and
 [`contour_silhouette`](images/luc-139/contour_silhouette.png). The
-[Contour gate](TESTING.md#contour-readability-and-plot-cost-gate-luc-146)
+[Contour gate](TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27)
 records measured edge alignment and plot cost; visual acceptance is by looking
 at the previews, not by SSIM alone.
 

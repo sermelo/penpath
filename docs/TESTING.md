@@ -1521,7 +1521,7 @@ rewards a near-empty page, which a one-level outline of a portrait often is.
 The CI gate is the supporting, non-empty check: contour points must follow
 source edges, span the image and cost a reasonable amount of pen time.
 
-Reproduce the numbers and the previews with:
+Reproduce the measured numbers with:
 
 ```bash
 uv run pytest tests/integration/test_contour_gate.py \
