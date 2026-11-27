@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from penpath.core.drawing.pfm_contour import ContourSettings, contour_strokes
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings, sketch_squares
+from penpath.core.drawing.pfm_stipple import StippleSettings, stipple
 
 if TYPE_CHECKING:
     from shapely import LineString
@@ -128,6 +129,7 @@ def list_pfms() -> list[str]:
 register_pfm("sketch_lines", sketch_lines, SketchLinesSettings)
 register_pfm("contour", contour_strokes, ContourSettings)
 register_pfm("sketch_squares", sketch_squares, SketchSquaresSettings)
+register_pfm("stipple", stipple, StippleSettings)
 
 __all__ = [
     "PFMRegistry",

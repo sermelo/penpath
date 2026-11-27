@@ -222,14 +222,14 @@ output_path: "{output}"
 
 
 class TestInfoPFMs:
-    """`penpath info pfms` lists both registered PFMs in every format."""
+    """`penpath info pfms` lists all registered PFMs in every format."""
 
     def test_json_lists_registered_pfms_and_qualified_presets(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["info", "pfms", "--format", "json"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.stdout)
         rows = {row["name"]: row for row in data["available_pfms"]}
-        assert set(rows) == {"sketch_lines", "sketch_squares", "contour"}
+        assert set(rows) == {"sketch_lines", "sketch_squares", "contour", "stipple"}
         assert rows["sketch_lines"]["settings_model"] == "SketchLinesSettings"
         assert rows["sketch_lines"]["presets"]  # legacy bare names still listed
         squares = rows["sketch_squares"]
