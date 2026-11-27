@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import random
+from dataclasses import dataclass
 from itertools import pairwise
 from typing import TYPE_CHECKING
 
@@ -64,6 +65,12 @@ class HatchSettings(BaseModel):
     serpentine : bool
         Reverse every other line so the end of one line is near the start of
         the next. Default True.
+    join_runs : bool
+        Join runs on adjacent lines of the same band into continuous zig-zag
+        strokes: the end of a run connects to the start of the nearest
+        overlapping run on the next line, drawing the short connector, and a
+        run without an overlapping partner starts a new stroke. Requires
+        ``serpentine``. Default False.
     jitter : float
         Seeded perpendicular position wobble in millimetres (>= 0). Default
         0.0, i.e. perfectly straight parallel lines.
@@ -78,6 +85,7 @@ class HatchSettings(BaseModel):
     min_gap: float = Field(default=0.3, ge=0.0)
     variable_spacing: bool = False
     serpentine: bool = True
+    join_runs: bool = False
     jitter: float = Field(default=0.0, ge=0.0)
     seed: int | None = None
 
@@ -100,7 +108,7 @@ class HatchSettings(BaseModel):
         return value
 
     def model_post_init(self, __context: object) -> None:
-        """Check the paired band definitions agree and increase in darkness."""
+        """Check the paired bands, thresholds and joining requirements."""
         if len(self.angles) != len(self.thresholds):
             raise ValueError(
                 "angles and thresholds must have the same length "
@@ -108,6 +116,10 @@ class HatchSettings(BaseModel):
             )
         if any(later <= earlier for earlier, later in pairwise(self.thresholds)):
             raise ValueError(f"thresholds must be strictly increasing; got {self.thresholds}")
+        if self.join_runs and not self.serpentine:
+            raise ValueError(
+                "join_runs requires serpentine=True; set serpentine=true or join_runs=false"
+            )
 
 
 def with_angle_offset(settings: HatchSettings, degrees: float) -> HatchSettings:
@@ -192,6 +204,21 @@ def _keep_runs(
     return kept
 
 
+@dataclass
+class _SerpentinePath:
+    """A stroke being joined across adjacent lines of one band.
+
+    ``low``/``high`` are the projection interval of the most recent run along
+    the band direction, used to find overlapping runs on the next line;
+    ``end`` is that run's exit point, the start of the next short connector.
+    """
+
+    points: list[tuple[float, float]]
+    low: float
+    high: float
+    end: tuple[float, float]
+
+
 def hatch_strokes(
     image: Image.Image,
     settings: HatchSettings,
@@ -206,8 +233,13 @@ def hatch_strokes(
     clipped to the image, and sampled. Consecutive samples at or above
     ``thresholds[i]`` form runs; gaps shorter than ``min_gap`` are bridged and
     runs shorter than ``min_length`` are dropped. Jitter offsets each line
-    perpendicular to its direction using a seeded random generator, and
-    ``serpentine`` reverses every other line. Output is in image pixel
+    perpendicular to its direction using a seeded random generator and
+    ``serpentine`` reverses every other line. When ``join_runs`` is on (which
+    requires ``serpentine``), runs on adjacent lines of the same band are
+    joined into continuous zig-zag strokes: the end of a run connects to the
+    start of the nearest overlapping run on the next line, drawing the short
+    connector, and a run without an overlapping partner starts a new stroke.
+    Otherwise each run stays its own stroke. Output is in image pixel
     coordinates, always inside the image, with no zero-length strokes.
 
     Parameters
@@ -277,6 +309,7 @@ def hatch_strokes(
             for py in (0.0, float(height - 1))
         )
 
+        active: list[_SerpentinePath] = []
         line_index = 0
         offset = -radius
         while offset <= radius + _EPS:
@@ -311,15 +344,58 @@ def hatch_strokes(
                     min_gap_px,
                     min_length_px,
                 )
-                for start, end in kept:
-                    begin, finish = points[start], points[end]
-                    if settings.serpentine and line_index % 2 == 1:
-                        begin, finish = finish, begin
-                    stroke = LineString([begin, finish])
-                    if stroke.is_valid and stroke.length > 0.0:
-                        strokes.append(stroke)
+                if not settings.join_runs:
+                    for start, end in kept:
+                        begin, finish = points[start], points[end]
+                        if settings.serpentine and line_index % 2 == 1:
+                            begin, finish = finish, begin
+                        stroke = LineString([begin, finish])
+                        if stroke.is_valid and stroke.length > 0.0:
+                            strokes.append(stroke)
+                else:
+                    next_active: list[_SerpentinePath] = []
+                    continued: set[int] = set()
+                    for start, end in kept:
+                        entry, far = points[start], points[end]
+                        if line_index % 2 == 1:
+                            entry, far = far, entry
+                        projection_start = (
+                            points[start][0] * direction_x + points[start][1] * direction_y
+                        )
+                        projection_end = points[end][0] * direction_x + points[end][1] * direction_y
+                        low, high = (
+                            min(projection_start, projection_end),
+                            max(projection_start, projection_end),
+                        )
+                        best_index = -1
+                        best_distance = math.inf
+                        for index, path in enumerate(active):
+                            if index in continued or max(path.low, low) > min(path.high, high):
+                                continue
+                            distance = math.dist(path.end, entry)
+                            if distance < best_distance:
+                                best_index, best_distance = index, distance
+                        if best_index < 0:
+                            next_active.append(_SerpentinePath([entry, far], low, high, far))
+                        else:
+                            path = active[best_index]
+                            path.points.extend((entry, far))
+                            path.low, path.high, path.end = low, high, far
+                            continued.add(best_index)
+                            next_active.append(path)
+                    for index, path in enumerate(active):
+                        if index not in continued:
+                            stroke = LineString(path.points)
+                            if stroke.is_valid and stroke.length > 0.0:
+                                strokes.append(stroke)
+                    active = next_active
             offset += spacing_px
             line_index += 1
+
+        for path in active:
+            stroke = LineString(path.points)
+            if stroke.is_valid and stroke.length > 0.0:
+                strokes.append(stroke)
 
     return strokes
 

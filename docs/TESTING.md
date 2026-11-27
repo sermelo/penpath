@@ -2072,3 +2072,148 @@ not an error tile (those show a `Type: message` line). Work is bounded by
 both and `--columns` must be positive or the command exits 2. There is no
 per-tile timeout flag: use the shell's `timeout` as above. **QA Tester and Code
 Reviewer must open the committed PNG themselves** before accepting this task.
+
+---
+
+## Hatch acceptance gate (LUC-167, 2026-11-27)
+
+The Hatch PFM is accepted by **looking at the previews** and comparing them with
+their source images. SSIM is printed as evidence beside the readability floors,
+not as the gate: a blank page outscores several plotted pages on SSIM. The CI
+gate checks that the lines follow the source's tone, that the black-to-white
+ramp gets less ink from left to right, that no rendered line spacing falls
+below the pen width, and that conversion stays fast. LUC-186 made `--dpi` real
+DPI, so the 3 px/mm previews below were rendered with
+`penpath preview --px-per-mm 3` (444x630 px for A5); `--dpi 3` would be 3 DPI.
+
+Reproduce the numbers with:
+
+```bash
+uv run pytest tests/integration/test_hatch_gate.py -s
+PYTHONPATH=tests/integration uv run python tests/integration/hatch_gate.py
+```
+
+The harness (`tests/integration/hatch_gate.py`) runs the real `penpath convert`
+CLI with `--pfm hatch:default` and `--pfm hatch:crosshatch`, A5 paper (148x210
+mm, 10 mm margin), one 0.4 mm black pen, `-s seed=42`, `--no-vpype` and the
+default working resolution (525 px long side for the photos). It reuses the
+Sketch Lines gate's `measure_plot`, `simulate_svg`, `write_blank_svg` and
+`make_ideal_plot` and the Stipple gate's `geometry_problems`, `plot_cost`,
+`write_random_svg` and `working_image_size` without changing either gate. Ink
+is a simulated pixel darker than 128 at 96/25.4 px/mm; the blank SVG keeps the
+same page and placement metadata, the random SVG has as many seeded two-point
+strokes as the drawing, and the ideal is the Floyd-Steinberg two-ink tone map.
+
+### Measured values
+
+Python 3.14.10, seed 42, vpype installed but bypassed with `--no-vpype`.
+SSIM is algorithm / blank / random; the other columns are the algorithm's.
+
+| image | preset | SSIM a/b/r | cov W | cov H | bbox | ink min | tone | rank | dark ink | strokes | lifts | pen-down mm | tiny | wall s |
+|-------|--------|------------|------:|------:|-----:|--------:|-----:|-----:|---------:|--------:|------:|------------:|-----:|-------:|
+| `face.jpg` | `hatch:default` | 0.5186 / 0.2618 / 0.0456 | 0.998 | 0.998 | 0.996 | 0.0196 | 5.34 | 0.885 | 0.818 | 295 | 294 | 32862.6 | 0 | 1.93 |
+| `face.jpg` | `hatch:crosshatch` | 0.5323 / 0.2618 / 0.0277 | 0.998 | 0.998 | 0.996 | 0.0185 | 5.08 | 0.973 | 0.954 | 3252 | 3237 | 51403.7 | 0 | 6.48 |
+| `photo.jpg` | `hatch:default` | 0.5733 / 0.4993 / 0.1910 | 0.998 | 0.997 | 0.995 | 0.0436 | 1.54 | 0.911 | 0.825 | 49 | 48 | 17000.8 | 0 | 1.20 |
+| `photo.jpg` | `hatch:crosshatch` | 0.5576 / 0.4993 / 0.0714 | 0.998 | 0.997 | 0.995 | 0.0449 | 1.71 | 0.950 | 0.943 | 1186 | 1184 | 26044.5 | 0 | 2.74 |
+| `gradient.png` | `hatch:default` | 0.6687 / 0.6508 / 0.6146 | 0.751 | 0.997 | 0.749 | 0.0001 | 104.23 | 0.815 | 0.000 | 2 | 1 | 13942.0 | 0 | 1.17 |
+| `gradient.png` | `hatch:crosshatch` | 0.5665 / 0.6508 / 0.0862 | 0.800 | 0.997 | 0.798 | 0.0106 | 8.33 | 0.989 | 0.000 | 358 | 352 | 21897.4 | 0 | 2.84 |
+| `sphere.png` | `hatch:default` | 0.8200 / 0.7405 / 0.6510 | 0.749 | 0.749 | 0.562 | 0.0000 | 467.23 | 0.922 | 0.812 | 5 | 4 | 8730.5 | 0 | 1.37 |
+| `sphere.png` | `hatch:crosshatch` | 0.8071 / 0.7405 / 0.0943 | 0.750 | 0.750 | 0.563 | 0.0000 | 873.04 | 0.944 | 0.911 | 444 | 443 | 13620.6 | 0 | 1.52 |
+
+Every blank page scores 0 covered width, height and area, 0 ink per cell, tone
+ratio 1.00 and rank 0. The random scribble spans the placement but has a
+negative rank on both photos (default -0.042, crosshatch -0.093) and on the
+face (-0.597 / -0.604), and a tone ratio of at most 0.85, so the rank and tone
+floors reject it where full-page coverage cannot. The ideal tone map scores
+0.9741–0.9871 SSIM and is evidence only. The recorded drawing lengths are from
+`compute_machine_cost`; every drawing has zero segments under 0.5 mm and no
+invalid or off-page strokes. `hatch:default` now sets `join_runs=true` and
+`min_gap=0.5`, so its runs become continuous zig-zag strokes (a handful of
+strokes and lifts instead of one per line); `hatch:crosshatch` keeps the
+unjoined serpentine behaviour and its part-3 likeness and cost numbers.
+
+### Enforced readability floors
+
+The floors follow the project rule `max(higher baseline + 0.05, measured -
+0.05)`, rounded down; the spread floor uses a 5% margin as in the Stipple gate.
+The part-3 floors are deliberately **kept**: for several measures the joined
+`hatch:default` is now the weaker drawing, but retaining the stricter values is
+allowed and no floor was lowered. All eight drawings still clear every floor.
+
+| Measure | `face.jpg` floor | `photo.jpg` floor | Derivation |
+|---------|-----------------:|------------------:|------------|
+| SSIM | 0.48 | 0.54 | Face: 0.48 kept; weakest drawing is now default 0.5186. Photo: blank 0.4993 + 0.05 = 0.5493 → 0.54, below both drawings (crosshatch 0.5576). |
+| Covered width / height | 0.94 / 0.94 | 0.94 / 0.94 | Weakest drawing 0.998 / 0.997 minus 0.05, rounded down. Random strokes span the page too, so rank and tone reject them. |
+| Bounding-box area | 0.94 | 0.94 | Weakest drawing 0.995 minus 0.05, rounded down. |
+| Ink per 4x4 cell | 0.017 | 0.017 | Weakest drawing 0.0185 with a 5% margin (0.0176); floor 0.017 retained. |
+| Dark/light tone ratio | 5.0 | 1.5 | Floor 5.0 / 1.5 retained; weakest drawing 5.08 (crosshatch) / 1.54 (default). The random scribble reaches only 0.38 / 0.58 and the blank scores 1.00. |
+| Tile rank | 0.75 | 0.86 | Floor 0.75 / 0.86 retained; weakest drawing 0.885 / 0.911 (both default). Both baselines score below zero. |
+| Dark textured tile ink | 0.75 | 0.75 | Floor 0.75 retained; weakest drawing 0.818 (default). No upper cap: `hatch:crosshatch` fills dark textured tiles to 0.943–0.954 by design, like the Spiral gate's bold presets. |
+
+### Gradient tone strips
+
+The committed `gradient.png` is black at the left and white at the right, so
+the simulated **ink share** falls from left to right (equivalently the mean
+grey level rises). Eight equal vertical strips inside the recorded placement
+measured:
+
+| preset | strips 1→8 | largest rise | strip 1 − strip 8 |
+|--------|------------|-------------:|------------------:|
+| `hatch:default` | 0.8080, 0.8064, 0.8088, 0.8108, 0.5627, 0.5687, 0.0031, 0.0000 | 0.0060 | 0.8080 |
+| `hatch:crosshatch` | 0.9554, 0.9404, 0.9044, 0.8289, 0.7570, 0.5586, 0.2219, 0.0000 | 0.0000 | 0.9554 |
+
+The gate allows a rise of at most `STRIP_TOLERANCE = 0.01` between neighbouring
+strips (sampling noise at the band threshold) and requires the dark end to
+exceed the light end by at least `STRIP_DARK_END_MARGIN = 0.5`. Both presets
+pass; a blank page scores 0.000 in every strip.
+
+### Spacing, blank, black, determinism and time
+
+An all-black 200x200 page converted through the CLI draws 2 joined strokes with
+`hatch:default` (one continuous zig-zag per band) and 613 unjoined lines with
+`hatch:crosshatch`. Grouping the long line segments of each direction and
+clustering near-identical perpendicular offsets (within 0.15 mm) gives
+minimum spacings of 0.9998 / 0.9998 mm (45° / 135°) for `hatch:default` and
+0.9998 / 1.0000 / 1.0000 / 1.0000 mm (45° / 135° / 0° / 90°) for
+`hatch:crosshatch`, all above the 0.4 mm pen width with a 0.01 mm measurement
+tolerance. An all-white page emits no strokes (the CLI writes no SVG at all),
+the black page draws every configured band, and two runs of
+`--pfm hatch:default -s jitter=0.5 -s seed=42` on the same image are
+byte-identical. The part 1 unit test `test_tiny_spacing_respects_pen_width`
+still pins the clamp with `spacing=0.001`. `photo.jpg` converted in 1.17–6.48 s
+across the eight gate conversions at the default working resolution with
+`--no-vpype`; the gate's wall-time cap is the acceptance limit of 30 s, left
+generous for a loaded CI runner.
+
+### Pen lifts on `photo.jpg`: 5x criterion met
+
+The task's 5x pen-lift criterion is **met** by `hatch:default` and enforced by a
+regular assertion (the part-3 strict xfail was replaced, not skipped):
+
+| drawing | paper / pen / resolution | strokes | pen lifts |
+|---------|--------------------------|--------:|----------:|
+| `hatch:default` (`join_runs=true`, `min_gap=0.5`) | A5, 0.4 mm, default 525 px | 49 | **48** |
+| `sketch_lines` | A5, 0.4 mm, default 525 px | 285 | **284** |
+
+48 * 5 = 240 <= 284: hatch uses **5.92x fewer** pen lifts. Joining alone left
+77 lifts (3.69x fewer); joining with the preset's wider 0.5 mm gap bridging
+collapses connected dark regions into a handful of continuous zig-zag strokes.
+`hatch:crosshatch` deliberately stays unjoined: joining it broke the likeness
+floors (photo SSIM 0.5144 below 0.54, face tone 4.30 below 5.0), and no
+threshold separates the two presets, so the opt-in `join_runs` setting is off
+for every preset except `hatch:default`. No floor or check was lowered.
+
+### Visual acceptance (required)
+
+Each committed PNG was opened with the `read` tool and compared with its source
+by eye; none returned an image error. They are 444x630 px renders (`--px-per-mm
+3`) of the gate settings above.
+
+| image | preset | preview | What is visible |
+|-------|--------|---------|-----------------|
+| `face.jpg` | `hatch:default` | [face_hatch_default.png](../images/luc-167/face_hatch_default.png) | An astronaut in a bright white suit against a densely crosshatched moon and dark table; the joined lines leave broad pale areas for the suit, helmet rim and round helmet on the table, with the face, visor and chest controls still readable, while small suit detail is lost and the moon weave is denser. |
+| `face.jpg` | `hatch:crosshatch` | [face_hatch_crosshatch.png](../images/luc-167/face_hatch_crosshatch.png) | The same figure with horizontal and vertical bands added: the background is near-solid dark, the suit stays pale and the face/visor cluster still reads, but small chest and flag detail is lost in the heavier weave. |
+| `photo.jpg` | `hatch:default` | [photo_hatch_default.png](../images/luc-167/photo_hatch_default.png) | Long continuous 45° lines cross the open sky and the lake; the snowy ridge, dark right-hand forest and bright reflection gap still match the source, while the sky is lighter and more regularly striped than before joining. |
+| `photo.jpg` | `hatch:crosshatch` | [photo_hatch_crosshatch.png](../images/luc-167/photo_hatch_crosshatch.png) | The same landscape with a tighter horizontal/vertical grid: the sky stays open, the forest on the right is darker and fuller, and the lake reflection is busier; the ridge and shoreline still read, fine tree texture does not. |
+| `gradient.png` | `hatch:default` | [gradient_hatch_default.png](../images/luc-167/gradient_hatch_default.png) | The left half is a dense 45°/135° crosshatch and the right half thins to long, widely spaced 45° lines with white gaps, matching the source's black-left to white-right ramp. |
+| `sphere.png` | `hatch:default` | [sphere_hatch_default.png](../images/luc-167/sphere_hatch_default.png) | A round disc on empty paper with a large pale upper-left crescent where the source highlight is and denser crosshatch toward the lower-right rim; the silhouette and light direction still read, though joining opens the mid-tones into a hollow-looking crescent. |
