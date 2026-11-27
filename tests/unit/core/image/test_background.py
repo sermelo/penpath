@@ -11,6 +11,7 @@ from skimage.color import rgb2lab
 
 from penpath.core import (
     DEFAULT_BACKGROUND_THRESHOLD,
+    background_mask,
     detect_paper_color,
     mask_background,
     remove_background,
@@ -18,6 +19,9 @@ from penpath.core import (
 )
 from penpath.core.image import (
     BackgroundResult,
+)
+from penpath.core.image import (
+    background_mask as image_background_mask,
 )
 from penpath.core.image import (
     detect_paper_color as image_detect_paper_color,
@@ -180,6 +184,49 @@ class TestRemoveBackground:
     def test_core_and_image_packages_export_background_helpers(self) -> None:
         assert image_detect_paper_color is detect_paper_color
         assert image_remove_background is remove_background
+        assert image_background_mask is background_mask
+
+    def test_background_mask_exposes_the_global_paper_rule(self) -> None:
+        image = _with_drawing(np.array([60, 58, 55], dtype=np.uint8))
+        expected = np.all(np.asarray(mask_background(image, method="global").image) == 255, axis=-1)
+        actual = background_mask(image)
+
+        assert actual.dtype == np.bool_
+        assert actual.shape == (120, 120)
+        assert np.array_equal(actual, expected)
+
+    def test_background_mask_uses_explicit_paper_color_and_threshold(self) -> None:
+        colors = np.array(
+            [[128, 128, 128], [135, 135, 135], [150, 150, 150], [160, 160, 160]],
+            dtype=np.uint8,
+        )
+        image = Image.fromarray(colors.reshape(2, 2, 3))
+
+        assert background_mask(image, paper_color="#808080", threshold=10).ravel().tolist() == [
+            True,
+            True,
+            True,
+            False,
+        ]
+        assert background_mask(image, paper_color="#808080", threshold=0).ravel().tolist() == [
+            True,
+            False,
+            False,
+            False,
+        ]
+
+    @pytest.mark.parametrize("threshold", [-1.0, float("nan"), float("inf")])
+    def test_background_mask_rejects_invalid_threshold(self, threshold: float) -> None:
+        with pytest.raises(ValueError, match="finite, non-negative"):
+            background_mask(_page(), threshold=threshold)
+
+    def test_background_mask_rejects_invalid_color(self) -> None:
+        with pytest.raises(ValueError, match="Invalid paper colour"):
+            background_mask(_page(), paper_color="not-a-colour")
+
+    def test_background_mask_empty_image_raises(self) -> None:
+        with pytest.raises(ValueError, match="at least one pixel"):
+            background_mask(Image.new("RGB", (1, 0)))
 
 
 class TestBackgroundMethod:

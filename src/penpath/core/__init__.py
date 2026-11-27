@@ -41,6 +41,7 @@ from penpath.core.image import (
     adapt_saturation,
     apply_working_resolution,
     auto_equalize,
+    background_mask,
     boost_saturation,
     box_blur,
     brightness,
@@ -64,6 +65,7 @@ from penpath.core.image import (
 from penpath.core.likeness import (
     compute_edge_likeness,
     compute_likeness,
+    compute_masked_likeness,
     prepare_for_comparison,
 )
 from penpath.core.models import (
@@ -225,6 +227,7 @@ __all__ = [
     "adapt_saturation",
     "apply_working_resolution",
     "auto_equalize",
+    "background_mask",
     "boost_saturation",
     "box_blur",
     "brightness",
@@ -233,6 +236,7 @@ __all__ = [
     "compute_layer_coverage",
     "compute_likeness",
     "compute_machine_cost",
+    "compute_masked_likeness",
     "contour_strokes",
     "contrast",
     "detect_paper_color",

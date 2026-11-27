@@ -35,10 +35,11 @@ _README = Path(__file__).resolve().parents[2] / "README.md"
 # shlex output, so prose edits and trailing comments do not create drift. Any
 # other new ``penpath`` command is run and must exit 0.
 _SKIPPED: dict[str, str] = {
-    "penpath evaluate photo.jpg plot.svg --json | jq .likeness": "jq is an external tool",
-    "penpath evaluate photo.jpg plot.svg --json | jq {likeness, total: .machine_cost.total}": (
+    "penpath evaluate photo.jpg plot.svg --json | jq {likeness, masked_likeness}": (
         "jq is an external tool"
     ),
+    "penpath evaluate photo.jpg plot.svg --json | jq "
+    "{likeness, masked_likeness, total: .machine_cost.total}": "jq is an external tool",
 }
 
 _REDIRECT = re.compile(r"^(?P<fd>2)?(?P<op>>>|>)(?P<target>.*)$")

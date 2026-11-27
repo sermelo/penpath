@@ -121,6 +121,46 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
+def _mostly_white_svg(paths: str) -> str:
+    """A full-page placement with one stroke group on a 100 mm page."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:penpath="http://penpath.org/ns/penpath"
+     width="100mm" height="100mm" viewBox="0 0 100 100">
+  <metadata><penpath:image-placement x="0" y="0" width="100" height="100"/></metadata>
+  <g stroke="#000000" stroke-width="1">
+    <path d="{paths}" fill="none"/>
+  </g>
+</svg>"""
+
+
+@pytest.fixture
+def mostly_white_source(tmp_path: Path) -> Path:
+    """A white page with a thin dark square, about 2% of its pixels inked."""
+    image = Image.new("RGB", (200, 200), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([80, 80, 119, 119], outline=(20, 20, 20), width=2)
+    path = tmp_path / "mostly_white.png"
+    image.save(path)
+    return path
+
+
+@pytest.fixture
+def near_blank_plot(tmp_path: Path) -> Path:
+    """One tiny stroke in the middle of the dark square."""
+    path = tmp_path / "near_blank.svg"
+    path.write_text(_mostly_white_svg("M 49.5 49.5 L 50.5 50.5"), encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def matching_plot(tmp_path: Path) -> Path:
+    """The dark square's outline, drawn where the source has ink."""
+    path = tmp_path / "matching.svg"
+    path.write_text(_mostly_white_svg("M 40 40 L 60 40 L 60 60 L 40 60 Z"), encoding="utf-8")
+    return path
+
+
 PLACED_DPI = 10
 PLACEMENT_WIDTH_MM = PLACEMENT_HEIGHT_MM = 70
 PLACEMENTS = ((20.0, 30.0), (60.0, 90.0), (100.0, 150.0))
@@ -364,6 +404,8 @@ class TestEvaluate:
         data = json.loads(result.stdout)
         assert isinstance(data["likeness"], float)
         assert 0.0 <= data["likeness"] <= 1.0
+        assert isinstance(data["masked_likeness"], float)
+        assert 0.0 <= data["masked_likeness"] <= 1.0
         cost = data["machine_cost"]
         expected = {
             "drawing_length_mm",
@@ -605,6 +647,98 @@ class TestEvaluateEdgeLikeness:
         assert data["edge_likeness"] == pytest.approx(0.8756, abs=0.001)
         assert data["edge_likeness"] > 0.70
         assert data["edge_likeness"] > data["likeness"] - 0.15
+
+
+class TestEvaluateMaskedLikeness:
+    """Ink-only SSIM rejects a near-blank plot that whole-page SSIM rewards."""
+
+    def test_json_adds_masked_likeness_without_removing_keys(
+        self, runner: CliRunner, mostly_white_source: Path, matching_plot: Path
+    ) -> None:
+        result = runner.invoke(
+            main, ["evaluate", str(mostly_white_source), str(matching_plot), "--json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert {"likeness", "masked_likeness", "edge_likeness", "machine_cost"} <= set(data)
+        assert isinstance(data["masked_likeness"], float)
+        assert 0.0 <= data["masked_likeness"] <= 1.0
+        cost = data["machine_cost"]
+        assert "ink_coverage_pct" in cost["total"]
+        assert all("ink_coverage_pct" in row for row in cost["per_layer"].values())
+
+    def test_human_output_labels_both_ssim_scores(
+        self, runner: CliRunner, mostly_white_source: Path, matching_plot: Path
+    ) -> None:
+        result = runner.invoke(main, ["evaluate", str(mostly_white_source), str(matching_plot)])
+
+        assert result.exit_code == 0, result.output
+        assert "SSIM (whole page)" in result.output
+        assert "SSIM (ink only)" in result.output
+        assert "Edge SSIM" in result.output
+        assert "Coverage" in result.output
+
+    def test_near_blank_plot_looks_good_only_on_the_whole_page(
+        self, runner: CliRunner, mostly_white_source: Path, near_blank_plot: Path
+    ) -> None:
+        result = runner.invoke(
+            main, ["evaluate", str(mostly_white_source), str(near_blank_plot), "--json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        # Measured with this fixture and the shipped 96/25.4 px/mm defaults.
+        assert data["likeness"] == pytest.approx(0.9605, abs=0.001)
+        assert data["masked_likeness"] == pytest.approx(0.0260, abs=0.001)
+        assert data["likeness"] > 0.9
+        assert data["masked_likeness"] < data["likeness"] - 0.5
+
+    def test_matching_plot_scores_clearly_higher_on_ink(
+        self,
+        runner: CliRunner,
+        mostly_white_source: Path,
+        near_blank_plot: Path,
+        matching_plot: Path,
+    ) -> None:
+        def scores(drawing: Path) -> dict[str, float]:
+            result = runner.invoke(
+                main, ["evaluate", str(mostly_white_source), str(drawing), "--json"]
+            )
+            assert result.exit_code == 0, result.output
+            return json.loads(result.stdout)
+
+        tiny = scores(near_blank_plot)
+        matching = scores(matching_plot)
+
+        # Measured with this fixture; the whole-page score also improves, but
+        # it is the ink-only gap that rejects the near-blank plot.
+        assert matching["likeness"] == pytest.approx(0.9885, abs=0.001)
+        assert matching["masked_likeness"] == pytest.approx(0.6377, abs=0.001)
+        assert matching["masked_likeness"] > tiny["masked_likeness"] + 0.3
+        assert tiny["likeness"] > 0.9
+        assert matching["likeness"] > 0.9
+
+    def test_coverage_and_warning_are_unaffected_by_the_new_score(
+        self, runner: CliRunner, mostly_white_source: Path, matching_plot: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            [
+                "evaluate",
+                str(mostly_white_source),
+                str(matching_plot),
+                "--json",
+                "--coverage-warn",
+                "0",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        cost = json.loads(result.stdout)["machine_cost"]
+        assert cost["total"]["num_strokes"] == 1
+        assert 0.0 < cost["total"]["ink_coverage_pct"] < 50.0
+        assert "Warning" not in result.stderr
 
 
 class TestEvaluatePenNames:
@@ -854,4 +988,5 @@ class TestCommandHelp:
 
         assert result.exit_code == 0
         assert "greyscale SSIM" in result.output
+        assert "ink-only SSIM" in result.output
         assert "edge SSIM" in result.output

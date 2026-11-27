@@ -3,6 +3,7 @@
 from penpath.core.image.background import (
     DEFAULT_BACKGROUND_THRESHOLD,
     BackgroundResult,
+    background_mask,
     detect_paper_color,
     mask_background,
     remove_background,
@@ -60,6 +61,7 @@ __all__ = [
     "adapt_saturation",
     "apply_working_resolution",
     "auto_equalize",
+    "background_mask",
     "boost_saturation",
     "box_blur",
     "brightness",

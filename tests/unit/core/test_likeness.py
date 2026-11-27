@@ -8,9 +8,11 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
+from penpath.core import DEFAULT_BACKGROUND_THRESHOLD
 from penpath.core.likeness import (
     compute_edge_likeness,
     compute_likeness,
+    compute_masked_likeness,
     prepare_for_comparison,
 )
 from penpath.core.simulation import simulate_plot
@@ -26,13 +28,18 @@ def rect_from_px(
 
 def test_public_api_exports():
     """Test that likeness functions are available via the public penpath.core API."""
+    from penpath.core import background_mask as public_background_mask
     from penpath.core import compute_edge_likeness as public_compute_edge_likeness
     from penpath.core import compute_likeness as public_compute_likeness
+    from penpath.core import compute_masked_likeness as public_compute_masked_likeness
     from penpath.core import prepare_for_comparison as public_prepare_for_comparison
+    from penpath.core.image import background_mask as image_background_mask
 
     assert public_compute_edge_likeness is compute_edge_likeness
     assert public_compute_likeness is compute_likeness
+    assert public_compute_masked_likeness is compute_masked_likeness
     assert public_prepare_for_comparison is prepare_for_comparison
+    assert public_background_mask is image_background_mask
 
 
 class TestPrepareForComparison:
@@ -430,6 +437,114 @@ class TestComputeEdgeLikeness:
         for simulated in images:
             for original in images:
                 score = compute_edge_likeness(simulated, original, rect)
+                assert 0.0 <= score <= 1.0
+
+
+class TestComputeMaskedLikeness:
+    """SSIM is averaged only over the ink pixels of the source image."""
+
+    def create_mostly_white(self, size: int = 200) -> Image.Image:
+        """A white page with a thin dark square, about 2% of the pixels."""
+        image = Image.new("RGB", (size, size), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle([80, 80, 119, 119], outline=(20, 20, 20), width=2)
+        return image
+
+    def create_tiny_plot(self, size: int = 200) -> Image.Image:
+        """A near-blank plot: one two-pixel stroke in the middle of the square."""
+        image = Image.new("RGB", (size, size), "white")
+        draw = ImageDraw.Draw(image)
+        draw.line([(99, 99), (101, 101)], fill="black", width=1)
+        return image
+
+    def create_matching_plot(self, size: int = 200) -> Image.Image:
+        """A plot that draws the source square's outline."""
+        image = Image.new("RGB", (size, size), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle([80, 80, 119, 119], outline="black", width=2)
+        return image
+
+    def test_identical_images_score_one(self) -> None:
+        source = self.create_mostly_white()
+        score = compute_masked_likeness(source, source, rect_from_px(0, 0, 200, 200))
+        assert score == pytest.approx(1.0)
+
+    def test_near_blank_plot_keeps_whole_page_but_loses_ink_score(self) -> None:
+        """The mostly-white page gives the tiny stroke a free high whole-page score."""
+        source = self.create_mostly_white()
+        plot = self.create_tiny_plot()
+        rect = rect_from_px(0, 0, 200, 200)
+
+        whole = compute_likeness(plot, source, rect)
+        masked = compute_masked_likeness(plot, source, rect)
+
+        assert whole > 0.9
+        assert masked < 0.15
+        assert masked < whole - 0.5
+
+    def test_matching_plot_scores_clearly_higher_on_ink(self) -> None:
+        source = self.create_mostly_white()
+        rect = rect_from_px(0, 0, 200, 200)
+        tiny = compute_masked_likeness(self.create_tiny_plot(), source, rect)
+        matching = compute_masked_likeness(self.create_matching_plot(), source, rect)
+
+        assert matching > 0.4
+        assert matching > tiny + 0.3
+
+    def test_all_white_source_scores_zero(self) -> None:
+        """No ink means no structure to judge; a blank page must not score well."""
+        blank = Image.new("RGB", (200, 200), "white")
+        score = compute_masked_likeness(blank, blank, rect_from_px(0, 0, 200, 200))
+        assert score == 0.0
+
+    def test_explicit_paper_color_matches_detected_paper(self) -> None:
+        source = self.create_mostly_white()
+        plot = self.create_matching_plot()
+        rect = rect_from_px(0, 0, 200, 200)
+
+        detected = compute_masked_likeness(plot, source, rect)
+        explicit = compute_masked_likeness(plot, source, rect, paper_color="#FFFFFF")
+
+        assert explicit == pytest.approx(detected)
+
+    def test_threshold_wider_than_all_distances_has_no_ink_to_score(self) -> None:
+        source = self.create_mostly_white()
+        plot = self.create_matching_plot()
+        rect = rect_from_px(0, 0, 200, 200)
+        assert compute_masked_likeness(plot, source, rect, threshold=200.0) == 0.0
+
+    def test_defaults_match_compute_likeness(self) -> None:
+        masked = inspect.signature(compute_masked_likeness).parameters
+        grey = inspect.signature(compute_likeness).parameters
+        for name in ("target_size", "blur_sigma", "dpi_px_per_mm"):
+            assert masked[name].default == grey[name].default
+        assert masked["paper_color"].default is None
+        assert masked["threshold"].default == DEFAULT_BACKGROUND_THRESHOLD
+
+    def test_placement_crop_ignores_ink_outside_the_rectangle(self) -> None:
+        simulated = Image.new("RGB", (400, 400), "white")
+        draw = ImageDraw.Draw(simulated)
+        draw.rectangle([50, 50, 149, 149], outline="black", width=2)
+        draw.rectangle([250, 50, 349, 149], outline="black", width=2)
+        original = simulated.crop((50, 50, 150, 150))
+
+        cropped = compute_masked_likeness(simulated, original, rect_from_px(50, 50, 100, 100))
+        whole_page = compute_masked_likeness(simulated, original, rect_from_px(0, 0, 400, 400))
+
+        assert cropped > 0.7
+        assert cropped > whole_page + 0.2
+
+    def test_score_in_range(self) -> None:
+        rect = rect_from_px(0, 0, 200, 200)
+        images = [
+            Image.new("RGB", (200, 200), "white"),
+            self.create_mostly_white(),
+            self.create_tiny_plot(),
+            self.create_matching_plot(),
+        ]
+        for plot in images:
+            for source in images:
+                score = compute_masked_likeness(plot, source, rect)
                 assert 0.0 <= score <= 1.0
 
 
