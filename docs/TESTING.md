@@ -1779,3 +1779,131 @@ the real CLI output (`--paper 190x190,10 --pen 0.4 -s seed=42 --no-vpype`,
 
 No shipped default was changed by this gate: `StippleSettings()` and its three
 presets already pass every floor and cap above.
+
+---
+
+## Spiral Sawtooth gate (LUC-138, 2026-11-27)
+
+Acceptance is **visual**: open the committed previews and compare them with the
+free Santa portrait. The CI numbers prove one continuous, non-empty, dark-following
+stroke at a reasonable pen cost; they do not prove a portrait likeness. SSIM is
+evidence only and never a floor here.
+
+Reproduce the table with:
+
+```bash
+timeout 120 uv run pytest tests/integration/test_spiral_gate.py -s
+```
+
+On Python 3.14.10 with vpype 1.15 this reported `16 passed in 26.96 s`. The harness
+converts the algorithm defaults and all three qualified presets on `face.jpg`,
+`photo.jpg` and `santa.jpg` with the real CLI:
+`--pfm <id> -s seed=42 --paper 190x190,0 --pen 0.4,#000000,fineliner --dpi 96
+--max-resolution 384`. It reuses `sketch_lines_gate.py`'s `measure_plot`,
+`simulate_svg`, `write_blank_svg` and `write_random_svg` and `contour_gate.py`'s
+`geometry_problems`, `plot_cost` and `working_image_size`. "Raw" strokes are from
+`spiral_strokes` on the working image recorded in the SVG; "svg" and lifts come
+from the exported drawing, lifts via `penpath evaluate --json`.
+
+### Measured values
+
+| image | preset | raw/svg | lifts | cov W | cov H | bbox | ink min | tone | rank | dark ink | mm | tiny | SSIM |
+|-------|--------|--------:|------:|------:|------:|-----:|--------:|-----:|-----:|---------:|---:|-----:|-----:|
+| `face.jpg` | default | 1/1 | 0 | 0.963 | 0.960 | 0.924 | 0.0128 | 1.57 | 0.133 | 0.796 | 29798.6 | 0 | 0.270 |
+| `face.jpg` | fine | 1/1 | 0 | 0.978 | 0.975 | 0.954 | 0.0114 | 1.55 | 0.161 | 0.793 | 30586.1 | 0 | 0.402 |
+| `face.jpg` | bold | 1/1 | 0 | 0.924 | 0.933 | 0.863 | 0.0074 | 0.97 | -0.048 | 0.927 | 38223.1 | 0 | 0.169 |
+| `face.jpg` | parabolic | 2/2 | 1 | 0.996 | 0.984 | 0.980 | 0.0133 | 1.44 | 0.151 | 0.756 | 30034.5 | 0 | 0.412 |
+| `photo.jpg` | default | 1/1 | 0 | 0.943 | 0.948 | 0.893 | 0.0096 | 2.21 | 0.536 | 0.747 | 23514.3 | 0 | 0.221 |
+| `photo.jpg` | fine | 1/1 | 0 | 0.963 | 0.965 | 0.929 | 0.0150 | 2.21 | 0.529 | 0.721 | 23299.4 | 0 | 0.305 |
+| `photo.jpg` | bold | 1/1 | 0 | 0.904 | 0.850 | 0.768 | 0.0029 | 1.68 | 0.283 | 0.813 | 30379.8 | 0 | 0.262 |
+| `photo.jpg` | parabolic | 2/2 | 1 | 0.981 | 0.992 | 0.972 | 0.0122 | 2.31 | 0.529 | 0.812 | 25055.3 | 0 | 0.364 |
+| `santa.jpg` | default | 1/1 | 0 | 0.959 | 0.969 | 0.929 | 0.0108 | 1.19 | 0.013 | 0.870 | 37566.7 | 0 | 0.284 |
+| `santa.jpg` | fine | 1/1 | 0 | 0.969 | 0.977 | 0.946 | 0.0114 | 1.33 | 0.124 | 0.821 | 37900.6 | 0 | 0.351 |
+| `santa.jpg` | bold | 1/1 | 0 | 0.945 | 0.926 | 0.875 | 0.0065 | 0.71 | -0.245 | 0.964 | 49595.2 | 0 | 0.153 |
+| `santa.jpg` | parabolic | 4/4 | 3 | 0.996 | 0.980 | 0.976 | 0.0115 | 1.28 | 0.087 | 0.840 | 37405.6 | 0 | 0.374 |
+
+Every blank page scores 0 covered width/height/area, 0 ink per cell and 0 dark
+tile ink. The random baselines with 1, 2 and 4 strokes cover at most 0.364/0.198,
+0.617/0.652 and 0.866/0.652 of the width/height, with bbox at most 0.072, 0.402
+and 0.564, 0 ink per cell and at most 0.021 dark tile ink. Their tone ratio ranges
+0.00 to 208.64 (one random stroke can land in a dark patch) and their rank is
+-0.316 to 0.277, so neither scalar can separate a scribble from every preset.
+
+### Enforced floors and caps
+
+| Measure | Floor / cap | Derivation |
+|---------|------------:|------------|
+| Covered width | >= 0.85 | Weakest drawing 0.904, minus 5% = 0.854, rounded down. A 4-stroke random scribble can reach 0.866 here, but fails bbox and ink spread. |
+| Covered height | >= 0.80 | Weakest drawing 0.850, minus 5% = 0.808, rounded down; random reaches at most 0.652. |
+| Bounding-box area | >= 0.70 | `max(random 0.564 + 0.05, drawing 0.768 - 0.05)`, rounded down. All random scribbles fail it. |
+| Ink per 4x4 cell | >= 0.0025 | Weakest drawing 0.0029, minus 5%, rounded down; blank and random score 0. |
+| Dark/light tone ratio | >= 0.60 | Weakest drawing 0.71, minus 0.05, rounded down; a quality floor, not a baseline test. |
+| Dark textured tile ink | >= 0.65 | Weakest drawing 0.721, minus 5%, rounded down; random reaches at most 0.021. |
+| Strokes / lifts | <= 3 / <= 3 | Every archimedean preset is one stroke; parabolic face/photo are 2. Santa parabolic is 4 raw and 4 exported, so vpype did not split it; its two opposed branches each split at a corner, and 4 is recorded as "very few" rather than forcing an algorithm change. |
+| Drawing length | <= 100000 mm | About twice the worst measurement (49595.2 mm). |
+| Tiny segments (<0.5 mm) | 0 and share 0 | Measured 0 on all twelve drawings. |
+
+LUC-128 tile rank and the 0.92 dark-tile ink cap are recorded but **not enforced**:
+rank runs -0.245 to 0.536 on real drawings and -0.316 to 0.277 on random scribbles,
+so no rank floor accepts every preset while rejecting a scribble; bold's evenly
+spaced rings put 0.964 ink in a textured dark tile, above the Sketch Lines cap.
+A blank page outscores several drawings on SSIM (photo default 0.221 vs blank
+0.499), which is why no SSIM floor is used.
+
+Default archimedean Santa has 1 raw stroke, 1 exported stroke, 0 mm pen-up travel
+and 37566.7 mm of pen-down length. `evaluate`'s `num_lifts` counts pen-up
+transitions *between* strokes, so one continuous stroke reports **0 lifts**, not
+1; the single physical lift at the end of a plot is not counted by any metric in
+this repo. The gate asserts at most 1 and records 0. No shared metric was changed.
+
+### G-code lift count on the fitted 190x190 page
+
+Converting the same gate SVG and running the machine profile without bypassing
+its safety margin:
+
+```bash
+timeout 120 uv run penpath convert tests/fixtures/images/reference/santa.jpg \
+  -o /tmp/spiral_santa_gate.svg --pfm spiral_sawtooth -s seed=42 \
+  --paper 190x190,0 --pen 0.4,#000000,fineliner --dpi 96 --max-resolution 384 --quiet
+timeout 120 uv run penpath gcode /tmp/spiral_santa_gate.svg \
+  --profile aquila --fit --dry-run
+```
+
+The stderr reported (G-code goes to stdout):
+
+```text
+Warning: drawing is 15.417 mm past the aquila usable area; fitted with scale 0.923 and shift (0.000, -0.342) mm
+Page placed at -2.700, 10.000 (bed 220x220)
+G-code summary
+  Profile: aquila
+  Layers: 1
+  Drawing length: 37566.74 mm
+  Pen-up travel: 0.00 mm
+  Pen lifts: 0
+  Estimated plot time: 1503.7 s
+```
+
+The 190x190 page does not fit the Aquila usable area, so `--fit` scales by 0.923;
+the 10 mm machine margin was not overridden. The lift count is 0 because the
+whole drawing is one pen-down run.
+
+### Visual acceptance (required)
+
+Each committed PNG was opened with `read` and compared with the original
+`santa.jpg`; none returned an image error. The commands were the documented
+`convert ... --pfm spiral_sawtooth:<preset> -s seed=42 --paper 190x190,0 --pen
+0.4,#000000,fineliner` followed by `penpath preview --dpi 60` (11400 px square).
+The 570 px versions below are downscaled copies of those renders, as in
+`docs/images/luc-128/`. Santa was used for every preset because its hat, glasses
+and beard give more structure to look for; `face.jpg` was also rendered.
+
+| preset | preview | What is visible |
+|--------|---------|-----------------|
+| `fine` | [santa_spiral_fine.png](../images/luc-138/santa_spiral_fine.png) | Tight elliptical rings with short radial teeth; the dark hat, coat and background crowd the top and right, and a pale wedge at upper left suggests the white beard/brim. Glasses, nose and hat shape are not resolved. |
+| `bold` | [santa_spiral_bold.png](../images/luc-138/santa_spiral_bold.png) | Wider rings with much longer sawteeth: heavy black bands on the right and bottom, a large light wedge on the left and a small white halo at the centre. Santa's facial features are lost in the texture, but the dark/light masses still read. |
+| `parabolic` | [santa_spiral_parabolic.png](../images/luc-138/santa_spiral_parabolic.png) | Two sets of tighter rings with fine teeth, a dense dark top and bottom and a light upper-left wedge where the beard/brim sits; the four-pass ring pattern is visible, glasses and nose are not. |
+
+The continuous line is unmistakable and the broad tones follow the portrait, but
+**Santa's glasses, nose, beard and hat are not individually recognisable** in any
+preset: this is a one-line ring texture, not a portrait likeness. Visual
+readability remains the required acceptance, and this honest result is part of it.
