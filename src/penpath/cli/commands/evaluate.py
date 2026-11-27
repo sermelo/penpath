@@ -18,6 +18,7 @@ from penpath.core import (
     compute_likeness,
     compute_machine_cost,
     get_image_placement,
+    get_layer_pen_names,
     get_svg_paper_size,
     parse_svg_strokes,
     simulate_plot,
@@ -30,10 +31,16 @@ FALLBACK_PAPER_MM = (210.0, 297.0)
 console = Console(stderr=True)
 
 
+def _pen_name(metrics: LayerMetrics, layer: str) -> str:
+    """Return the pen name added to a per-layer machine-cost row."""
+    return cast(str, cast(dict[str, object], metrics).get("pen", layer))
+
+
 def _cost_table(cost: MachineCostResult) -> Table:
     """Build the human-readable machine cost table."""
     table = Table(title="Machine Cost", show_header=True, header_style="bold")
     table.add_column("Layer", style="cyan")
+    table.add_column("Pen", style="cyan", overflow="fold")
     table.add_column("Drawing (mm)", justify="right")
     table.add_column("Pen-up (mm)", justify="right")
     table.add_column("Lifts", justify="right")
@@ -45,6 +52,7 @@ def _cost_table(cost: MachineCostResult) -> Table:
     for layer, metrics in per_layer.items():
         table.add_row(
             layer,
+            _pen_name(metrics, layer),
             f"{metrics['drawing_length_mm']:.2f}",
             f"{metrics['pen_up_travel_mm']:.2f}",
             str(metrics["num_lifts"]),
@@ -56,6 +64,7 @@ def _cost_table(cost: MachineCostResult) -> Table:
     total = cast(LayerMetrics, cost["total"])
     table.add_row(
         "TOTAL",
+        "",
         f"{total['drawing_length_mm']:.2f}",
         f"{total['pen_up_travel_mm']:.2f}",
         str(total["num_lifts"]),
@@ -120,10 +129,10 @@ def evaluate_cmd(
     The SVG is simulated at the chosen resolution, cropped to the recorded
     image placement, and scored with greyscale SSIM and edge SSIM. Greyscale
     SSIM misses pale ink on a near-blank page; edge SSIM compares Sobel edge
-    maps instead and penalises spurious structure. Machine cost and ink
-    coverage are reported per pen layer and in total; a layer covering most
-    of the page warns on stderr. With --json, only a JSON object is written
-    to stdout.
+    maps instead and penalises spurious structure. Machine cost, ink coverage
+    and the pen name from the SVG layer are reported per pen layer and in
+    total; a layer covering most of the page warns on stderr. With --json,
+    only a JSON object is written to stdout.
     """
     if px_per_mm <= 0:
         raise click.BadParameter("must be greater than zero", param_hint="--dpi")
@@ -141,6 +150,11 @@ def evaluate_cmd(
         raise click.ClickException(f"Could not parse SVG: {exc}") from exc
     if not strokes:
         raise click.ClickException("No pen strokes found in SVG")
+
+    try:
+        pen_names = get_layer_pen_names(drawing_svg)
+    except (ET.ParseError, OSError, ValueError) as exc:
+        raise click.ClickException(f"Could not parse SVG pen names: {exc}") from exc
 
     try:
         placement = get_image_placement(drawing_svg, original_size)
@@ -176,6 +190,7 @@ def evaluate_cmd(
     per_layer_cost = cast(dict[str, LayerMetrics], cost["per_layer"])
     for layer, metrics in per_layer_cost.items():
         metrics["ink_coverage_pct"] = coverage.per_layer.get(layer, 0.0)
+        cast(dict[str, object], metrics)["pen"] = pen_names.get(layer, layer)
     total_cost = cast(LayerMetrics, cost["total"])
     total_cost["ink_coverage_pct"] = coverage.total
 

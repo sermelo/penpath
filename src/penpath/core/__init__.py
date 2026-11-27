@@ -2,7 +2,9 @@
 
 from penpath.core.drawing import (
     PIXEL_SETTING_FIELDS,
+    ContourSettings,
     OutlineSettings,
+    contour_strokes,
     outline_strokes,
     scale_pixel_settings,
 )
@@ -122,6 +124,7 @@ from penpath.core.simulation import (
 from penpath.core.svg_parse import (
     ImagePlacement,
     get_image_placement,
+    get_layer_pen_names,
     get_svg_paper_size,
     list_svg_layers,
     parse_svg_layers,
@@ -144,6 +147,7 @@ __all__ = [
     "PROJECT_FILE_VERSION",
     "BackgroundResult",
     "BedProfile",
+    "ContourSettings",
     "CoverageResult",
     "DitherMethod",
     "FeedProfile",
@@ -196,6 +200,7 @@ __all__ = [
     "compute_layer_coverage",
     "compute_likeness",
     "compute_machine_cost",
+    "contour_strokes",
     "contrast",
     "detect_paper_color",
     "fit_layers_to_drawable",
@@ -204,6 +209,7 @@ __all__ = [
     "gcode_to_strokes",
     "get_filter",
     "get_image_placement",
+    "get_layer_pen_names",
     "get_svg_paper_size",
     "get_user_profiles_path",
     "grayscale",

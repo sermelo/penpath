@@ -13,6 +13,7 @@ from penpath.core.output.svg import ImagePlacement, export_svg, fit_image_placem
 from penpath.core.simulation import compute_machine_cost
 from penpath.core.svg_parse import (
     get_image_placement,
+    get_layer_pen_names,
     get_svg_paper_size,
     list_svg_layers,
     parse_svg_layers,
@@ -722,3 +723,87 @@ class TestSvgLayerEnumeration:
         svg = self._write(tmp_path, '<svg xmlns="http://www.w3.org/2000/svg"/>')
 
         assert parse_svg_layers(svg) == []
+
+
+class TestGetLayerPenNames:
+    def test_maps_normalised_colours_to_layer_labels(self, tmp_path: Path) -> None:
+        """Group strokes and child rgb() strokes use the same keys as parsed strokes."""
+        svg = tmp_path / "layers.svg"
+        svg.write_text(
+            """<svg xmlns="http://www.w3.org/2000/svg"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    width="100mm" height="100mm" viewBox="0 0 100 100">
+  <g id="layer1" inkscape:groupmode="layer" inkscape:label="light blue"
+     stroke="#8CCFE8" stroke-width="0.4">
+    <path d="M 0 0 L 10 0" fill="none"/>
+  </g>
+  <g id="layer2" inkscape:groupmode="layer" inkscape:label="red pen">
+    <path d="M 0 10 L 10 10" fill="none" stroke="rgb(255, 0, 0)"/>
+  </g>
+</svg>""",
+            encoding="utf-8",
+        )
+
+        names = get_layer_pen_names(svg)
+
+        assert names == {"#8CCFE8": "light blue", "#FF0000": "red pen"}
+        assert {stroke.color for stroke in parse_svg_strokes(svg)} == set(names)
+
+    def test_falls_back_to_layer_id_and_child_stroke(self, tmp_path: Path) -> None:
+        """An unlabelled layer is named by its id and inherits the first child's stroke."""
+        svg = tmp_path / "unlabelled.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">'
+            '<g id="layer1" inkscape:groupmode="layer">'
+            '<path d="M 0 0 L 1 0" fill="none"/>'
+            '<path d="M 0 1 L 1 1" fill="none" stroke="#00FF00"/>'
+            "</g></svg>",
+            encoding="utf-8",
+        )
+
+        assert get_layer_pen_names(svg) == {"#00FF00": "layer1"}
+
+    def test_duplicate_colour_keeps_first_layer(self, tmp_path: Path) -> None:
+        """Two layers sharing a colour map to the first one in document order."""
+        svg = tmp_path / "duplicate.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">'
+            '<g id="layer1" inkscape:groupmode="layer" inkscape:label="first" '
+            'stroke="#000000"/>'
+            '<g id="layer2" inkscape:groupmode="layer" inkscape:label="second" '
+            'stroke="#000000"/>'
+            "</svg>",
+            encoding="utf-8",
+        )
+
+        assert get_layer_pen_names(svg) == {"#000000": "first"}
+
+    def test_skips_layers_without_a_readable_stroke_or_name(self, tmp_path: Path) -> None:
+        """An unnamed layer or a layer with no stroke cannot be traced to a pen."""
+        svg = tmp_path / "skipped.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">'
+            '<g id="layer1" inkscape:groupmode="layer" inkscape:label="no stroke"/>'
+            '<g inkscape:groupmode="layer" stroke="#FF0000"/>'
+            '<g id="layer3" inkscape:groupmode="layer" inkscape:label="transparent" '
+            'stroke="none"/>'
+            "</svg>",
+            encoding="utf-8",
+        )
+
+        assert get_layer_pen_names(svg) == {}
+
+    def test_without_inkscape_layers_returns_empty(self, tmp_path: Path) -> None:
+        """A plain stroke SVG has no layer names to report."""
+        svg = tmp_path / "plain.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg">'
+            '<path d="M 0 0 L 1 0" fill="none" stroke="#000000"/>'
+            "</svg>",
+            encoding="utf-8",
+        )
+
+        assert get_layer_pen_names(svg) == {}
