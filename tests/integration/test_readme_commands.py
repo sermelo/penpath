@@ -200,7 +200,11 @@ def _seed_workspace(work: Path) -> None:
         shutil.copyfile(source, work / name)
     reference = work / "tests" / "fixtures" / "images" / "reference"
     reference.mkdir(parents=True)
-    shutil.copyfile(source, reference / "photo.jpg")
+    for name in ("photo.jpg", "santa.jpg"):
+        shutil.copyfile(source, reference / name)
+    colour = work / "tests" / "fixtures" / "images" / "colour"
+    colour.mkdir(parents=True)
+    shutil.copyfile(source, colour / "christmas_tree.jpg")
     source.unlink()
 
     for name, output in (

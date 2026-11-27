@@ -166,10 +166,11 @@ class TestGlobalRegistry:
 
         register_pfm("test_global", dummy_pfm, DummySettings)
 
-        assert len(get_registry()) == initial_count + 1
-        assert "test_global" in get_registry()
-
-        # Clean up - can't easily remove, but that's fine for test isolation
+        try:
+            assert len(get_registry()) == initial_count + 1
+            assert "test_global" in get_registry()
+        finally:
+            get_registry()._pfms.pop("test_global")
 
 
 class TestPFMRegistryIntegration:
