@@ -342,7 +342,7 @@ out-of-range numbers exit 2 with the setting named.
 | `opticurve` | bool | — | `true` | Enable corner-preserving smoothing. |
 | `smoothing` | float | 0–1 | `0.5` | Smoothing strength; `0` is a no-op. |
 | `simplify_tolerance` | float | 0–10 px | `0.75` | RDP tolerance before smoothing. |
-| `seed` | int | any | random | Seed for `turn_policy=random`; other policies ignore it. |
+| `seed` | int | any | `none` | Seed for `turn_policy=random`; other policies ignore it. |
 
 **Example**: `--pfm contour -s levels=4 -s threshold=110 -s turd_size=30`
 

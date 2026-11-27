@@ -1,4 +1,4 @@
-"""Library-only contour tracing for thresholded or posterised images."""
+"""Contour tracing for thresholded or posterised images."""
 
 from __future__ import annotations
 
