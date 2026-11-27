@@ -2216,3 +2216,24 @@ strokes stay inside the image, spacing never drops below the pen width, lines
 follow vertical edges on a striped image, and `join_in_dark` joins only where
 layers cross.
 
+## TSP art measurements (LUC-177, 2026-11-28)
+
+Accepted by looking at the previews: on A5 the [face](images/tsp/face_tsp.png)
+reads as the astronaut (helmet, suit, face) in one line, the
+[photo](images/tsp/photo_tsp.png) keeps the shoreline and dark trees, and the
+[Santa](images/tsp/tsp_plot.png) A4 plot keeps the beard and coat but only a
+weak face (a dark, low-contrast source). Setup: one 0.3 mm pen, seed 42,
+`penpath evaluate --px-per-mm 3`.
+
+| image | paper | SSIM | ink-only SSIM | strokes | lifts | line m | convert s |
+|-------|-------|------|---------------|---------|-------|--------|-----------|
+| face | A5 | 0.391 | 0.324 | 1 | 0 | 15.5 | 6.6 |
+| photo | A5 | 0.245 | 0.255 | 1 | 0 | 7.4 | 4.3 |
+| santa | A4 | 0.251 | 0.212 | 1 | 0 | 34.0 | — |
+
+SSIM is low by nature (a thin meandering line against continuous tone) and is
+evidence only. The task's acceptance is met: face readable at A5, one stroke,
+under 60 s (6.6 s, 140 MB peak), deterministic with a seed
+(`tests/unit/core/drawing/test_pfm_tsp.py`, which also checks that 2-opt
+shortens the tour and removes crossings, and that dots follow darkness).
+
