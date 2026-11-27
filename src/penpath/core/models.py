@@ -21,6 +21,8 @@ _MarginValue = (
     _MmNonNegative | tuple[_MmNonNegative, _MmNonNegative, _MmNonNegative, _MmNonNegative]
 )
 
+FitMode = Literal["fit", "fill", "none"]
+
 
 class Pen(BaseModel):
     """Pen configuration for plotting.
@@ -103,6 +105,9 @@ class Paper(BaseModel):
         Paper background color as hex string or named CSS color.
     dpi : int
         Output DPI for coordinate system (pixels per inch).
+    fit : {'fit', 'fill', 'none'}
+        How the source image is placed in the drawable area: contain, cover and
+        crop, or use the pixel size at the image DPI. Defaults to ``fit``.
     """
 
     name: str = Field(..., min_length=1)
@@ -114,6 +119,7 @@ class Paper(BaseModel):
     tuple by pydantic, so the raw value is either a float or a four-tuple."""
     background_color: str = Field(default="#FFFFFF")
     dpi: int = Field(default=300, ge=72, le=2400)
+    fit: FitMode = "fit"
 
     @field_validator("background_color")
     @classmethod
@@ -401,6 +407,7 @@ class Project(BaseModel):
 
 
 __all__ = [
+    "FitMode",
     "ImageRef",
     "PFMSettings",
     "PFMSettingsUnion",
