@@ -18,6 +18,11 @@ from shapely import LineString
 from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
+from penpath.core.drawing.pfm_hatch import (
+    PALETTE_ANGLE_STEP_DEG,
+    HatchSettings,
+    with_angle_offset,
+)
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
@@ -590,9 +595,24 @@ def _run_convert_pipeline(
         }
         if updates:
             pfm_settings = pfm_settings.model_copy(update=updates)
-    lines_by_pen = [
-        draw_styled_lines(image, pfm_fn, pfm_settings, project.style) for image in filtered_by_pen
-    ]
+    # Hatch needs the physical scale, which the serialisable settings do not
+    # carry. A palette rotates the angle set per pen so colour layers do not
+    # sit exactly on top of one another; a single pen keeps the original angles.
+    pixels_per_mm = working_width / image_placement.width
+    lines_by_pen: list[list[LineString]] = []
+    for index, image in enumerate(filtered_by_pen):
+        pen_settings = pfm_settings
+        pfm_kwargs: dict[str, object] = {}
+        if isinstance(pen_settings, HatchSettings):
+            if use_palette:
+                pen_settings = with_angle_offset(pen_settings, index * PALETTE_ANGLE_STEP_DEG)
+            pfm_kwargs = {
+                "pixels_per_mm": pixels_per_mm,
+                "pen_width_mm": pens[index].width_mm,
+            }
+        lines_by_pen.append(
+            draw_styled_lines(image, pfm_fn, pen_settings, project.style, pfm_kwargs)
+        )
     reporter.finish()
 
     drawing_pens = order_pens_for_drawing(pens)

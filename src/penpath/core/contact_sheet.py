@@ -9,6 +9,7 @@ from math import ceil
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 
+from penpath.core.drawing.pfm_hatch import HatchSettings
 from penpath.core.drawing.registry import get_pfm
 from penpath.core.image.filters import auto_equalize, grayscale
 from penpath.core.simulation import PenStroke, simulate_plot
@@ -31,7 +32,8 @@ class ContactSheetEntry:
     pfm : str
         Registered PFM name.
     preset : str | None
-        Preset name, or ``None`` for the PFM's own defaults.
+        Preset name or qualified ``PFM:PRESET`` id, or ``None`` for the PFM's
+        own defaults.
     settings : BaseModel
         Settings passed to the PFM as a deep copy.
     """
@@ -42,8 +44,13 @@ class ContactSheetEntry:
 
     @property
     def label(self) -> str:
-        """Return ``pfm`` or ``pfm:preset`` as the tile caption and error key."""
-        return self.pfm if self.preset is None else f"{self.pfm}:{self.preset}"
+        """Return ``pfm`` or ``pfm:preset`` as the tile caption and error key.
+
+        A qualified preset id is already complete, so it is not prefixed again.
+        """
+        if self.preset is None:
+            return self.pfm
+        return self.preset if ":" in self.preset else f"{self.pfm}:{self.preset}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +86,10 @@ def _fit_text(
 
 def _caption_lines(entry: ContactSheetEntry) -> list[str]:
     """Split a label into at most two lines: the PFM, then the preset."""
-    return [entry.pfm] if entry.preset is None else [entry.pfm, entry.preset]
+    if entry.preset is None:
+        return [entry.pfm]
+    prefix = f"{entry.pfm}:"
+    return [entry.pfm, entry.preset.removeprefix(prefix)]
 
 
 def _draw_tile_frame(
@@ -140,7 +150,8 @@ def render_contact_sheet(
     ``max_resolution`` (it is never enlarged), then equalized and converted to
     luminance greyscale once for all entries. Entries run in ``(pfm, preset)``
     order with a deep copy of their settings. Each PFM's pixel strokes are
-    mapped onto a 60 mm wide tile and simulated with ``simulate_plot``; a
+    mapped onto a 60 mm wide tile and simulated with ``simulate_plot``; Hatch
+    also receives the tile's physical scale and the sheet's pen width. A
     failing entry becomes a labelled error tile and the rest still render.
 
     Parameters
@@ -224,7 +235,13 @@ def render_contact_sheet(
         try:
             pfm_fn, _ = get_pfm(entry.pfm)
             settings = entry.settings.model_copy(deep=True)
-            lines = pfm_fn(working, settings)
+            pfm_kwargs: dict[str, float] = {}
+            if isinstance(settings, HatchSettings):
+                pfm_kwargs = {
+                    "pixels_per_mm": working_width / TILE_WIDTH_MM,
+                    "pen_width_mm": pen_width_mm,
+                }
+            lines = pfm_fn(working, settings, **pfm_kwargs)
             strokes = [
                 PenStroke(
                     [
