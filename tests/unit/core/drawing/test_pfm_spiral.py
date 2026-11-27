@@ -147,6 +147,18 @@ class TestSpiralStrokes:
         assert spiral_strokes(image, SpiralSettings(ignore_white=True)) == []
 
 
+def test_exports_are_available_from_core():
+    from penpath.core import SpiralSettings as CoreSpiralSettings
+    from penpath.core import spiral_strokes as core_spiral_strokes
+    from penpath.core.drawing import SpiralSettings as DrawingSpiralSettings
+    from penpath.core.drawing import spiral_strokes as drawing_spiral_strokes
+
+    assert CoreSpiralSettings is SpiralSettings
+    assert core_spiral_strokes is spiral_strokes
+    assert DrawingSpiralSettings is SpiralSettings
+    assert drawing_spiral_strokes is spiral_strokes
+
+
 def test_end_to_end_reference_image_to_svg(tmp_path: Path):
     """A user can load a reference image, draw it and write a plottable SVG."""
     image = load_image(_REFERENCE_IMAGE)
