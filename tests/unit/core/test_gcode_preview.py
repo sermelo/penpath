@@ -151,6 +151,26 @@ def test_gcode_to_strokes_reverses_generic_profile_transform() -> None:
     assert strokes[0].polyline == [(10.0, 10.0), (20.0, 10.0), (20.0, 20.0)]
 
 
+def test_gcode_to_strokes_reads_the_frame_pen_comment() -> None:
+    text = (
+        HEADER
+        + "; frame pen=red\nG0 X10.000 Y90.000\nG0 Z9.000\n"
+        + "G1 X20.000 Y90.000\nG0 Z12.500\n"
+        + "; layer 1 pen=blue\nG0 X30.000 Y90.000\nG0 Z9.000\n"
+        + "G1 X40.000 Y90.000\nG0 Z12.500\n"
+    )
+    styles = {"red": ("#FF0000", 0.4), "blue": ("#0000FF", 0.2)}
+
+    strokes = gcode_to_strokes(text, (100.0, 100.0), pen_styles=styles)
+    frame_only = gcode_to_strokes(text, (100.0, 100.0), pen_styles=styles, pen_filter="red")
+
+    assert [stroke.color for stroke in strokes] == ["#FF0000", "#0000FF"]
+    assert strokes[0].polyline == [(10.0, 10.0), (20.0, 10.0)]
+    assert len(frame_only) == 1
+    assert frame_only[0].color == "#FF0000"
+    assert frame_only[0].polyline == strokes[0].polyline
+
+
 def test_gcode_to_strokes_pen_filter_selects_one_layer() -> None:
     text = (
         HEADER

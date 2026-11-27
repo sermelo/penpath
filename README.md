@@ -183,6 +183,9 @@ penpath gcode card.svg --profile aquila
 # neither, the profile decides (Aquila: front-right, generic/ramped: origin)
 penpath gcode card.svg --profile aquila --place center -o centred.gcode
 penpath gcode card.svg --profile aquila --at 20,20 -o corner.gcode
+# Plot a frame around the page first, then pause to check the paper position
+penpath gcode card.svg --profile aquila --place center --frame --frame-pause -o framed.gcode
+penpath preview framed.gcode -o framed.png
 
 # Check the G-code without a machine: the PNG shows the bed, the page and the
 # same ink as the SVG preview

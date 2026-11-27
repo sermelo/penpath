@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -9,7 +10,10 @@ from pathlib import Path
 import pytest
 
 from penpath.core import (
+    DEFAULT_FRAME_MARGIN_MM,
     FIT_TOLERANCE_MM,
+    FRAME_PAUSE_MESSAGE,
+    FrameSpec,
     GcodeError,
     GcodeLayer,
     MachineProfile,
@@ -18,6 +22,7 @@ from penpath.core import (
     PointOutsideBedError,
     build_gcode,
     fit_layers_to_drawable,
+    frame_polyline,
     get_svg_paper_size,
     lead_in_mm,
     load_profile,
@@ -929,3 +934,189 @@ def test_end_to_end_placement_flow_from_an_svg_file(tmp_path: Path) -> None:
     assert points
     assert all(x_lo - FIT_TOLERANCE_MM <= x <= x_hi + FIT_TOLERANCE_MM for x, _ in points)
     assert all(y_lo - FIT_TOLERANCE_MM <= y <= y_hi + FIT_TOLERANCE_MM for _, y in points)
+
+
+def test_frame_polyline_expands_a_non_square_page_and_overlaps_the_closing_edge() -> None:
+    page = (80.0, 50.0)
+    points = frame_polyline(page, 2.0)
+
+    assert DEFAULT_FRAME_MARGIN_MM == 2.0
+    assert points[1:] == [
+        (-2.0, -2.0),
+        (82.0, -2.0),
+        (82.0, 52.0),
+        (-2.0, 52.0),
+        (-2.0, -2.0),
+    ]
+    assert points[0] == (-2.0, 0.0)
+    assert math.dist(points[0], points[1]) == pytest.approx(2.0)
+    xs, ys = zip(*points, strict=True)
+    assert (min(xs), min(ys), max(xs), max(ys)) == (-2.0, -2.0, 82.0, 52.0)
+
+
+def test_frame_polyline_margin_zero_lies_on_the_page_edge() -> None:
+    points = frame_polyline((80.0, 50.0), 0.0)
+
+    assert points[1:5] == [
+        (0.0, 0.0),
+        (80.0, 0.0),
+        (80.0, 50.0),
+        (0.0, 50.0),
+    ]
+    assert min(point[0] for point in points) == 0.0
+    assert max(point[1] for point in points) == 50.0
+
+
+def test_frame_polyline_clamps_the_overlap_to_a_short_side() -> None:
+    points = frame_polyline((1.0, 1.0), 0.0)
+
+    assert points[0] == (0.0, 1.0)
+    assert math.dist(points[0], points[1]) == pytest.approx(1.0)
+
+
+def test_frame_polyline_rejects_a_negative_margin() -> None:
+    with pytest.raises(GcodeError, match="frame margin must be non-negative"):
+        frame_polyline((80.0, 50.0), -1.0)
+
+
+def test_build_gcode_frame_pins_geometry_order_and_pause() -> None:
+    page = (50.0, 50.0)
+    frame = FrameSpec(margin_mm=0.0, pause=True)
+
+    produced = build_gcode(_one_layer(((10.0, 10.0), (20.0, 10.0))), _profile(), page, frame=frame)
+
+    assert produced == (
+        "; penpath gcode profile=test_machine page=50.000x50.000 "
+        "place=origin page_origin=0.000x0.000 usable_x=0.000..100.000 usable_y=0.000..100.000 "
+        "z_up=4.000 z_down=1.000\n"
+        "G21\nG90\n"
+        "; frame pen=ink\n"
+        "G0 Z4.000 F3600\n"
+        "G0 X0.000 Y48.000 F3600\n"
+        "G0 Z1.000 F3600\n"
+        "G1 X0.000 Y50.000 F1800\n"
+        "G1 X50.000 Y50.000\n"
+        "G1 X50.000 Y0.000\n"
+        "G1 X0.000 Y0.000\n"
+        "G1 X0.000 Y50.000\n"
+        f"M0 {FRAME_PAUSE_MESSAGE}\n"
+        "; layer 1/1 pen=ink\n"
+        "G0 Z4.000 F3600\n"
+        "G0 X10.000 Y40.000 F3600\n"
+        "G0 Z1.000 F3600\n"
+        "G1 X20.000 Y40.000 F1800\n"
+        "G0 Z4.000 F3600\n"
+        "M2\n"
+    )
+    assert "M25" not in produced
+
+
+def _stroke_block(text: str, marker: str) -> list[str]:
+    """Return the G-code lines of the stroke that follows a comment marker."""
+    lines = text.splitlines()
+    block: list[str] = []
+    for line in lines[lines.index(marker) + 1 :]:
+        if line.startswith((";", "M")):
+            break
+        block.append(line)
+    return block
+
+
+def test_build_gcode_frame_uses_the_same_ramp_and_z_path_as_a_stroke() -> None:
+    profile = _profile(
+        bed={"size_mm": [200.0, 200.0]},
+        feed={"travel_mm_s": 60.0, "draw_mm_s": 30.0, "z_mm_s": 10.0},
+        pen={"z_up": 5.0, "z_down": 1.0, "z_touch": 2.0, "z_hover": 3.0, "ramp_mm": 2.0},
+    )
+    page = (100.0, 100.0)
+    frame = FrameSpec(margin_mm=0.0)
+    assert lead_in_mm(profile) == 2.0
+
+    framed = build_gcode(_one_layer(((10.0, 10.0), (20.0, 10.0))), profile, page, frame=frame)
+    plain_frame = build_gcode([GcodeLayer("ink", [frame.points(page)])], profile, page)
+    frame_block = _stroke_block(framed, "; frame pen=ink")
+    plain_block = _stroke_block(plain_frame, "; layer 1/1 pen=ink")
+
+    assert frame_block == plain_block
+    assert frame_block
+    assert any("Z3.000" in line for line in frame_block)
+    assert any("Z1.000" in line for line in frame_block)
+    assert framed.index("; frame pen=ink") < framed.index("; layer 1/1 pen=ink")
+
+
+def test_build_gcode_frame_uses_the_first_layer_pen_without_an_extra_change() -> None:
+    profile = _profile(pen_change={"mode": "each", "steps": [{"message": "{pen}"}, {"pause": ""}]})
+    layers = [
+        GcodeLayer("yellow", [((1.0, 1.0), (2.0, 1.0))]),
+        GcodeLayer("red", [((3.0, 3.0), (4.0, 3.0))]),
+    ]
+
+    produced = build_gcode(layers, profile, (50.0, 50.0), frame=FrameSpec(margin_mm=0.0))
+
+    assert produced.count("; pen change") == 2
+    assert produced.index("M117 yellow") < produced.index("; frame pen=yellow")
+    assert produced.index("; frame pen=yellow") < produced.index("; layer 1/2 pen=yellow")
+    assert produced.index("M117 red") < produced.index("; layer 2/2 pen=red")
+
+
+def test_build_gcode_frame_pen_change_follows_each_mode() -> None:
+    profile = _profile(pen_change={"mode": "each", "steps": [{"message": "{pen}"}, {"pause": ""}]})
+    layers = [
+        GcodeLayer("yellow", [((1.0, 1.0), (2.0, 1.0))]),
+        GcodeLayer("red", [((3.0, 3.0), (4.0, 3.0))]),
+    ]
+
+    produced = build_gcode(
+        layers, profile, (50.0, 50.0), frame=FrameSpec(margin_mm=0.0, pen="pink")
+    )
+
+    assert produced.count("; pen change") == 3
+    assert produced.index("M117 pink") < produced.index("; frame pen=pink")
+    assert produced.index("; frame pen=pink") < produced.index("M117 yellow")
+    assert produced.index("M117 yellow") < produced.index("; layer 1/2 pen=yellow")
+
+
+@pytest.mark.parametrize("mode", ["between", "none"])
+def test_build_gcode_frame_pen_change_follows_between_and_none_modes(mode: str) -> None:
+    profile = _profile(pen_change={"mode": mode, "steps": [{"message": "{pen}"}, {"pause": ""}]})
+    layers = [
+        GcodeLayer("yellow", [((1.0, 1.0), (2.0, 1.0))]),
+        GcodeLayer("red", [((3.0, 3.0), (4.0, 3.0))]),
+    ]
+
+    produced = build_gcode(
+        layers, profile, (50.0, 50.0), frame=FrameSpec(margin_mm=0.0, pen="pink")
+    )
+
+    assert "; frame pen=pink" in produced
+    assert "M117 pink" not in produced
+    assert produced.count("; pen change") == (1 if mode == "between" else 0)
+
+
+def test_fit_layers_to_drawable_includes_and_transforms_the_frame() -> None:
+    profile = _profile()
+    page = (50.0, 50.0)
+    layers = _one_layer(((10.0, 10.0), (20.0, 10.0)))
+    frame = FrameSpec(margin_mm=2.0)
+
+    with pytest.raises(PointOutsideBedError, match=r"x=-2\.000"):
+        build_gcode(layers, profile, page, frame=frame)
+
+    fitted = fit_layers_to_drawable(layers, profile, page, frame=frame)
+
+    assert fitted.changed
+    assert fitted.offset_mm == pytest.approx((2.0, 2.0))
+    assert fitted.frame is not None
+    assert min(point[0] for point in fitted.frame.points(page)) == pytest.approx(0.0)
+    produced = build_gcode(fitted.layers, profile, page, frame=fitted.frame)
+    frame_block = _stroke_block(produced, "; frame pen=ink")
+    coords = [
+        (float(match.group(1)), float(match.group(2)))
+        for line in frame_block
+        if line.startswith("G1 ")
+        and (match := re.search(r"X(-?\d+\.\d+) Y(-?\d+\.\d+)", line)) is not None
+    ]
+
+    assert len(coords) == 5
+    assert all(0.0 <= x <= 100.0 and 0.0 <= y <= 100.0 for x, y in coords)
+    assert "G0 X12.000 Y42.000 F3600" in produced

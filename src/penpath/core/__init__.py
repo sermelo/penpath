@@ -79,8 +79,12 @@ from penpath.core.models import (
     make_pfm_settings,
 )
 from penpath.core.output import (
+    DEFAULT_FRAME_MARGIN_MM,
     FIT_TOLERANCE_MM,
+    FRAME_OVERLAP_MM,
+    FRAME_PAUSE_MESSAGE,
     FitResult,
+    FrameSpec,
     GcodeError,
     GcodeLayer,
     PagePlacement,
@@ -88,6 +92,7 @@ from penpath.core.output import (
     PointOutsideBedError,
     build_gcode,
     fit_layers_to_drawable,
+    frame_polyline,
     lead_in_mm,
     page_origin_mm,
     place_page,
@@ -154,8 +159,11 @@ Project.model_rebuild()
 
 __all__ = [
     "DEFAULT_BACKGROUND_THRESHOLD",
+    "DEFAULT_FRAME_MARGIN_MM",
     "DEFAULT_PAPER_DPI",
     "FIT_TOLERANCE_MM",
+    "FRAME_OVERLAP_MM",
+    "FRAME_PAUSE_MESSAGE",
     "MAX_WORKING_LONGEST_PX",
     "MIN_WORKING_LONGEST_PX",
     "PIXEL_SETTING_FIELDS",
@@ -172,6 +180,7 @@ __all__ = [
     "FilterPipeline",
     "FilterStep",
     "FitResult",
+    "FrameSpec",
     "GcodeError",
     "GcodeHeader",
     "GcodeLayer",
@@ -229,6 +238,7 @@ __all__ = [
     "detect_paper_color",
     "draw_styled_lines",
     "fit_layers_to_drawable",
+    "frame_polyline",
     "gamma",
     "gaussian_blur",
     "gcode_to_strokes",

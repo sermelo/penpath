@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from penpath.core.output.gcode import (
+    DEFAULT_FRAME_MARGIN_MM,
     FIT_TOLERANCE_MM,
+    FRAME_OVERLAP_MM,
+    FRAME_PAUSE_MESSAGE,
     FitResult,
+    FrameSpec,
     GcodeError,
     GcodeLayer,
     PagePlacement,
@@ -12,6 +16,7 @@ from penpath.core.output.gcode import (
     PointOutsideBedError,
     build_gcode,
     fit_layers_to_drawable,
+    frame_polyline,
     lead_in_mm,
     page_origin_mm,
     place_page,
@@ -21,8 +26,12 @@ from penpath.core.output.svg import export_pen_layers, export_svg, write_penpath
 from penpath.core.output.vpype import optimize_with_vpype
 
 __all__ = [
+    "DEFAULT_FRAME_MARGIN_MM",
     "FIT_TOLERANCE_MM",
+    "FRAME_OVERLAP_MM",
+    "FRAME_PAUSE_MESSAGE",
     "FitResult",
+    "FrameSpec",
     "GcodeError",
     "GcodeLayer",
     "PagePlacement",
@@ -32,6 +41,7 @@ __all__ = [
     "export_pen_layers",
     "export_svg",
     "fit_layers_to_drawable",
+    "frame_polyline",
     "lead_in_mm",
     "optimize_with_vpype",
     "page_origin_mm",

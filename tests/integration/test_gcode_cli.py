@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,8 @@ from click.testing import CliRunner
 
 from penpath.cli.main import main
 from penpath.core import (
+    FIT_TOLERANCE_MM,
+    FRAME_PAUSE_MESSAGE,
     fit_layers_to_drawable,
     get_svg_paper_size,
     load_profile,
@@ -967,3 +970,252 @@ def test_gcode_placement_help_lists_both_flags(runner: CliRunner) -> None:
     assert "--at X,Y" in result.stdout
     assert "bed.page.placement" in result.stdout
     assert "Mutually exclusive with --at" in result.stdout
+
+
+def _frame_block(text: str) -> list[str]:
+    """Return the G-code lines of the frame stroke."""
+    lines = text.splitlines()
+    start = next(index for index, line in enumerate(lines) if line.startswith("; frame pen="))
+    block: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith((";", "M")):
+            break
+        block.append(line)
+    return block
+
+
+def _summary_value(stderr: str, label: str) -> float:
+    match = re.search(rf"  {re.escape(label.rstrip(':'))}: ([-\d.]+)", stderr)
+    assert match is not None, stderr
+    return float(match.group(1))
+
+
+def test_gcode_frame_on_aquila_center_with_pause(runner: CliRunner, tmp_path: Path) -> None:
+    """The acceptance run: centred 160 mm page, frame, pause, then the card."""
+    drawing = _aquila_svg(tmp_path, 160.0, 160.0, "20,20 140,20 140,140 20,140 20,20")
+    output = tmp_path / "card.gcode"
+
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(drawing),
+            "--profile",
+            "aquila",
+            "--place",
+            "center",
+            "--frame",
+            "--frame-pause",
+            "-o",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == ""
+    text = output.read_text(encoding="utf-8")
+    assert "place=center page_origin=18.650x15.700" in text
+    assert "Page placed at 18.650, 15.700 (bed 220x220)" in result.stderr
+    assert "  Layers: 1" in result.stderr
+
+    block = _frame_block(text)
+    for corner in (
+        "G1 X39.350 Y206.300 Z9.000",
+        "G1 X203.350 Y206.300 Z9.000",
+        "G1 X203.350 Y42.300 Z9.000",
+        "G1 X39.350 Y42.300 Z9.000",
+    ):
+        assert corner in block
+    assert sum("Z9.000" in line for line in block if line.startswith("G1 ")) >= 4
+    assert (
+        text.index("; frame pen=stabilo_88_black")
+        < text.index(f"M0 {FRAME_PAUSE_MESSAGE}")
+        < text.index("; layer 1/1 pen=stabilo_88_black")
+    )
+    assert "G1 X61.350 Y184.300 Z10.000 F1500" in text
+    assert "M25" not in text
+
+
+def test_gcode_frame_margin_zero_lies_on_the_page_edge(runner: CliRunner, tmp_path: Path) -> None:
+    drawing = _aquila_svg(tmp_path, 100.0, 100.0, "10,10 90,90")
+
+    result = runner.invoke(
+        main,
+        ["gcode", str(drawing), "--profile", "generic", "--frame", "--frame-margin", "0"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    text = drawing.with_suffix(".gcode").read_text(encoding="utf-8")
+    block = _frame_block(text)
+    assert "G0 X0.000 Y98.000 F6000" in block
+    assert "G1 X100.000 Y100.000" in block
+    assert "G1 X0.000 Y0.000" in block
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [("--frame-margin", "3"), ("--frame-pen", "stabilo_88_red"), ("--frame-pause",)],
+)
+def test_gcode_frame_options_without_frame_exit_2(
+    runner: CliRunner, tmp_path: Path, extra: tuple[str, ...]
+) -> None:
+    drawing = _aquila_svg(tmp_path, 100.0, 100.0, "10,10 90,90")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "generic", *extra, "--dry-run"]
+    )
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert f"{extra[0]} requires --frame" in result.stderr
+    assert not drawing.with_suffix(".gcode").exists()
+
+
+def test_gcode_negative_frame_margin_exits_2(runner: CliRunner, tmp_path: Path) -> None:
+    drawing = _aquila_svg(tmp_path, 100.0, 100.0, "10,10 90,90")
+
+    result = runner.invoke(
+        main,
+        ["gcode", str(drawing), "--profile", "generic", "--frame", "--frame-margin", "-1"],
+    )
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Invalid value for '--frame-margin'" in result.stderr
+    assert not drawing.with_suffix(".gcode").exists()
+
+
+def test_gcode_frame_summary_includes_the_frame(runner: CliRunner, tmp_path: Path) -> None:
+    drawing = _aquila_svg(tmp_path, 160.0, 160.0, "20,20 140,20 140,140 20,140 20,20")
+    args = ["gcode", str(drawing), "--profile", "aquila", "--place", "center", "--dry-run"]
+
+    without = runner.invoke(main, args)
+    with_frame = runner.invoke(main, [*args, "--frame"])
+
+    assert without.exit_code == 0, without.stderr
+    assert with_frame.exit_code == 0, with_frame.stderr
+    for label in ("Drawing length:", "Pen-up travel:", "Estimated plot time:"):
+        assert _summary_value(with_frame.stderr, label) > _summary_value(without.stderr, label)
+    assert _summary_value(with_frame.stderr, "Pen lifts:") >= _summary_value(
+        without.stderr, "Pen lifts:"
+    )
+    assert "  Layers: 1" in without.stderr
+    assert "  Layers: 1" in with_frame.stderr
+
+
+def test_gcode_frame_fit_shifts_frame_and_drawing_with_one_warning(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """A page that fits but whose frame does not is fitted together, once."""
+    drawing = _aquila_svg(tmp_path, 176.0, 170.0, "5,5 170,5 170,165 5,165 5,5")
+
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(drawing),
+            "--profile",
+            "aquila",
+            "--place",
+            "center",
+            "--frame",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert len(re.findall(r"Warning:", result.stderr)) == 1
+    assert "Warning: drawing and frame are" in result.stderr
+    assert "fitted with scale" in result.stderr
+    assert "Warning: page at" not in result.stderr
+    block = _frame_block(result.stdout)
+    assert block
+    for line in block:
+        for token in line.split():
+            if token.startswith("X") or token.startswith("Y"):
+                value = float(token[1:])
+                assert -FIT_TOLERANCE_MM <= value <= 220.0 + FIT_TOLERANCE_MM
+
+
+def test_gcode_no_fit_names_the_frame_point_outside_the_usable_area(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    drawing = _aquila_svg(tmp_path, 176.0, 170.0, "5,5 170,5 170,165 5,165 5,5")
+
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(drawing),
+            "--profile",
+            "aquila",
+            "--place",
+            "center",
+            "--frame",
+            "--no-fit",
+        ],
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert "outside the usable area X 10.000..187.300, Y 10.000..181.400" in result.stderr
+    assert "x=8.650" in result.stderr
+    assert "Pass --fit (the default)" in result.stderr
+    assert not drawing.with_suffix(".gcode").exists()
+
+
+def test_gcode_frame_palette_uses_the_first_pen_without_an_extra_change(
+    runner: CliRunner,
+) -> None:
+    result = runner.invoke(
+        main,
+        ["gcode", str(MULTI_PEN_SVG), "--profile", "generic", "--frame", "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    text = result.stdout
+    assert "; frame pen=stabilo_88_yellow" in text
+    assert text.index("; frame pen=stabilo_88_yellow") < text.index(
+        "; layer 1/2 pen=stabilo_88_yellow"
+    )
+    assert text.count("; pen change") == 1
+    assert "  Layers: 2" in result.stderr
+
+
+def test_gcode_frame_pen_follows_the_profile_change_rule(runner: CliRunner, tmp_path: Path) -> None:
+    drawing = _aquila_svg(tmp_path, 160.0, 160.0, "20,20 140,20 140,140 20,140 20,20")
+
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(drawing),
+            "--profile",
+            "aquila",
+            "--place",
+            "center",
+            "--frame",
+            "--frame-pen",
+            "stabilo_88_red",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    text = result.stdout
+    assert text.count("; pen change") == 2
+    assert "; frame pen=stabilo_88_red" in text
+    assert text.index("M117 Pen 0: stabilo_88_red") < text.index("; frame pen=stabilo_88_red")
+    assert text.index("M117 Pen 1: stabilo_88_black") < text.index(
+        "; layer 1/1 pen=stabilo_88_black"
+    )
+
+
+def test_gcode_frame_help_lists_every_option(runner: CliRunner) -> None:
+    result = runner.invoke(main, ["gcode", "--help"])
+
+    assert result.exit_code == 0
+    assert "--frame" in result.stdout
+    assert "--frame-margin FLOAT" in result.stdout
+    assert "--frame-pen TEXT" in result.stdout
+    assert "--frame-pause" in result.stdout
