@@ -705,13 +705,17 @@ photos and asserts `face.jpg < 0.01`.
 
 | image | white ink before | white ink after | masked SSIM before | masked SSIM after | floor |
 |-------|-----------------:|----------------:|-------------------:|------------------:|------:|
-| `face.jpg` | 0.00108 | **0.00094** | 0.606646 | **0.608484** | 0.606646 |
-| `photo.jpg` | 0.00040 | 0.00041 | 0.533972 | 0.533972 | 0.533972 |
+| `face.jpg` | 0.001074 | **0.000944** | 0.606598 | **0.608464** | 0.606598 |
+| `photo.jpg` | 0.000409 | 0.000409 | 0.533787 | 0.533787 | 0.533787 |
 
 "Before" is this branch with `-s white_threshold=1.0`, which reproduces the
-`main` measurement from the same harness at seed 42. The reference floors of
-0.47 face / 0.49 photo are older than these baselines, so the measured `main`
-values are the floors; neither photo drops below its floor. The other three
+`main` measurement from the same harness at seed 42. These numbers were
+re-measured after vpype's `reloop` RNG was pinned with `-s 0`; the earlier
+measurement before that fix gave face 0.606646 → 0.608484 and photo 0.533972 →
+0.533972, so both are recorded here. The reference floors of 0.47 face / 0.49
+photo are older than these baselines, so the measured `main` values are the
+floors, compared with a 0.001 tolerance for cross-platform SSIM noise; neither
+photo drops below its floor. The other three
 Sketch Lines references keep their LUC-47 floors (circle 0.5385, gradient
 0.5275, sphere 0.7957 SSIM) and the Sketch Squares gate stays green with its
 unchanged floors; Squares inherits the rule through its engine settings. The
