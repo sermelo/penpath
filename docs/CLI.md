@@ -550,8 +550,10 @@ penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
 | `--output PATH` | `-o` | `<input>.gcode` | Output file, beside the input SVG |
 | `--profiles PATH` | — | user config | Alternate user profiles YAML file for this run |
 | `--margin MM` | — | profile value | Override the profile safety margin for this run in mm; `0` is allowed but not recommended on the Aquila |
+| `--place NAME` | — | profile placement | Put the page at `center`, `front-right`, `front-left`, `back-right`, `back-left` or `origin`; mutually exclusive with `--at` |
+| `--at X,Y` | — | — | Put the page lower-left at pen-space bed millimetres, e.g. `20,10`; mutually exclusive with `--place` |
 | `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
-| `--fit/--no-fit` | — | `--fit` | Fit a drawing past the usable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
+| `--fit/--no-fit` | — | `--fit` | Fit a page or drawing past the usable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
 
 Each Inkscape pen layer (`<g inkscape:groupmode="layer">`) becomes a G-code
 layer in document order, which is the drawing order of the pens. Strokes inside
@@ -583,17 +585,50 @@ it is allowed but not recommended on the Aquila, where the margin keeps strokes
 away from the edges of the paper. The option works with `--fit`, `--no-fit` and
 `--dry-run`, and the original profile file is never changed.
 
+#### Placing the page on the bed
+
+`--place NAME` puts the page at a named spot in the machine's usable area:
+`center`, `front-right`, `front-left`, `back-right`, `back-left` or `origin`.
+`--at X,Y` instead puts the page's lower-left corner at an exact pen-space bed
+coordinate in millimetres. The two flags are mutually exclusive: giving both is
+a usage error (exit 2) that names both, and a malformed `--at` value is also a
+usage error (exit 2).
+
+With neither flag, the effective default is the profile's `bed.page.placement`:
+`front-right` on the Aquila (its `reachable_corner` setting), and `origin` on
+`generic` and `ramped` (their `fixed` setting at `bed.page.origin_mm`). Those
+profiles therefore produce the same page origin as before.
+
+A requested page that does not fit the usable area is shifted the shortest way
+into it by default, with one warning on stderr naming the requested position,
+the final position and the usable limits, for example:
+
+```
+Warning: page at 300.000, 0.000 is outside the aquila drawable area X 10.000..187.300, Y 10.000..181.400; placed at 57.300, 10.000 mm
+```
+
+Pass `--no-fit` to make an out-of-reach page an exit-3 error that names the
+requested origin, the valid X/Y range and the fix (`use --fit (the default)`
+or choose another placement). No `.gcode` file is written in that case. A page
+shift can be followed by a separate drawing-fit warning when both apply.
+
+Every successful run prints one line on stderr, also under `--dry-run`:
+
+```
+Page placed at 33.650, 59.200 (bed 220x220)
+```
+
 The stderr summary reports the number of layers, drawing length, pen-up travel
 and pen lifts measured from the SVG's strokes, plus an estimated plot time
 from the profile's draw, travel and Z feeds (one down and one up per stroke plus
 a final lift).
 
 The first G-code line is a header comment written for `penpath preview`. It
-carries the profile name, page size, the page origin that was used, the usable
-area bounds and the Z heights, for example
-`; penpath gcode profile=aquila page=170.000x170.000 page_origin=17.300,10.000 usable_x=10.000..187.300 usable_y=10.000..181.400 z_up=12.500 ...`.
-The preview reads `page_origin` so a one-run margin override placed through the
-profile is inverted with the same origin the emitter used.
+carries the profile name, page size, the effective placement name, the page
+origin that was used, the usable area bounds and the Z heights, for example
+`; penpath gcode profile=aquila page=170.000x170.000 place=front-right page_origin=17.300x10.000 usable_x=10.000..187.300 usable_y=10.000..181.400 z_up=12.500 ...`.
+The preview reads `place` and `page_origin` so a placement or a one-run margin
+override is inverted with the same origin the emitter used.
 
 #### Fitting an oversized page
 
@@ -643,9 +678,10 @@ exactly the same G-code as before. `pen.z_touch` must be above `pen.z_down` and
 `pen.z_hover` must not be below `pen.z_touch` when ramping.
 
 Exit codes: **2** for a missing or unknown `--profile` (the message lists the
-available profiles), **3** for an unreadable or invalid profile file, a drawing
-that cannot be fitted, or (with `--no-fit`) a point outside the usable area,
-and 1 for other file errors.
+available profiles), giving both `--place` and `--at`, or an invalid `--at`
+value; **3** for an unreadable or invalid profile file, a page or drawing that
+cannot be fitted, or (with `--no-fit`) a page origin or point outside the usable
+area; and 1 for other file errors.
 
 #### Examples
 
@@ -665,6 +701,10 @@ penpath gcode card.svg --profile aquila -o card.gcode
 penpath gcode card.svg --profile aquila
 # --no-fit restores the strict exit-3 error
 penpath gcode card.svg --profile aquila --no-fit
+
+# Choose where the page sits: a named spot or an exact lower-left corner
+penpath gcode card.svg --profile aquila --place center -o centred.gcode
+penpath gcode card.svg --profile aquila --at 20,20 -o corner.gcode
 ```
 
 The complete operator workflow and checklist for the Aquila, with the
