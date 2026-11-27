@@ -11,6 +11,7 @@ from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
 from penpath.core.drawing.pfm_spiral import SpiralSettings
+from penpath.core.drawing.pfm_squiggle import SquiggleSettings
 from penpath.core.drawing.pfm_stipple import StippleSettings
 from penpath.core.drawing.pfm_tsp import TSPSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
@@ -188,6 +189,12 @@ TSP_PRESETS: dict[str, TSPSettings] = {
     "fine": TSPSettings(point_spacing=0.55, max_points=60000),
 }
 
+SQUIGGLE_PRESETS: dict[str, SquiggleSettings] = {
+    "default": SquiggleSettings(),
+    "fine": SquiggleSettings(line_spacing=1.2, max_frequency=2.5),
+    "diagonal": SquiggleSettings(angle=45.0),
+}
+
 DEFAULT_PFM = "default"
 
 PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
@@ -245,6 +252,9 @@ for _spiral_name, _spiral_settings in SPIRAL_PRESETS.items():
 
 for _hatch_name, _hatch_settings in HATCH_PRESETS.items():
     register_pfm_preset(f"hatch:{_hatch_name}", "hatch", _hatch_settings)
+
+for _squiggle_name, _squiggle_settings in SQUIGGLE_PRESETS.items():
+    register_pfm_preset(f"squiggle:{_squiggle_name}", "squiggle", _squiggle_settings)
 
 for _tsp_name, _tsp_settings in TSP_PRESETS.items():
     register_pfm_preset(f"tsp:{_tsp_name}", "tsp", _tsp_settings)
@@ -404,6 +414,7 @@ __all__ = [
     "PFM_PRESET_TYPES",
     "SKETCH_SQUARES_PRESETS",
     "SPIRAL_PRESETS",
+    "SQUIGGLE_PRESETS",
     "TSP_PRESETS",
     "get_pfm_for_preset",
     "get_pfm_preset",

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from penpath.core.drawing.pfm_hatch import HatchSettings
 from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings
+from penpath.core.drawing.pfm_squiggle import SquiggleSettings
 from penpath.core.drawing.pfm_tsp import TSPSettings
 from penpath.core.drawing.registry import get_pfm
 from penpath.core.image.filters import auto_equalize, grayscale
@@ -238,7 +239,9 @@ def render_contact_sheet(
             pfm_fn, _ = get_pfm(entry.pfm)
             settings = entry.settings.model_copy(deep=True)
             pfm_kwargs: dict[str, float] = {}
-            if isinstance(settings, (HatchSettings, PatchHatchSettings, TSPSettings)):
+            if isinstance(
+                settings, (HatchSettings, PatchHatchSettings, TSPSettings, SquiggleSettings)
+            ):
                 pfm_kwargs = {
                     "pixels_per_mm": working_width / TILE_WIDTH_MM,
                     "pen_width_mm": pen_width_mm,
