@@ -441,6 +441,13 @@ and its presets.
 | `contour_portrait` | `contour` | Four threshold levels for internal detail; tuned on a face. |
 | `contour_silhouette` | `contour` | One threshold and a larger minimum speck size for a few bold outlines. |
 
+Simulated plot previews on the free Santa portrait:
+[contour_portrait](docs/images/luc-139/contour_portrait.png) ·
+[contour_silhouette](docs/images/luc-139/contour_silhouette.png). The
+[Contour gate](docs/TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27)
+records the measured readability and plot cost; acceptance is by looking at the
+previews, not by SSIM alone.
+
 ```bash
 penpath convert photo.jpg --pfm contour -o outlines.svg
 penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg

@@ -436,6 +436,13 @@ Sketch Squares presets (use the qualified id; a bare name is rejected):
 | `sketch_squares:fine` | Short, detailed strokes (density 0.9, segments 2–30 px). |
 | `sketch_squares:crosshatch-grid` | Near-horizontal/vertical woven grid (`grid_angle=0`, segments 4–60 px). |
 
+The presets on the free Santa portrait are
+[`contour_portrait`](images/luc-139/contour_portrait.png) and
+[`contour_silhouette`](images/luc-139/contour_silhouette.png). The
+[Contour gate](TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27)
+records measured edge alignment and plot cost; visual acceptance is by looking
+at the previews, not by SSIM alone.
+
 The three hatch presets and `squiggly` are style choices: they deliberately
 give up photo likeness for a particular look. Only `sketch_lines:default` is
 calibrated against the gate in
