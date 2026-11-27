@@ -6,12 +6,12 @@ import math
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from types import UnionType
+from types import NoneType, UnionType
 from typing import Any, Literal, Union, get_args, get_origin
 
 import click
 from click.core import ParameterSource
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from rich.console import Console
 from shapely import LineString
 
@@ -46,6 +46,7 @@ from penpath.presets.pens import get_pen
 from penpath.presets.pfms import (
     DEFAULT_PFM,
     get_pfm_for_preset,
+    get_pfm_preset_by_id,
     get_pfm_preset_settings,
     list_pfm_presets,
 )
@@ -255,62 +256,87 @@ def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
     )
 
 
-def _coerce_pfm_setting(annotation: object, value: str) -> object:
-    """Convert a CLI string using a settings field's type, not its default."""
-    if annotation is bool:
-        return value.lower() in ("true", "1", "yes", "on")
-    if annotation is int:
-        return int(value)
-    if annotation is float:
-        return float(value)
+def _coerce_setting_value(annotation: object, value_str: str, key: str) -> object:
+    """Convert a ``KEY=VALUE`` string using the settings model's field type."""
     origin = get_origin(annotation)
+    if origin in (Union, UnionType):
+        args = [arg for arg in get_args(annotation) if arg is not NoneType]
+        if len(args) == 1:
+            return _coerce_setting_value(args[0], value_str, key)
+        return value_str
+
+    if annotation is bool:
+        lowered = value_str.strip().lower()
+        if lowered in ("true", "1", "yes", "on"):
+            return True
+        if lowered in ("false", "0", "no", "off"):
+            return False
+        raise ValueError("expected true, 1, yes, on, false, 0, no or off")
+
+    if annotation is int:
+        return int(value_str)
+
+    if annotation is float:
+        return float(value_str)
+
     if origin is tuple:
-        args = get_args(annotation)
-        parts = value.split(",")
-        if len(parts) != len(args):
-            raise ValueError(f"expected {len(args)} comma-separated values")
-        return tuple(_coerce_pfm_setting(arg, part) for arg, part in zip(args, parts, strict=True))
-    if origin in (UnionType, Union):
-        for arg in get_args(annotation):
-            if arg is type(None):
-                continue
-            return _coerce_pfm_setting(arg, value)
-    return value
+        tuple_args = get_args(annotation)
+        parts = value_str.split(",")
+        if tuple_args and tuple_args[-1] is Ellipsis:
+            return tuple(_coerce_setting_value(tuple_args[0], part.strip(), key) for part in parts)
+        if tuple_args and len(tuple_args) != len(parts):
+            raise ValueError(f"expected {len(tuple_args)} comma-separated values")
+        return tuple(
+            _coerce_setting_value(arg, part.strip(), key)
+            for arg, part in zip(tuple_args, parts, strict=True)
+        )
+
+    return value_str
 
 
 def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSettingsUnion:
-    """Resolve PFM settings from a PFM name or preset and overrides."""
+    """Resolve a registered PFM name, legacy preset or qualified id with overrides."""
     if pfm_name is None:
         pfm_name = DEFAULT_PFM
 
-    registered = list_pfms()
-    presets = list_pfm_presets()
-    if pfm_name not in registered and pfm_name not in presets:
-        raise click.BadParameter(
-            f"Unknown PFM or preset: '{pfm_name}'. Available PFMs: {registered}, presets: {presets}"
-        )
+    pfm_type: str | None = None
+    base_model: BaseModel | None = None
+    if ":" in pfm_name:
+        try:
+            pfm_type, base_model = get_pfm_preset_by_id(pfm_name)
+        except ValueError as e:
+            raise click.BadParameter(str(e), param_hint="--pfm") from e
+    elif pfm_name in list_pfm_presets():
+        pfm_type = get_pfm_for_preset(pfm_name)
+        base_model = get_pfm_preset_settings(pfm_name)
+    elif pfm_name in list_pfms():
+        pfm_type = pfm_name
+        _, settings_model = get_pfm(pfm_type)
+        base_model = settings_model()
+    else:
+        try:
+            get_pfm_preset_by_id(pfm_name)
+        except ValueError as e:
+            raise click.BadParameter(f"Unknown PFM or preset: {e}", param_hint="--pfm") from e
+        raise click.BadParameter(f"Unknown PFM: '{pfm_name}'", param_hint="--pfm")
 
     # Keep the fields the preset or caller actually set so the drawing can tell
     # an explicit value from a model default (flat images keep the calibrated
     # legacy max_fill/line_density; see the tone rule in pfm_sketch_lines).
-    if pfm_name in presets:
-        pfm_type = get_pfm_for_preset(pfm_name)
-        base_model = get_pfm_preset_settings(pfm_name)
-    else:
-        pfm_type = pfm_name
-        _, settings_model = get_pfm(pfm_type)
-        base_model = settings_model()
-    base_settings = base_model.model_dump()
     explicit_keys = set(base_model.model_fields_set) | set(pfm_settings)
 
     _, settings_model = get_pfm(pfm_type)
+    values = base_model.model_dump()
     for key, value_str in pfm_settings.items():
-        if key not in base_settings:
-            raise click.BadParameter(f"Unknown PFM setting: '{key}'")
+        if key not in settings_model.model_fields:
+            raise click.BadParameter(
+                f"Unknown PFM setting: '{key}' for {pfm_type}",
+                param_hint="-s/--pfm-setting",
+            )
         annotation = settings_model.model_fields[key].annotation
         try:
-            base_settings[key] = _coerce_pfm_setting(annotation, value_str)
-        except (TypeError, ValueError) as e:
+            values[key] = _coerce_setting_value(annotation, value_str, key)
+        except ValueError as e:
             raise click.BadParameter(
                 f"Invalid value '{value_str}' for PFM setting '{key}': {e}",
                 param_hint="-s/--pfm-setting",
@@ -318,7 +344,7 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSetti
 
     try:
         settings = settings_model(
-            **{key: value for key, value in base_settings.items() if key in explicit_keys}
+            **{key: value for key, value in values.items() if key in explicit_keys}
         )
     except ValidationError as e:
         error = e.errors()[0]
@@ -628,8 +654,9 @@ def _run_convert_pipeline(
     "--pfm",
     "pfm_name",
     help=(
-        "PFM algorithm (sketch_lines or contour) or built-in preset "
-        "(default: sketch_lines). Run 'penpath info pfms' to list them."
+        "PFM algorithm (sketch_lines, contour or sketch_squares), legacy preset "
+        "or qualified PFM:PRESET id (default: sketch_lines). "
+        "Run 'penpath info pfms' to list them."
     ),
 )
 @click.option(
@@ -715,7 +742,7 @@ def convert_cmd(
     quiet: bool,
     config_path: Path | None,
 ) -> None:
-    """Convert a raster image to a plottable SVG using the Sketch Lines algorithm.
+    """Convert a raster image to a plottable SVG with the selected PFM.
 
     INPUT_PATH: Path to input image (PNG, JPG, TIFF, BMP)
     OUTPUT_PATH: Output SVG path (default: <input>_plot.svg beside input)
