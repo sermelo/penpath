@@ -77,7 +77,7 @@ writes the final SVG: vpype contributes geometry only.
 
 | Concept | Description |
 |---------|-------------|
-| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, `contour` (scikit-image + Shapely outlines), `stipple` (weighted Poisson-disk dots), `spiral_sawtooth` (continuous-line sawtooth spiral, ported from DrawingBotV3) and `hatch` (straight and cross-hatched millimetre-spaced lines). Run `penpath info pfms` for the full list. |
+| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, `contour` (scikit-image + Shapely outlines), `stipple` (weighted Poisson-disk dots), `spiral_sawtooth` (continuous-line sawtooth spiral, ported from DrawingBotV3), `hatch` (straight and cross-hatched millimetre-spaced lines) and `patch_hatch` (hand-drawn style cross-hatching in small patches). Run `penpath info pfms` for the full list. |
 | **Palette** | An ordered set of pens. Each pixel is drawn by its nearest palette colour; each used pen becomes one SVG layer. |
 | **Filters** | Image preprocessing: grayscale, threshold, blur, contrast, etc. Applied in order before PFM. |
 | **Geometry optimization** | Simplify (RDP), merge (collinear join), sort (greedy NN + 2-opt) — runs automatically. |
@@ -158,6 +158,9 @@ penpath convert photo.jpg --pfm spiral_sawtooth:fine -s ring_spacing=4 -o spiral
 
 # Hatch lays down straight, millimetre-spaced lines (not --style hatch)
 penpath convert photo.jpg --pfm hatch:crosshatch -o hatch.svg
+
+# Patch Hatch: hand-drawn cross-hatching in small patches that follow the edges
+penpath convert photo.jpg --pfm patch_hatch -s seed=42 -o patch_hatch.svg
 
 # Opt into the full tonal range (solid black areas included)
 penpath convert photo.jpg -s max_fill=100 -o full-range.svg
@@ -465,7 +468,7 @@ plot (SSIM 0.4917, only 41% of the placement width covered). Compare the
 
 ### One example per algorithm
 
-All five use the free [Santa portrait](tests/fixtures/images/reference/santa.jpg)
+All six use the free [Santa portrait](tests/fixtures/images/reference/santa.jpg)
 as the source. Presets were picked after opening the rendered previews: the
 hatching and contour read as a face, stipple keeps the beard as paper, and
 `spiral_sawtooth:fine` is the cleanest of that PFM's three presets (an abstract
@@ -540,6 +543,26 @@ penpath preview build/gallery/spiral_sawtooth.svg -o docs/images/luc-88/spiral_s
 penpath gcode build/gallery/spiral_sawtooth.svg --profile generic -o build/gallery/spiral_sawtooth.gcode
 penpath preview build/gallery/spiral_sawtooth.gcode -o docs/images/luc-88/spiral_sawtooth_gcode.png --px-per-mm 2.86
 ```
+
+#### `patch_hatch`
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![patch_hatch SVG plot](docs/images/patch-hatch/patch_hatch_plot.png) | ![patch_hatch G-code preview](docs/images/patch-hatch/patch_hatch_gcode.png) |
+| Santa's red hat, white beard and glasses on a dark background. | Small patches of parallel lines, each with its own direction; one layer on the light face and beard, up to four crossing layers in the dark background. | The same patches on the A4 page, with pen-up travel hidden. |
+
+```bash
+penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/patch_hatch.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm patch_hatch
+penpath preview build/gallery/patch_hatch.svg -o docs/images/patch-hatch/patch_hatch_plot.png --px-per-mm 2.86
+penpath gcode build/gallery/patch_hatch.svg --profile generic -o build/gallery/patch_hatch.gcode
+penpath preview build/gallery/patch_hatch.gcode -o docs/images/patch-hatch/patch_hatch_gcode.png --px-per-mm 2.86
+```
+
+A close-up of the face test image shows the hand-drawn look: each patch has
+its own line direction, light areas get one layer and darker ones get more
+crossing layers.
+
+![patch_hatch close-up on the face test image](docs/images/patch-hatch/face_patch_hatch_detail.png)
 
 ### Pen width and colour
 
@@ -663,12 +686,14 @@ penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 
 ### PFM presets
 
-`--pfm` selects one of six registered algorithms: `sketch_lines` (the default
+`--pfm` selects one of seven registered algorithms: `sketch_lines` (the default
 hatching), `sketch_squares` (grid hatching), `contour` (scikit-image + Shapely
 outlines), `stipple` (weighted Poisson-disk dots), `spiral_sawtooth` (one
-continuous sawtooth line) or `hatch` (straight / cross-hatched lines, optionally
+continuous sawtooth line), `hatch` (straight / cross-hatched lines, optionally
 joined into continuous zig-zag strokes with `-s join_runs=true`, which requires
-`serpentine=true`). Each PFM accepts its own `-s KEY=VALUE` settings.
+`serpentine=true`) or `patch_hatch` (hand-drawn style cross-hatching in small
+patches whose lines follow the image's edges). Each PFM accepts its own
+`-s KEY=VALUE` settings.
 `--pfm hatch` is different from `--style hatch`, which is a Sketch Lines look.
 Use a qualified `PFM:PRESET` id below; bare names are the legacy Sketch Lines,
 Contour and Stipple preset names. `penpath info pfms` is the source of truth: it
@@ -681,6 +706,7 @@ lists every PFM, its defaults and its presets.
 | `contour` | `contour_portrait`, `contour_silhouette` | Four threshold levels for internal detail on a face; one level and a larger minimum speck size for a few bold outlines. |
 | `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. `-s dot_shape=circle\|tap` switches dots from the default `dash` to closed rings or in-place pen taps. |
 | `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
+| `patch_hatch` | `patch_hatch:default`, `patch_hatch:fine`, `patch_hatch:bold`, `patch_hatch:fast` | Hand-drawn cross-hatching in 4–10 mm patches, each with its own direction along the local edges; darker tones add crossing layers. `fine` and `bold` change spacing and patch size; `fast` joins every patch into zig-zag strokes (about 2x fewer pen lifts, with visible patch borders). |
 | `hatch` | `hatch:default`, `hatch:crosshatch`, `hatch:fine`, `hatch:single` | Straight parallel lines: two joined directions for `default` (`min_gap=0.5`, `join_runs=true`), four unjoined directions for `crosshatch`, 0.6 mm spacing for `fine`, or progressively tighter same-direction bands for `single`. |
 
 Simulated plot previews on the free Santa portrait:
@@ -692,12 +718,15 @@ Simulated plot previews on the free Santa portrait:
 [stipple_bold](docs/images/luc-140/stipple_bold.png) ·
 [spiral_sawtooth:fine](docs/images/luc-88/spiral_sawtooth_plot.png) ·
 [hatch:default on the photo](docs/images/luc-167/photo_hatch_default.png) ·
-[hatch:crosshatch on the face](docs/images/luc-167/face_hatch_crosshatch.png).
+[hatch:crosshatch on the face](docs/images/luc-167/face_hatch_crosshatch.png) ·
+[patch_hatch on the face](docs/images/patch-hatch/face_patch_hatch.png) ·
+[patch_hatch on the photo](docs/images/patch-hatch/photo_patch_hatch.png).
 The
 [Sketch Squares gate](docs/TESTING.md#sketch-squares-readability-and-plot-cost-gate-luc-149-2026-11-27),
 [Contour gate](docs/TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27),
 [Stipple gate](docs/TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27)
-and [Hatch gate](docs/TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27)
+[Hatch gate](docs/TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27)
+and [Patch Hatch measurements](docs/TESTING.md#patch-hatch-measurements-2026-11-27)
 record the measured readability and plot cost; acceptance is by looking at the
 previews, not by SSIM alone.
 
@@ -711,6 +740,7 @@ penpath convert photo.jpg --pfm stipple -s dot_shape=circle -s seed=42 -o circle
 penpath preview dots.svg -o dots.png --px-per-mm 4
 penpath convert photo.jpg --pfm spiral_sawtooth:bold -s seed=42 -o spiral.svg
 penpath convert photo.jpg --pfm hatch:crosshatch -o hatch.svg
+penpath convert photo.jpg --pfm patch_hatch:fine -s seed=42 -o patches.svg
 # Every PFM and preset side by side; stdout stays empty
 penpath compare photo.jpg -o compare.png --dpi 2 --max-resolution 64
 ```

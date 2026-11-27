@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 
 from penpath.core.drawing.pfm_hatch import HatchSettings
+from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings
 from penpath.core.drawing.registry import get_pfm
 from penpath.core.image.filters import auto_equalize, grayscale
 from penpath.core.simulation import PenStroke, simulate_plot
@@ -236,7 +237,7 @@ def render_contact_sheet(
             pfm_fn, _ = get_pfm(entry.pfm)
             settings = entry.settings.model_copy(deep=True)
             pfm_kwargs: dict[str, float] = {}
-            if isinstance(settings, HatchSettings):
+            if isinstance(settings, (HatchSettings, PatchHatchSettings)):
                 pfm_kwargs = {
                     "pixels_per_mm": working_width / TILE_WIDTH_MM,
                     "pen_width_mm": pen_width_mm,
