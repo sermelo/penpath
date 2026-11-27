@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -48,6 +49,9 @@ DARK_TILE_TEXTURE = 20.0
 RANK_MIN = 0.75
 DARK_TILE_INK_MIN = 0.20
 DARK_TILE_INK_MAX = 0.92
+WHITE_THRESHOLD = 0.92
+WHITE_SAMPLE_STEP_MM = 0.1
+BORDER_EXCLUSION_MM = 1.0
 _WHITE = 255.0
 INK_CUTOFF = 128
 PAPER = Paper(name="a4", width_mm=210.0, height_mm=297.0, margin_mm=10.0)
@@ -84,6 +88,44 @@ class GateReport:
     blank: PlotMeasures
     random: PlotMeasures
     ideal: PlotMeasures
+    white_ink_share: float
+
+
+def white_ink_share(
+    svg_path: Path,
+    original: Image.Image,
+    placement: tuple[float, float, float, float],
+) -> float:
+    """Return the share of simulated stroke length drawn on near-white source pixels.
+
+    Stroke polylines are sampled every ``WHITE_SAMPLE_STEP_MM`` millimetres and
+    mapped from page millimetres to source pixels through ``placement``. Samples
+    within ``BORDER_EXCLUSION_MM`` of the placement rectangle are skipped, so
+    the measure concerns ink inside the image rather than its edge.
+    """
+    x_mm, y_mm, width_mm, height_mm = placement
+    gray = np.asarray(original.convert("L"), dtype=np.float64)
+    source_h, source_w = gray.shape
+    sampled = 0
+    on_white = 0
+    for stroke in parse_svg_strokes(svg_path):
+        for (x0, y0), (x1, y1) in pairwise(stroke.polyline):
+            length = math.hypot(x1 - x0, y1 - y0)
+            steps = max(1, math.ceil(length / WHITE_SAMPLE_STEP_MM))
+            for index in range(steps + 1):
+                x = x0 + (x1 - x0) * index / steps
+                y = y0 + (y1 - y0) * index / steps
+                if not (
+                    x_mm + BORDER_EXCLUSION_MM < x < x_mm + width_mm - BORDER_EXCLUSION_MM
+                    and y_mm + BORDER_EXCLUSION_MM < y < y_mm + height_mm - BORDER_EXCLUSION_MM
+                ):
+                    continue
+                sx = min(source_w - 1, max(0, int((x - x_mm) / width_mm * source_w)))
+                sy = min(source_h - 1, max(0, int((y - y_mm) / height_mm * source_h)))
+                sampled += 1
+                if gray[sy, sx] / _WHITE > WHITE_THRESHOLD:
+                    on_white += 1
+    return on_white / sampled if sampled else 0.0
 
 
 def placement_crop(
@@ -389,6 +431,7 @@ def measure_svg(image_path: Path, svg_path: Path, work_dir: Path, seed: int = SE
         blank=blank,
         random=random_drawing,
         ideal=ideal,
+        white_ink_share=white_ink_share(svg_path, original, placement_tuple),
     )
 
 
@@ -405,7 +448,7 @@ def format_measurement_table(reports: Sequence[GateReport]) -> str:
     header = (
         f"{'image':<13} {'mode':<10} {'SSIM':>7} {'cov W':>7} {'cov H':>7} {'bbox':>7} "
         f"{'ink min':>8} {'ink max':>8} {'tone':>7} {'rank':>7} "
-        f"{'darkInk':>8} {'tiles':>5} {'strokes':>8}"
+        f"{'darkInk':>8} {'tiles':>5} {'white%':>7} {'strokes':>8}"
     )
     rows = [
         "Sketch Lines likeness gate: default settings, fixed seed "
@@ -426,7 +469,8 @@ def format_measurement_table(reports: Sequence[GateReport]) -> str:
                 f"{measures.coverage_area:>7.3f} {measures.ink_spread_min:>8.4f} "
                 f"{measures.ink_spread_max:>8.4f} {measures.tone_ratio:>7.2f} "
                 f"{measures.rank_correlation:>7.3f} {measures.dark_textured_ink_max:>8.3f} "
-                f"{measures.dark_textured_tiles:>5d} {report.stroke_count:>8d}"
+                f"{measures.dark_textured_tiles:>5d} {report.white_ink_share * 100:>6.3f} "
+                f"{report.stroke_count:>8d}"
             )
     return "\n".join(rows)
 
@@ -459,6 +503,7 @@ def all_finite(measures: PlotMeasures) -> bool:
 
 
 __all__ = [
+    "BORDER_EXCLUSION_MM",
     "DARK_TILE_DARKNESS",
     "DARK_TILE_INK_MAX",
     "DARK_TILE_INK_MIN",
@@ -471,6 +516,8 @@ __all__ = [
     "REFERENCE_DIR",
     "REFERENCE_NAMES",
     "SEED",
+    "WHITE_SAMPLE_STEP_MM",
+    "WHITE_THRESHOLD",
     "GateReport",
     "PlotMeasures",
     "all_finite",
@@ -489,6 +536,7 @@ __all__ = [
     "simulate_svg",
     "tile_readability",
     "tone_metrics",
+    "white_ink_share",
     "write_blank_svg",
     "write_random_svg",
 ]

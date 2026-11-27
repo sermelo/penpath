@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import click
 import pytest
 from PIL import Image
 from sketch_lines_gate import (
@@ -46,6 +47,9 @@ BBOX_AREA_MIN = 0.40
 INK_CELL_MIN = 0.0003
 TONE_RATIO_MIN = 2.0
 READABILITY_REFERENCES = ("face.jpg", "photo.jpg")
+WHITE_INK_MAX = 0.01
+MEASURED_MAIN_SSIM = {"face.jpg": 0.606598, "photo.jpg": 0.533787}
+SSIM_BASELINE_TOLERANCE = 1e-3
 
 
 def test_gate_harness_reports_every_reference_image(
@@ -102,6 +106,35 @@ def test_readability_ranks_ink_and_caps_textured_dark_tiles(
     assert DARK_TILE_INK_MIN <= measured.dark_textured_ink_max <= DARK_TILE_INK_MAX
     assert report.blank.rank_correlation < RANK_MIN
     assert report.random.rank_correlation < RANK_MIN
+
+
+@pytest.mark.parametrize("reference", READABILITY_REFERENCES)
+def test_masked_likeness_is_not_below_the_measured_main_baseline(
+    gate_report_factory: Callable[[str], GateReport], reference: str
+) -> None:
+    """The white-pen rule must not make either photo less recognizable.
+
+    The floors are the values measured with this same harness at seed 42 and
+    ``white_threshold=1.0``, which reproduces ``main``. The tolerance covers
+    small cross-platform differences in the SSIM computation.
+    """
+    report = gate_report_factory(reference)
+    floor = MEASURED_MAIN_SSIM[reference]
+    click.echo(f"{reference}: SSIM {report.algorithm.ssim:.6f}, main baseline {floor:.6f}")
+    assert report.algorithm.ssim >= floor - SSIM_BASELINE_TOLERANCE
+
+
+def test_face_ink_on_near_white_source_stays_below_one_percent(
+    gate_report_factory: Callable[[str], GateReport],
+) -> None:
+    """A simulated stroke must not spend 1% of its length on near-white source."""
+    report = gate_report_factory("face.jpg")
+    photo = gate_report_factory("photo.jpg")
+    click.echo(
+        f"face.jpg: ink on source luminance > 0.92 = {report.white_ink_share:.5f}; "
+        f"photo.jpg = {photo.white_ink_share:.5f}"
+    )
+    assert report.white_ink_share < WHITE_INK_MAX
 
 
 def test_solid_black_textured_region_fails_the_readability_cap(
