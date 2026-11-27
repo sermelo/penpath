@@ -326,6 +326,8 @@ Penpath's own simplify → merge → sort still runs, but vpype's extra
 to skip vpype on purpose. vpype contributes geometry only; penpath writes the
 final SVG on both paths. Each used pen gets an Inkscape layer with `id="layerN"`
 and the pen name as `inkscape:label`, and the page uses millimetres throughout.
+No background rect is written, so `vpype read` sees only pen strokes; paper
+colour is a preview/evaluate option (`--paper-color`, default `#FFFFFF`).
 Do not feed the result back to `vpype read`: vpype reads its layer number from
 the digits in the label, so `stabilo_88_red` and `stabilo_88_green` would merge.
 
