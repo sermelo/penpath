@@ -76,7 +76,9 @@ def test_list_sheet_entries_covers_every_pfm_and_preset() -> None:
     for pfm in list_pfms():
         expected = {pfm}
         expected.update(
-            f"{pfm}:{preset}" for preset in list_presets_for_pfm(pfm) if preset != "default"
+            preset if ":" in preset else f"{pfm}:{preset}"
+            for preset in list_presets_for_pfm(pfm)
+            if preset != "default" and not preset.endswith(":default")
         )
         assert {entry.label for entry in entries if entry.pfm == pfm} == expected
     assert all(entry.preset != "default" for entry in entries)

@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 _SAMPLE_STEP_PX = 0.5
 _EPS = 1e-9
 
+PALETTE_ANGLE_STEP_DEG = 30.0
+"""Degrees to rotate the hatch angles for each successive palette pen."""
+
 
 class HatchSettings(BaseModel):
     """Settings for the straight / cross-hatching PFM algorithm.
@@ -105,6 +108,31 @@ class HatchSettings(BaseModel):
             )
         if any(later <= earlier for earlier, later in pairwise(self.thresholds)):
             raise ValueError(f"thresholds must be strictly increasing; got {self.thresholds}")
+
+
+def with_angle_offset(settings: HatchSettings, degrees: float) -> HatchSettings:
+    """Return a copy of ``settings`` with every angle rotated by ``degrees``.
+
+    Palette conversion passes ``index * PALETTE_ANGLE_STEP_DEG`` so successive
+    pens lay their bands in different directions instead of drawing exactly on
+    top of each other. Angles wrap modulo 180 degrees, so a 180-degree offset
+    reproduces the original settings. The input model is not mutated.
+
+    Parameters
+    ----------
+    settings : HatchSettings
+        Original hatch settings, typically from a preset.
+    degrees : float
+        Rotation in degrees to add to each band angle.
+
+    Returns
+    -------
+    HatchSettings
+        A new settings model with rotated angles and all other fields unchanged.
+    """
+    offset = degrees % 180.0
+    angles = tuple((angle + offset) % 180.0 for angle in settings.angles)
+    return settings.model_copy(update={"angles": angles})
 
 
 def _darkness_map(image: Image.Image) -> NDArray[np.float64]:
@@ -296,4 +324,9 @@ def hatch_strokes(
     return strokes
 
 
-__all__ = ["HatchSettings", "hatch_strokes"]
+__all__ = [
+    "PALETTE_ANGLE_STEP_DEG",
+    "HatchSettings",
+    "hatch_strokes",
+    "with_angle_offset",
+]

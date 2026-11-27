@@ -2,7 +2,12 @@
 
 from penpath.core.drawing.outline import OutlineSettings, outline_strokes
 from penpath.core.drawing.pfm_contour import ContourSettings, contour_strokes
-from penpath.core.drawing.pfm_hatch import HatchSettings, hatch_strokes
+from penpath.core.drawing.pfm_hatch import (
+    PALETTE_ANGLE_STEP_DEG,
+    HatchSettings,
+    hatch_strokes,
+    with_angle_offset,
+)
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
 from penpath.core.drawing.pfm_stipple import StippleSettings, stipple
@@ -16,6 +21,7 @@ from penpath.core.drawing.registry import (
 from penpath.core.drawing.settings import PIXEL_SETTING_FIELDS, scale_pixel_settings
 
 __all__ = [
+    "PALETTE_ANGLE_STEP_DEG",
     "PIXEL_SETTING_FIELDS",
     "ContourSettings",
     "HatchSettings",
@@ -35,4 +41,5 @@ __all__ = [
     "sketch_lines",
     "spiral_strokes",
     "stipple",
+    "with_angle_offset",
 ]
