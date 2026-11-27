@@ -16,7 +16,10 @@ from penpath.cli.commands import convert as convert_module
 from penpath.cli.main import main
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm
+from penpath.core.image.resolution import plan_working_resolution
+from penpath.core.models import Paper
 from penpath.core.output.svg import fit_image_placement
+from penpath.core.svg_parse import get_image_placement, get_svg_paper_size, parse_svg_strokes
 
 if TYPE_CHECKING:
     from typing import Any
@@ -249,3 +252,69 @@ class TestInfoImageResolution:
             "paper": "a4",
             "pen_width_mm": 0.3,
         }
+
+
+class TestPaperSizeAndScaling:
+    def test_smaller_paper_derives_a_finer_working_resolution(self) -> None:
+        large = Paper(name="large", width_mm=190.0, height_mm=107.0, margin_mm=0.0)
+        small = Paper(name="small", width_mm=130.0, height_mm=73.0, margin_mm=0.0)
+
+        wide = plan_working_resolution((200, 150), large, 0.4)
+        narrow = plan_working_resolution((200, 150), small, 0.4)
+
+        assert wide.working_px == 475
+        assert narrow.working_px == 325
+        assert narrow.working_px < wide.working_px
+
+    def test_same_max_resolution_is_a_uniform_scaled_copy(
+        self, runner: CliRunner, large_image: Path, tmp_path: Path
+    ) -> None:
+        large_svg = tmp_path / "190x107.svg"
+        small_svg = tmp_path / "130x73.svg"
+        common = ("--max-resolution", "64", "--pen", "0.4,#000000,fineliner")
+
+        wide = _convert(runner, large_image, large_svg, "--paper", "190x107,0", *common)
+        narrow = _convert(runner, large_image, small_svg, "--paper", "130x73,0", *common)
+
+        assert wide.exit_code == 0, wide.output
+        assert narrow.exit_code == 0, narrow.output
+        assert "Working resolution: 64x48 px" in wide.output
+        assert "Working resolution: 64x48 px" in narrow.output
+
+        wide_strokes = parse_svg_strokes(large_svg)
+        narrow_strokes = parse_svg_strokes(small_svg)
+        assert wide_strokes
+        assert len(wide_strokes) == len(narrow_strokes)
+
+        wide_page = get_svg_paper_size(large_svg)
+        narrow_page = get_svg_paper_size(small_svg)
+        assert wide_page is not None and narrow_page is not None
+        assert wide_page == (190.0, 107.0)
+        assert narrow_page == (130.0, 73.0)
+
+        wide_place = get_image_placement(large_svg, (200, 150))
+        narrow_place = get_image_placement(small_svg, (200, 150))
+        assert narrow_place.width / narrow_page[0] == pytest.approx(
+            wide_place.width / wide_page[0], rel=0.02
+        )
+        assert narrow_place.x / narrow_page[0] == pytest.approx(
+            wide_place.x / wide_page[0], rel=0.02
+        )
+        assert narrow_place.height / narrow_page[1] == pytest.approx(
+            wide_place.height / wide_page[1], rel=0.02
+        )
+        assert narrow_place.y / narrow_page[1] == pytest.approx(
+            wide_place.y / wide_page[1], rel=0.02
+        )
+
+        for first, second in zip(wide_strokes, narrow_strokes, strict=True):
+            assert len(first.polyline) == len(second.polyline)
+            for (wide_x, wide_y), (narrow_x, narrow_y) in zip(
+                first.polyline, second.polyline, strict=True
+            ):
+                assert (narrow_x - narrow_place.x) / narrow_place.width == pytest.approx(
+                    (wide_x - wide_place.x) / wide_place.width, abs=1e-3
+                )
+                assert (narrow_y - narrow_place.y) / narrow_place.height == pytest.approx(
+                    (wide_y - wide_place.y) / wide_place.height, abs=1e-3
+                )

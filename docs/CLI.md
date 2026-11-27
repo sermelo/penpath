@@ -180,6 +180,17 @@ and its aspect ratio is kept: with a 190x190 mm paper and a 0.4 mm pen, a
 (`min_length`, `max_length`, `sample_step`) are interpreted in working-image
 pixels and are not scaled.
 
+Paper size is part of the rule: a **smaller page derives a smaller working
+resolution and recomposes the image** rather than scaling the larger drawing,
+because the same pen physically cannot hold the larger stroke set on less
+paper. To plot a reviewed drawing at a smaller size, fix the working resolution
+with `--max-resolution PX` and keep the same settings: the working strokes are
+then identical and export maps them into the smaller page's rectangle, so paper
+size only scales the result. For example, the strokes drawn on 190x107 mm paper
+with a 0.4 mm pen are reproduced on 130x73 mm paper by passing
+`--max-resolution 475 --pen 0.4,#000000,fineliner` together with the smaller
+page.
+
 `--max-resolution PX` replaces the derived value without clamping (and still
 never enlarges); `--no-downscale` draws at the source resolution. The chosen
 resolution is reported to stderr before drawing (and is silenced by `--quiet`):

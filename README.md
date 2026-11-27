@@ -219,6 +219,17 @@ penpath convert photo.jpg --no-downscale
 penpath info image photo.jpg  # shows the resolution penpath would plan
 ```
 
+Because the resolution comes from the paper, a smaller page **recomposes** the
+image rather than shrinking an existing drawing: the same 0.4 mm pen cannot fit
+the larger stroke set on less paper. To reproduce a reviewed drawing at a
+smaller size, pin the working resolution with `--max-resolution`; with the same
+settings the strokes are identical and only the page scale changes:
+
+```bash
+penpath convert photo.jpg -o large.svg --paper 190x107,0 --pen 0.4,#000000,fineliner -s seed=42
+penpath convert photo.jpg -o small.svg --paper 130x73,0 --pen 0.4,#000000,fineliner -s seed=42 --max-resolution 475
+```
+
 ### Progress and quiet mode
 
 `convert` keeps stdout empty and reports progress on stderr. On a terminal it
