@@ -270,12 +270,14 @@ def _scale_and_translate_geometries(
     scale = min(drawable_width_mm / geom_width_mm, drawable_height_mm / geom_height_mm)
     pixel_to_mm = scale * MM_PER_INCH / image_dpi
 
-    margin_mm = paper.margin_mm
+    origin_x_mm, origin_y_mm = paper.drawable_origin_mm
     scaled_geom_width_mm = geom_width_px * pixel_to_mm
     scaled_geom_height_mm = geom_height_px * pixel_to_mm
 
-    translate_x = margin_mm + (drawable_width_mm - scaled_geom_width_mm) / 2 - min_x * pixel_to_mm
-    translate_y = margin_mm + (drawable_height_mm - scaled_geom_height_mm) / 2 - min_y * pixel_to_mm
+    translate_x = origin_x_mm + (drawable_width_mm - scaled_geom_width_mm) / 2 - min_x * pixel_to_mm
+    translate_y = (
+        origin_y_mm + (drawable_height_mm - scaled_geom_height_mm) / 2 - min_y * pixel_to_mm
+    )
 
     transformed: list[LineString] = []
     for line in geometries:
