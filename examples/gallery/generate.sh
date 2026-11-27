@@ -40,7 +40,7 @@ penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_pl
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_bold.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen bold
 penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 3.2
 penpath gcode build/gallery/pen_bold.svg --profile generic -o build/gallery/pen_bold.gcode
-penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 2.86
+penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 3.2
 
 # Colour: one inline pen, then the multi-pen Stabilo 88 palette.
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_colour.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen "0.4,#E4002B"

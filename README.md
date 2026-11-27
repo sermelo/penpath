@@ -385,11 +385,13 @@ rebuilt with [`examples/gallery/generate.sh`](examples/gallery/generate.sh).
 Each algorithm row reads **original → simulated SVG plot → simulated G-code**:
 the plot is `penpath preview` of the SVG and the G-code view is `penpath preview`
 of the output of `penpath gcode --profile generic`. The G-code preview draws a
-thin bed/page outline around the same ink. All examples use A4 paper, the
-default 0.3 mm black `fine` pen, `-s seed=42` and a smaller working resolution
-(`--max-resolution 800`) to keep the run short; previews are 601×849 px
-(`--dpi 2.86`) except the three pen-width plots, which use `--dpi 3.2` (672×950
-px) so the stroke widths stay distinguishable, all well under 200 KB. Run the
+thin bed/page outline around the same ink. All examples use A4 paper,
+`-s seed=42` and a smaller working resolution (`--max-resolution 800`) to keep
+the run short. The algorithm rows use the default 0.3 mm black `fine` pen; the
+pen-width, colour and palette examples change the pen deliberately. Previews
+are 601×849 px (`--dpi 2.86`) except the three pen-width plots and the bold
+G-code preview, which use `--dpi 3.2` (672×950 px) so the wider strokes stay
+distinguishable and the bold ink looks solid, all well under 200 KB. Run the
 script from a checkout with `penpath` on your PATH to regenerate the whole gallery.
 
 ### Worked Example: Photo → SVG → Preview
@@ -524,7 +526,7 @@ penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_pl
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_bold.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen bold
 penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 3.2
 penpath gcode build/gallery/pen_bold.svg --profile generic -o build/gallery/pen_bold.gcode
-penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 2.86
+penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 3.2
 ```
 
 A pen can also carry its own colour inline. Here the geometry is unchanged and
