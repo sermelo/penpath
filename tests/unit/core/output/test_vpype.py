@@ -163,6 +163,7 @@ class TestOptimizeWithVpype:
 
         assert len(commands) == 2
         for command in commands:
+            assert command[1:3] == ["-s", "0"]
             assert command.count("--layer") == 1
             assert "--layer" in command
             assert "script" in command

@@ -368,6 +368,7 @@ with a message naming the setting.
 |-----|------|-------|---------|--------|
 | `line_density` | float | 0.01–10.0 | `0.97` | Fraction of luminance progress at which drawing stops; higher draws more ink. With the tone rule on, values above 1 stop at full tone coverage. |
 | `max_fill` | float | 1–100 % | `90.0` | Maximum ink coverage. Tones darker than `255 * (1 - max_fill / 100)` are treated as black; `100` keeps the full range. |
+| `white_threshold` | float | 0–1 | `0.92` | Source luminance fraction (about 235/255) above which pixels are blank paper. A ray or stroke ends at the last darker source pixel instead of bridging the white run. `1.0` opts out. |
 | `tone_coverage` | float | 0–1 | `0.5` | Fraction of a pixel's distance to white that may be spent on ink. `1` restores the pre-LUC-128 search. |
 | `tone_exponent` | float | 0–2 | `0.55` | Shape of the tone budget curve; below 1 gives mid tones a clearer hatch step. |
 | `texture_limit` | float | 0–1 | `0.8` | How much local texture reduces the budget in dark areas, so hair and foliage keep white gaps. |
@@ -408,6 +409,14 @@ search on a photo, use `-s tone_coverage=1 -s tone_exponent=1
 
 To draw the image's full tonal range, including near-solid black, opt into
 `-s max_fill=100`; 100 is never the default.
+
+The white rule uses the original grayscale source, not the image the strokes
+erase, so an earlier stroke cannot stop a later one early. A run of at least
+eight consecutive source pixels at or above `white_threshold * 255` counts as
+blank paper: segmented strokes stop on the near side and the next ray starts
+from there, so no single segment bridges the gap. Isolated bright pixels do not
+cut a stroke. Use `-s white_threshold=1.0` to draw through near-white areas as
+before.
 
 **Breaking change**: `line_density` now scales the luminance-progress stop
 rule instead of counting lines per millimetre, and `min_length` and
@@ -467,6 +476,7 @@ setting, as with Sketch Lines):
 | `min_length` | float | 1–1000 px | `2.0` | Shortest segment the ray search may end at (working-image pixels). Must be ≤ `max_length`. |
 | `max_length` | float | 1–5000 px | `40.0` | Longest segment the ray search may take (working-image pixels). Must be ≥ `min_length`. |
 | `max_fill` | float | 1–100 % | `80.0` | Maximum ink coverage; tones darker than `255 * (1 - max_fill / 100)` are treated as black. |
+| `white_threshold` | float | 0–1 | `0.92` | Same white-source pen lift as Sketch Lines; `1.0` keeps the old behaviour. |
 | `seed` | int or `null` | any | `null` | Fix the random seed for byte-identical reruns. |
 | `max_strokes` | int or `null` | ≥1 | `null` | Hard stroke cap; derived from image size and density when unset. |
 

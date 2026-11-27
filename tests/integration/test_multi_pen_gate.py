@@ -193,9 +193,9 @@ def test_sparse_layer_choices_are_pinned_after_luc123(
     assert "stabilo_88_light_blue" not in layers
 
     pins = {
-        "stabilo_88_blue": (62, 1.3189, 0.2116, 1.000, 0.996, 0.989, 0.929),
-        "stabilo_88_light_green": (20, 0.8458, 0.9647, 1.003, 0.5844, 0.584, 0.6364),
-        "stabilo_88_purple": (10, 0.6667, 0.5699, 0.803, 0.1910, 0.1528, 0.4444),
+        "stabilo_88_blue": (61, 1.3531, 0.2199, 1.001, 1.002, 0.997, 0.857),
+        "stabilo_88_light_green": (21, 0.8244, 0.9641, 1.003, 0.538, 0.538, 0.545),
+        "stabilo_88_purple": (10, 0.6464, 0.5536, 0.697, 0.191, 0.133, 0.333),
     }
     for pen_name, (strokes, recall, precision, ext_w, ext_h, bbox, cell) in pins.items():
         layer = layers[pen_name]

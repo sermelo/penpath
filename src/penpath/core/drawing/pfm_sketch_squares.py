@@ -41,6 +41,10 @@ class SketchSquaresSettings(BaseModel):
         Maximum ink coverage as a percentage (1 - 100). Any source tone darker
         than ``255 * (1 - max_fill / 100)`` is treated as black, as in Sketch
         Lines.
+    white_threshold : float
+        Luminance fraction (0 - 1) above which source pixels are blank paper;
+        forwarded to the shared engine like ``max_fill``. 1.0 restores the old
+        behaviour with no forced stop.
     seed : int | None
         Random seed for segment lengths and darkest-pixel sampling. None = non-
         deterministic.
@@ -54,6 +58,7 @@ class SketchSquaresSettings(BaseModel):
     min_length: float = Field(default=2.0, ge=1.0, le=1000.0)
     max_length: float = Field(default=40.0, ge=1.0, le=5000.0)
     max_fill: float = Field(default=80.0, ge=1.0, le=100.0)
+    white_threshold: float = Field(default=0.92, ge=0.0, le=1.0)
     seed: int | None = None
     max_strokes: int | None = Field(default=None, ge=1)
 
@@ -87,6 +92,7 @@ def sketch_squares(image: Image.Image, settings: SketchSquaresSettings) -> list[
     engine_settings = SketchLinesSettings(
         line_density=settings.line_density,
         max_fill=settings.max_fill,
+        white_threshold=settings.white_threshold,
         min_length=settings.min_length,
         max_length=settings.max_length,
         seed=settings.seed,
