@@ -229,7 +229,15 @@ def sort_lines(
     if not lines_list:
         return []
 
-    valid_lines = [line for line in lines_list if not line.is_empty and line.is_valid]
+    # A tap's two identical points make the geometry invalid to GEOS, but a tap
+    # is still a stroke to plot and must stay in the sorted drawing.
+    valid_lines = [
+        line
+        for line in lines_list
+        if not line.is_empty
+        and len(list(line.coords)) >= 2
+        and (line.is_valid or line.length <= 0.0)
+    ]
 
     if not valid_lines:
         return []

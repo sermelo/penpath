@@ -12,6 +12,7 @@ from penpath.cli.commands.convert import _resolve_pfm
 from penpath.cli.main import main
 from penpath.core.drawing import StippleSettings
 from penpath.core.models import RegisteredPFM
+from penpath.core.simulation import compute_machine_cost, simulate_plot
 from penpath.core.svg_parse import parse_svg_strokes
 
 
@@ -32,6 +33,7 @@ def test_info_pfms_lists_stipple_and_its_presets() -> None:
     assert "stipple" in by_name
     assert by_name["stipple"]["settings_model"] == "StippleSettings"
     assert by_name["stipple"]["default_settings"]["max_strokes"] == 10000
+    assert by_name["stipple"]["default_settings"]["dot_shape"] == "dash"
     assert by_name["stipple"]["presets"] == [
         "stipple_bold",
         "stipple_default",
@@ -92,6 +94,86 @@ def test_convert_with_stipple_fine_preset_writes_an_svg(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert output.exists()
     assert parse_svg_strokes(output)
+
+
+def test_unknown_dot_shape_exits_2_naming_the_setting(tmp_path: Path) -> None:
+    image = _portrait(tmp_path / "portrait.png")
+    result = CliRunner().invoke(
+        main,
+        [
+            "convert",
+            str(image),
+            "-o",
+            str(tmp_path / "bad.svg"),
+            "--pfm",
+            "stipple",
+            "-s",
+            "dot_shape=square",
+            "--no-vpype",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "dot_shape" in result.output
+
+
+def test_convert_with_circle_dot_shape_writes_closed_rings(tmp_path: Path) -> None:
+    image = _portrait(tmp_path / "portrait.png")
+    output = tmp_path / "circles.svg"
+    result = CliRunner().invoke(
+        main,
+        [
+            "convert",
+            str(image),
+            "-o",
+            str(output),
+            "--pfm",
+            "stipple",
+            "-s",
+            "dot_shape=circle",
+            "-s",
+            "seed=42",
+            "--no-vpype",
+            "--quiet",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    strokes = parse_svg_strokes(output)
+    assert strokes
+    assert all(len(stroke.polyline) == 13 for stroke in strokes)
+    assert all(stroke.polyline[0] == stroke.polyline[-1] for stroke in strokes)
+    assert all(len(set(stroke.polyline)) >= 9 for stroke in strokes)
+
+
+def test_convert_with_tap_dot_shape_survives_svg_preview_and_cost(tmp_path: Path) -> None:
+    image = _portrait(tmp_path / "portrait.png")
+    output = tmp_path / "taps.svg"
+    result = CliRunner().invoke(
+        main,
+        [
+            "convert",
+            str(image),
+            "-o",
+            str(output),
+            "--pfm",
+            "stipple",
+            "-s",
+            "dot_shape=tap",
+            "-s",
+            "seed=42",
+            "--no-vpype",
+            "--quiet",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    strokes = parse_svg_strokes(output)
+    assert strokes
+    assert all(len(stroke.polyline) == 2 for stroke in strokes)
+    assert all(stroke.polyline[0] == stroke.polyline[-1] for stroke in strokes)
+    assert compute_machine_cost(strokes)["total"]["num_strokes"] == len(strokes)
+    assert simulate_plot(strokes, 80.0, 80.0, dpi_px_per_mm=1.0).size == (80, 80)
 
 
 def test_stipple_fine_preset_selects_its_own_settings() -> None:

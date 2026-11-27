@@ -3,15 +3,15 @@
 A darkness map (``1 - L/255``) weights candidate pixels. A candidate is
 accepted when no earlier dot lies within its local exclusion radius, so dark
 regions gather more dots and each accepted dot is larger there. Every dot is
-emitted as one short two-point stroke: a pen can only draw lines, and one stroke
-per dot makes the cost of each dot explicit to the optimizer.
+one stroke: a dash, a closed circle, or a zero-length tap, so the cost of each
+dot stays explicit to the optimizer.
 """
 
 from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -41,7 +41,12 @@ class StippleSettings(BaseModel):
     jitter : float
         Rotation jitter in [0, 1]. A dot's angle is drawn uniformly from
         plus or minus ``jitter`` quarter turns; 0 draws every dot horizontally,
-        1 allows every orientation. Default 1.0.
+        1 allows every orientation. Default 1.0. No-op for ``circle`` and
+        ``tap``, which have no random angle.
+    dot_shape : {'dash', 'circle', 'tap'}
+        Shape of one dot. ``dash`` is the two-point stroke at a jittered angle
+        (the shipped default), ``circle`` is one closed ring per dot, and ``tap``
+        is a zero-length stroke that lifts the pen in place.
     seed : int | None
         Random seed for deterministic output. None = non-deterministic.
     max_strokes : int
@@ -53,12 +58,16 @@ class StippleSettings(BaseModel):
     min_radius: float = Field(default=1.0, gt=0.0, le=100.0)
     max_radius: float = Field(default=3.0, gt=0.0, le=100.0)
     jitter: float = Field(default=1.0, ge=0.0, le=1.0)
+    dot_shape: Literal["tap", "circle", "dash"] = "dash"
     seed: int | None = None
     max_strokes: int = Field(default=10000, ge=1)
 
     def model_post_init(self, __context: object) -> None:
         if self.min_radius > self.max_radius:
             raise ValueError("min_radius must be <= max_radius")
+
+
+_CIRCLE_POINTS: Final = 12
 
 
 def _darkness_map(image: Image.Image) -> NDArray[np.float64]:
@@ -70,6 +79,28 @@ def _darkness_map(image: Image.Image) -> NDArray[np.float64]:
 def _dot_radius(darkness: float, min_radius: float, max_radius: float) -> float:
     """Interpolate the dot radius from local darkness."""
     return min_radius + darkness * (max_radius - min_radius)
+
+
+def _circle_line(
+    center_x: float,
+    center_y: float,
+    radius: float,
+    width: int,
+    height: int,
+) -> LineString:
+    """Return a closed ring centred on an accepted dot, clamped to the image."""
+    points = [
+        (
+            min(
+                max(center_x + radius * math.cos(2 * math.pi * i / _CIRCLE_POINTS), 0.0), width - 1
+            ),
+            min(
+                max(center_y + radius * math.sin(2 * math.pi * i / _CIRCLE_POINTS), 0.0), height - 1
+            ),
+        )
+        for i in range(_CIRCLE_POINTS)
+    ]
+    return LineString([*points, points[0]])
 
 
 def _exclusion_radius(darkness: float, max_radius: float) -> float:
@@ -117,7 +148,8 @@ def stipple(image: Image.Image, settings: StippleSettings) -> list[LineString]:
     Returns
     -------
     list[LineString]
-        One two-point stroke per accepted dot, in image pixel coordinates.
+        One stroke per accepted dot, in image pixel coordinates: a two-point
+        dash, a closed 12-point ring, or a zero-length tap.
     """
     darkness = _darkness_map(image)
     h, w = darkness.shape
@@ -160,22 +192,29 @@ def stipple(image: Image.Image, settings: StippleSettings) -> list[LineString]:
             if _too_close(center_x, center_y, exclusion, cell, cell_size, cells):
                 continue
 
-            angle = settings.jitter * rng.uniform(-math.pi / 2.0, math.pi / 2.0)
-            dx, dy = math.cos(angle) * radius, math.sin(angle) * radius
-            start = (
-                min(max(center_x - dx, 0.0), float(w - 1)),
-                min(max(center_y - dy, 0.0), float(h - 1)),
-            )
-            end = (
-                min(max(center_x + dx, 0.0), float(w - 1)),
-                min(max(center_y + dy, 0.0), float(h - 1)),
-            )
-            if start == end:
-                continue
+            if settings.dot_shape == "dash":
+                angle = settings.jitter * rng.uniform(-math.pi / 2.0, math.pi / 2.0)
+                dx, dy = math.cos(angle) * radius, math.sin(angle) * radius
+                start = (
+                    min(max(center_x - dx, 0.0), float(w - 1)),
+                    min(max(center_y - dy, 0.0), float(h - 1)),
+                )
+                end = (
+                    min(max(center_x + dx, 0.0), float(w - 1)),
+                    min(max(center_y + dy, 0.0), float(h - 1)),
+                )
+                if start == end:
+                    continue
 
-            line = LineString([start, end])
-            if not line.is_valid or line.length <= 0.0:
-                continue
+                line = LineString([start, end])
+                if not line.is_valid or line.length <= 0.0:
+                    continue
+            elif settings.dot_shape == "circle":
+                line = _circle_line(center_x, center_y, radius, w, h)
+            else:
+                point = (center_x, center_y)
+                line = LineString([point, point])
+
             lines.append(line)
             cells.setdefault(cell, []).append((center_x, center_y, exclusion))
         if len(lines) >= target:
