@@ -72,7 +72,7 @@ pen_change:
     - {z: touch, feed: z}
     - {raw: "M300 S1000 P300"}
     - {message: "Pen {pen_index}: {pen}, touch, knob"}
-    - {pause: "Pen {pen_index}: {pen}. Touch paper, tighten, press knob"}
+    - {pause: "Pen {pen_index}: {pen}. Fit pen, touch paper, tighten clamp, press knob"}
     - {raw: "M300 S1500 P200"}
     - {message: "Plotting {pen}"}
     - {z: up, feed: z}
