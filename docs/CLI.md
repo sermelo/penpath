@@ -385,6 +385,7 @@ with a message naming the setting.
 |-----|------|-------|---------|--------|
 | `line_density` | float | 0.01–10.0 | `0.97` | Fraction of luminance progress at which drawing stops; higher draws more ink. With the tone rule on, values above 1 stop at full tone coverage. |
 | `max_fill` | float | 1–100 % | `90.0` | Maximum ink coverage. Tones darker than `255 * (1 - max_fill / 100)` are treated as black; `100` keeps the full range. |
+| `white_threshold` | float | 0–1 | `0.92` | Source luminance fraction (about 235/255) above which pixels are blank paper. A ray or stroke ends at the last darker source pixel instead of bridging the white run. `1.0` opts out. |
 | `tone_coverage` | float | 0–1 | `0.5` | Fraction of a pixel's distance to white that may be spent on ink. `1` restores the pre-LUC-128 search. |
 | `tone_exponent` | float | 0–2 | `0.55` | Shape of the tone budget curve; below 1 gives mid tones a clearer hatch step. |
 | `texture_limit` | float | 0–1 | `0.8` | How much local texture reduces the budget in dark areas, so hair and foliage keep white gaps. |
@@ -425,6 +426,14 @@ search on a photo, use `-s tone_coverage=1 -s tone_exponent=1
 
 To draw the image's full tonal range, including near-solid black, opt into
 `-s max_fill=100`; 100 is never the default.
+
+The white rule uses the original grayscale source, not the image the strokes
+erase, so an earlier stroke cannot stop a later one early. A run of at least
+eight consecutive source pixels at or above `white_threshold * 255` counts as
+blank paper: segmented strokes stop on the near side and the next ray starts
+from there, so no single segment bridges the gap. Isolated bright pixels do not
+cut a stroke. Use `-s white_threshold=1.0` to draw through near-white areas as
+before.
 
 **Breaking change**: `line_density` now scales the luminance-progress stop
 rule instead of counting lines per millimetre, and `min_length` and
@@ -484,6 +493,7 @@ setting, as with Sketch Lines):
 | `min_length` | float | 1–1000 px | `2.0` | Shortest segment the ray search may end at (working-image pixels). Must be ≤ `max_length`. |
 | `max_length` | float | 1–5000 px | `40.0` | Longest segment the ray search may take (working-image pixels). Must be ≥ `min_length`. |
 | `max_fill` | float | 1–100 % | `80.0` | Maximum ink coverage; tones darker than `255 * (1 - max_fill / 100)` are treated as black. |
+| `white_threshold` | float | 0–1 | `0.92` | Same white-source pen lift as Sketch Lines; `1.0` keeps the old behaviour. |
 | `seed` | int or `null` | any | `null` | Fix the random seed for byte-identical reruns. |
 | `max_strokes` | int or `null` | ≥1 | `null` | Hard stroke cap; derived from image size and density when unset. |
 
@@ -516,10 +526,63 @@ values or out-of-range numbers exit 2 naming the setting.
 
 **Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s ring_spacing=5 -s amplitude=0.8`
 
+#### PFM Settings (Hatch)
+
+Select this PFM with `--pfm hatch` (or a qualified `hatch:PRESET` id). It draws
+straight parallel and cross-hatched lines: darkness `1 - L/255` decides which
+bands draw at each pixel, darker pixels getting more line directions (and,
+optionally, tighter spacing). It is a separate algorithm from `--style hatch`:
+the latter is a *Sketch Lines look* with narrow random-ray angles and tone
+steps, while `--pfm hatch` lays down measured millimetre-spaced lines. The two
+flags are independent; `--style hatch` does not select this PFM.
+
+Every field of `HatchSettings` is accepted by `-s KEY=VALUE`. Lengths are in
+millimetres **on paper**, not image pixels, and the image scale is supplied by
+`convert`; booleans accept the same `true`/`false`, `1`/`0`, `yes`/`no` and
+`on`/`off` spellings as Sketch Lines. Invalid keys, values or out-of-range
+numbers exit 2 with the setting named. `join_runs=true` with `serpentine=false`
+is rejected with a message naming both settings.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `spacing` | float | >0 mm | `1.0` | Distance between parallel lines. The effective spacing is never below the pen width, even if a smaller value is given. |
+| `angles` | tuple | −360–360° each | `45,135,0,90` | Line direction for each band, in degrees; must have the same length as `thresholds`. Bands are drawn in order, so darker areas receive more directions. |
+| `thresholds` | tuple | (0, 1), strictly increasing | `0.2,0.4,0.6,0.8` | Minimum darkness `1 - L/255` at which a band draws; must have the same length as `angles`. |
+| `min_length` | float | >=0 mm | `0.5` | Drop sampled runs shorter than this after gap bridging. |
+| `min_gap` | float | >=0 mm | `0.3` | Bridge gaps shorter than this so a stroke survives small light speckles. |
+| `variable_spacing` | bool | — | `false` | Band `i` uses `spacing * (1 - 0.5 * thresholds[i])`, so darker bands get denser lines; still clamped to the pen width. |
+| `serpentine` | bool | — | `true` | Reverse every other line so the end of one is near the start of the next. |
+| `join_runs` | bool | — | `false` | Join overlapping runs on adjacent lines of a band into continuous zig-zag strokes, drawing the short connectors; fewer pen lifts. Requires `serpentine=true` (otherwise the command exits 2). |
+| `jitter` | float | >=0 mm | `0.0` | Seeded perpendicular wobble; `0` gives perfectly straight parallel lines. |
+| `seed` | int or `null` | any | `null` | Seed for the jitter. Fix it with `-s seed=42` for byte-identical reruns. |
+
+**Examples**:
+
+```bash
+# Two-band hatching; the -s seed makes the jitter reproducible
+penpath convert photo.jpg --pfm hatch:default -s seed=42 -o hatch.svg
+# Four-band cross-hatching (the algorithm defaults)
+penpath convert photo.jpg --pfm hatch:crosshatch -s seed=42 -o crosshatch.svg
+# Finer 0.6 mm lines; include a third band with a 0.6 darkness threshold
+penpath convert photo.jpg --pfm hatch:fine -s angles=45,135,0 -s thresholds=0.2,0.4,0.6
+# Continuous zig-zag strokes on the algorithm defaults (fewer pen lifts)
+penpath convert photo.jpg --pfm hatch -s join_runs=true -o joined.svg
+# Palette: each successive pen's angles rotate by 30 degrees
+penpath convert photo.jpg --pfm hatch:default --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E" -o two_pens.svg
+```
+
+With `--palette`, `convert` calls `penpath.core.drawing.pfm_hatch.with_angle_offset`
+for pen `i` with `i * 30` degrees (`PALETTE_ANGLE_STEP_DEG`), so two pens using
+`hatch:default` draw at 45/135° and 75/165° instead of laying identical lines on
+top of each other. Angles wrap modulo 180°, so a 180° offset restores the
+original settings. The settings model is not mutated. See the
+[Hatch gate](TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27) for measured
+readability, tone and machine cost.
+
 #### PFM Presets (`--pfm NAME`)
 
 `--pfm` accepts a registered algorithm name such as `sketch_lines`,
-`sketch_squares`, `contour`, `stipple` or `spiral_sawtooth`, a legacy bare
+`sketch_squares`, `contour`, `stipple`, `spiral_sawtooth` or `hatch`, a legacy bare
 preset name, or a qualified `PFM:PRESET` id. A preset supplies a bundle of the
 selected PFM's settings and any `-s` override is applied on top with that
 PFM's field types. The qualified ids are unambiguous; bare names are the
@@ -573,6 +636,16 @@ their Sketch Lines meaning):
 | `spiral_sawtooth:bold` | Wider rings and larger teeth for a graphic look (spacing 12 px, amplitude 2, velocity 60–200). |
 | `spiral_sawtooth:parabolic` | Two opposed parabolic branches (`spiral_type=parabolic`). |
 
+Hatch presets (use the qualified id; a bare `default` or `fine` stays a Sketch
+Lines preset):
+
+| Preset id | Character |
+|-----------|-----------|
+| `hatch:default` | Two bands at 45/135° starting at darkness 0.25/0.5, `min_gap=0.5` and `join_runs=true`: the gate's balanced, continuous-stroke look with 5x fewer pen lifts than Sketch Lines. |
+| `hatch:crosshatch` | The algorithm defaults: four bands at 45/135/0/90° and thresholds 0.2/0.4/0.6/0.8, with runs left unjoined. |
+| `hatch:fine` | The crosshatch bands at 0.6 mm spacing instead of 1.0 mm. |
+| `hatch:single` | All four bands at 45° with `variable_spacing=True`, so darker bands pack tighter parallel lines. |
+
 The `-s KEY=VALUE` rule applies to every preset: `-s` wins over the preset's
 value, and an invalid key or value exits 2 naming the setting. The bare legacy
 names (`default`, `fine`, `bold`, and the Contour names) keep their old meaning
@@ -597,13 +670,17 @@ The three Square presets on the free Santa portrait are
 records measured readability, plot cost and the blank/random baselines; visual
 acceptance is by looking at the previews, not by SSIM alone.
 
-The three hatch presets and `squiggly` are style choices: they deliberately
-give up photo likeness for a particular look. `sketch_lines:default` is
-calibrated against the [Sketch Lines gate](TESTING.md#sketch-lines-likeness-gate-luc-47)
-and `stipple_default` against the
-[Stipple gate](TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27);
-Sketch Squares has its own gate linked above. Running `--pfm sketch_squares` or
-`--pfm stipple` with no preset uses the algorithm defaults above.
+The three *Sketch Lines* hatch presets (`sketch_lines:crosshatch`,
+`sketch_lines:hatch_horizontal`, `sketch_lines:hatch_vertical`) and `squiggly`
+are style choices: they deliberately give up photo likeness for a particular
+look and are not the `hatch` PFM. `sketch_lines:default` is calibrated against
+the [Sketch Lines gate](TESTING.md#sketch-lines-likeness-gate-luc-47),
+`stipple_default` against the
+[Stipple gate](TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27),
+and `hatch:default`/`hatch:crosshatch` against the
+[Hatch gate](TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27); Sketch
+Squares has its own gate linked above. Running `--pfm sketch_squares`,
+`--pfm stipple` or `--pfm hatch` with no preset uses that algorithm's defaults.
 
 #### Filters (Applied in Order)
 
@@ -640,6 +717,10 @@ penpath convert photo.jpg -o grid.svg --pfm sketch_squares:crosshatch-grid -s se
 # Continuous-line Spiral Sawtooth (algorithm defaults, a preset, or -s overrides)
 penpath convert photo.jpg -o spiral.svg --pfm spiral_sawtooth
 penpath convert photo.jpg -o spiral_fine.svg --pfm spiral_sawtooth:fine
+
+# Straight / cross-hatched lines are a PFM, not --style hatch (a Sketch Lines look)
+penpath convert photo.jpg -o hatch.svg --pfm hatch:default -s seed=42
+penpath convert photo.jpg -o crosshatch.svg --pfm hatch:crosshatch -s seed=42
 
 # Using project file
 penpath convert --project my_project.yaml
@@ -715,10 +796,26 @@ penpath preview DRAWING -o OUTPUT [OPTIONS]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--output PATH` | `-o` | — | Output image path (required, PNG) |
-| `--dpi FLOAT` | — | `10.0` | Resolution in **pixels per millimetre** |
+| `--dpi FLOAT` | — | `101.6` | Resolution in **real dots per inch**, converted with `/25.4` |
+| `--px-per-mm FLOAT` | — | `4.0` | Resolution in **pixels per millimetre** |
+| `--force` | — | `false` | Render even if the raster exceeds 40 MP (bypasses only the pixel budget) |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour (hex or named CSS colour) |
 | `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name; bed and page outlines stay visible) |
 | `--travel/--no-travel` | — | `false` | Draw pen-up travel moves as thin light lines |
+
+`--dpi` and `--px-per-mm` are mutually exclusive: giving both exits 2 naming
+both flags. Each value must be finite and greater than zero (exit 2 naming the
+flag), including with `--force`; the default 4 px/mm is about 101 DPI. The
+resolved raster is checked against the 40 MP budget **before** any image is
+allocated, so an over-limit request exits non-zero and writes no file. The
+stderr error names the size, megapixels and the fix, for example:
+
+```
+Error: Render too large: renders 148000x210000 px (31080.0 MP), above the 40 MP limit. Lower --px-per-mm (or --dpi) or pass --force.
+```
+
+`--force` skips only that pixel-budget check; it never accepts a bad value or
+replaces a missing argument.
 
 For an SVG the page size is read from `width`/`height` or `viewBox`; SVGs without
 one fall back to A4. For G-code naming a known profile, the canvas is the profile
@@ -743,7 +840,7 @@ with Y drawn downwards on the image (the bed's front edge is at the bottom). The
 header without it falls back to `page_origin_mm()` as the emitter does. Strokes
 are undone from nozzle to page space with that same origin, pen offset and
 `bed.invert_y`, then drawn on the bed, so the ink region matches the reviewed SVG
-at the same `--dpi` even when the page is smaller than the bed or uses
+at the same resolution even when the page is smaller than the bed or uses
 `reachable_corner`. The bed and page outlines are thin grey (0.2 mm, `#A0A0A0`)
 lines under the ink, are always drawn, and are not filtered by `--layer`. A file
 without a usable profile stays A4/page-sized with no bed outline.
@@ -772,14 +869,14 @@ and travels are shown.
 
 ```bash
 penpath preview plot.svg -o preview.png
-penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
+penpath preview plot.svg -o preview.png --px-per-mm 20 --paper-color "#F5F5DC"
 penpath preview plot.svg -o fine.png --layer fine
 # Show pen-up travel as thin light lines under the ink (default: ink only)
 penpath preview plot.svg -o travel.png --travel
 
 # Inspect a structured Sketch Squares preset before plotting (ink-only PNG)
 penpath convert santa.jpg -o santa_grid.svg --pfm sketch_squares:crosshatch-grid -s seed=42 --max-resolution 384 --no-vpype
-penpath preview santa_grid.svg -o santa_grid.png --dpi 4
+penpath preview santa_grid.svg -o santa_grid.png --px-per-mm 4
 
 # Check the G-code against the reviewed SVG: the ink matches, and the PNG also
 # shows the bed and the page placed on it
@@ -1110,7 +1207,7 @@ structure the original does not have is penalised. All three use the same crop,
 256x256 size and blur sigma 1.5. Also reports machine cost (drawing length,
 pen-up travel, pen lifts, short segments and stroke count) plus ink coverage
 and the pen name per pen layer and in total. Coverage is the share of the whole
-page inked by a layer's pen-down strokes at the chosen `--dpi`; per-layer
+page inked by a layer's pen-down strokes at the chosen resolution; per-layer
 shares may overlap, so they need not add up to the total.
 
 ```bash
@@ -1129,10 +1226,26 @@ penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--json` | — | `false` | Print only JSON on stdout (for scripts/agents) |
-| `--dpi FLOAT` | — | `96/25.4` | Resolution in **pixels per millimetre**, shared by simulation and likeness |
+| `--dpi FLOAT` | — | `96` | Resolution in **real dots per inch**, converted with `/25.4` |
+| `--px-per-mm FLOAT` | — | `96/25.4` | Resolution in **pixels per millimetre**, shared by simulation and likeness |
+| `--force` | — | `false` | Evaluate even if the simulation exceeds 40 MP (bypasses only the pixel budget) |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour |
 | `--layer LABEL` | — | all | Only evaluate this pen layer |
 | `--coverage-warn PCT` | — | `50` | Warn on stderr when a layer covers more than this percentage of the page; `0` disables the warning; value must be `>= 0` |
+
+`--dpi` and `--px-per-mm` are mutually exclusive: giving both exits 2 naming
+both flags. Each value must be finite and greater than zero (exit 2 naming the
+flag), including with `--force`. The default 96 DPI equals 96/25.4 px/mm and is
+shared by the simulation, likeness crop and coverage rasterisation. The 40 MP
+budget is checked before any image or coverage mask is allocated, so an
+over-limit request exits non-zero and writes no JSON. The stderr error has the
+shape:
+
+```
+Error: Render too large: renders 148000x210000 px (31080.0 MP), above the 40 MP limit. Lower --px-per-mm (or --dpi) or pass --force.
+```
+
+`--force` skips only that pixel-budget check; it never accepts a bad value.
 
 For SVGs without placement metadata, the image is fitted to the page keeping
 its aspect ratio and centered — the same fallback used by
@@ -1198,7 +1311,7 @@ penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 penpath evaluate photo.jpg plot.svg --json | jq '.masked_likeness'
 penpath evaluate photo.jpg plot.svg --json | jq '.edge_likeness'
-penpath evaluate photo.jpg plot.svg --dpi 5 --layer fine
+penpath evaluate photo.jpg plot.svg --px-per-mm 5 --layer fine
 penpath evaluate photo.jpg plot.svg --coverage-warn 75
 penpath evaluate photo.jpg plot.svg --coverage-warn 0
 ```

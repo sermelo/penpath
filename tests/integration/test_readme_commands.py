@@ -64,6 +64,7 @@ _VALUE_OPTIONS = frozenset(
         "--background-method",
         "--saturation",
         "--dpi",
+        "--px-per-mm",
         "--config",
         "-c",
         "--vpype-path",
@@ -285,16 +286,16 @@ def test_readme_commands_run(workspace: Path) -> None:
 def test_pen_width_previews_are_distinct() -> None:
     """The fine, medium and bold previews must render as three different rasters.
 
-    At low preview DPI 0.3 mm and 0.5 mm strokes both round to one pixel, so
-    fine and medium look identical even though the SVGs differ. The gallery
-    renders these three at 3.2 DPI to keep the widths visible.
+    At low preview resolution 0.3 mm and 0.5 mm strokes both round to one pixel,
+    so fine and medium look identical even though the SVGs differ. The gallery
+    renders these three at 3.2 px/mm to keep the widths visible.
     """
     gallery = _README.parent / "docs" / "images" / "luc-88"
     digests = {
         hashlib.sha256((gallery / f"pen_{width}_plot.png").read_bytes()).digest()
         for width in ("fine", "medium", "bold")
     }
-    assert len(digests) == 3, "pen width previews collapsed; regenerate at --dpi 3.2"
+    assert len(digests) == 3, "pen width previews collapsed; regenerate at --px-per-mm 3.2"
 
 
 class TestReadmeCommandParsing:
