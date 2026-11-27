@@ -6,7 +6,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, cast, get_args
+from typing import Any, Literal, get_args
 
 import click
 from click.core import ParameterSource
@@ -17,7 +17,6 @@ from shapely import LineString
 from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
-from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD, mask_background
@@ -27,14 +26,27 @@ from penpath.core.image.pipeline import FilterPipeline, get_filter
 from penpath.core.image.resolution import apply_working_resolution, plan_working_resolution
 from penpath.core.image.saturation import NO_BOOST_FACTOR, adapt_saturation, boost_saturation
 from penpath.core.image.separate import separate_palette
-from penpath.core.models import ImageRef, Palette, Paper, Pen, Project, SketchLinesPFM
+from penpath.core.models import (
+    ImageRef,
+    Palette,
+    Paper,
+    Pen,
+    PFMSettingsUnion,
+    Project,
+    make_pfm_settings,
+)
 from penpath.core.output.svg import export_pen_layers, fit_image_placement, write_penpath_svg
 from penpath.core.output.vpype import optimize_with_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
 from penpath.presets.palettes import list_palettes
 from penpath.presets.papers import get_paper
 from penpath.presets.pens import get_pen
-from penpath.presets.pfms import DEFAULT_PFM, get_pfm_preset, list_pfm_presets
+from penpath.presets.pfms import (
+    DEFAULT_PFM,
+    get_pfm_for_preset,
+    get_pfm_preset_settings,
+    list_pfm_presets,
+)
 
 _VALID_PEN_TYPES: tuple[str, ...] = tuple(
     str(item) for item in get_args(Pen.model_fields["pen_type"].annotation)
@@ -241,22 +253,27 @@ def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
     )
 
 
-def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> SketchLinesPFM:
-    """Resolve PFM settings from name and overrides."""
+def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSettingsUnion:
+    """Resolve PFM settings from a PFM name or preset and overrides."""
     if pfm_name is None:
         pfm_name = DEFAULT_PFM
 
-    # Check if it's a registered PFM
-    if pfm_name not in list_pfms() and pfm_name not in list_pfm_presets():
-        raise click.BadParameter(f"Unknown PFM: '{pfm_name}'. Available: {list_pfms()}")
+    registered = list_pfms()
+    presets = list_pfm_presets()
+    if pfm_name not in registered and pfm_name not in presets:
+        raise click.BadParameter(
+            f"Unknown PFM: '{pfm_name}'. Available PFMs: {registered}, presets: {presets}"
+        )
 
-    # Get base settings from preset or default
-    if pfm_name in list_pfm_presets():
-        base_settings = get_pfm_preset(pfm_name).model_dump()
+    if pfm_name in presets:
+        pfm_type = get_pfm_for_preset(pfm_name)
+        base_settings = get_pfm_preset_settings(pfm_name).model_dump()
     else:
-        base_settings = SketchLinesSettings().model_dump()
+        pfm_type = pfm_name
+        _, settings_model = get_pfm(pfm_type)
+        base_settings = settings_model().model_dump()
 
-    # Apply overrides
+    _, settings_model = get_pfm(pfm_type)
     for key, value_str in pfm_settings.items():
         if key not in base_settings:
             raise click.BadParameter(f"Unknown PFM setting: '{key}'")
@@ -269,8 +286,7 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> SketchLi
             elif isinstance(current_value, float):
                 base_settings[key] = float(value_str)
             elif isinstance(current_value, tuple):
-                parts = value_str.split(",")
-                base_settings[key] = tuple(float(p) for p in parts)
+                base_settings[key] = tuple(float(p) for p in value_str.split(","))
             else:
                 base_settings[key] = value_str
         except (TypeError, ValueError) as e:
@@ -280,7 +296,7 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> SketchLi
             ) from e
 
     try:
-        settings_model = SketchLinesSettings(**base_settings)
+        settings = settings_model.model_validate(base_settings)
     except ValidationError as e:
         error = e.errors()[0]
         key = str(error["loc"][0]) if error.get("loc") else "pfm"
@@ -288,7 +304,7 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> SketchLi
             f"Invalid value for PFM setting '{key}': {error['msg']}",
             param_hint="-s/--pfm-setting",
         ) from e
-    return SketchLinesPFM(settings=settings_model)
+    return make_pfm_settings(pfm_type, settings)
 
 
 def _determine_output_path(input_path: Path, output_path: str | None) -> Path:
@@ -428,7 +444,7 @@ def _run_convert_pipeline(
     # Step 4: Run the PFM once per pen, with settings in working-image pixels.
     reporter.start("Generating lines (PFM)")
     pfm_fn, _ = get_pfm(project.pfm.pfm_type)
-    pfm_settings = cast(SketchLinesSettings, project.pfm.to_typed_settings())
+    pfm_settings = project.pfm.to_typed_settings()
     lines_by_pen = [pfm_fn(image, pfm_settings) for image in filtered_by_pen]
     reporter.finish()
 

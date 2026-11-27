@@ -1,6 +1,9 @@
 """Built-in PFM presets for penpath."""
 
+from pydantic import BaseModel
+
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+from penpath.core.drawing.registry import get_pfm
 
 PFM_PRESETS: dict[str, SketchLinesSettings] = {
     "fine": SketchLinesSettings(
@@ -85,6 +88,20 @@ PFM_PRESETS: dict[str, SketchLinesSettings] = {
 
 DEFAULT_PFM = "default"
 
+PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
+_EXTRA_PFM_PRESETS: dict[str, tuple[str, BaseModel]] = {}
+
+
+def register_pfm_preset(name: str, pfm_type: str, settings: BaseModel) -> None:
+    """Register a preset for a PFM other than the built-in sketch_lines one."""
+    if name in PFM_PRESETS or name in _EXTRA_PFM_PRESETS:
+        raise ValueError(f"PFM preset already registered: {name}")
+    try:
+        _, settings_model = get_pfm(pfm_type)
+    except KeyError as e:
+        raise ValueError(f"Unknown PFM: {pfm_type}") from e
+    _EXTRA_PFM_PRESETS[name] = (pfm_type, settings_model.model_validate(settings.model_dump()))
+
 
 def get_pfm_preset(name: str) -> SketchLinesSettings:
     """Get a PFM preset by name.
@@ -109,6 +126,31 @@ def get_pfm_preset(name: str) -> SketchLinesSettings:
     return PFM_PRESETS[name]
 
 
+def get_pfm_preset_settings(name: str) -> BaseModel:
+    """Get a preset's settings, from any registered PFM."""
+    if name in PFM_PRESETS:
+        return PFM_PRESETS[name]
+    if name in _EXTRA_PFM_PRESETS:
+        return _EXTRA_PFM_PRESETS[name][1]
+    raise ValueError(f"Unknown PFM preset: {name}")
+
+
+def get_pfm_for_preset(name: str) -> str:
+    """Get the PFM a preset belongs to."""
+    if name in PFM_PRESET_OWNERS:
+        return PFM_PRESET_OWNERS[name]
+    if name in _EXTRA_PFM_PRESETS:
+        return _EXTRA_PFM_PRESETS[name][0]
+    raise ValueError(f"Unknown PFM preset: {name}")
+
+
+def list_presets_for_pfm(pfm_type: str) -> list[str]:
+    """List the preset names belonging to one PFM."""
+    builtin = [name for name, owner in PFM_PRESET_OWNERS.items() if owner == pfm_type]
+    extra = [name for name, (owner, _) in _EXTRA_PFM_PRESETS.items() if owner == pfm_type]
+    return sorted(builtin + extra)
+
+
 def list_pfm_presets() -> list[str]:
     """List all available PFM preset names.
 
@@ -117,12 +159,17 @@ def list_pfm_presets() -> list[str]:
     list[str]
         Sorted list of preset names.
     """
-    return sorted(PFM_PRESETS.keys())
+    return sorted(set(PFM_PRESETS) | set(_EXTRA_PFM_PRESETS))
 
 
 __all__ = [
     "DEFAULT_PFM",
     "PFM_PRESETS",
+    "PFM_PRESET_OWNERS",
+    "get_pfm_for_preset",
     "get_pfm_preset",
+    "get_pfm_preset_settings",
     "list_pfm_presets",
+    "list_presets_for_pfm",
+    "register_pfm_preset",
 ]
