@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, SerializeAsAny, field_validator, model_validator
 
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
@@ -223,8 +223,52 @@ class SketchLinesPFM(PFMSettings):
     settings: SketchLinesSettings = Field(default_factory=SketchLinesSettings)
 
 
-# Discriminated union for PFM settings
-PFMSettingsUnion = Annotated[SketchLinesPFM, Field(discriminator="pfm_type")]
+class _EmptyPFMSettings(BaseModel):
+    pass
+
+
+class RegisteredPFM(PFMSettings):
+    """PFM wrapper whose settings validate against the registered PFM model."""
+
+    pfm_type: str = Field(..., min_length=1)
+    settings: SerializeAsAny[BaseModel] = Field(default_factory=_EmptyPFMSettings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_registered_settings(cls, data: object) -> object:
+        """Validate the nested settings with this PFM's registered model."""
+        if not isinstance(data, dict):
+            return data
+        pfm_type = data.get("pfm_type")
+        if not isinstance(pfm_type, str):
+            return data
+
+        from penpath.core.drawing.registry import get_pfm
+
+        try:
+            _, settings_model = get_pfm(pfm_type)
+        except KeyError as e:
+            raise ValueError(f"Unknown PFM: {pfm_type}") from e
+        raw_settings = data.get("settings", {})
+        if isinstance(raw_settings, BaseModel):
+            raw_settings = raw_settings.model_dump()
+        validated = dict(data)
+        validated["settings"] = settings_model.model_validate(raw_settings)
+        return validated
+
+
+def make_pfm_settings(pfm_type: str, settings: BaseModel) -> PFMSettingsUnion:
+    """Build the project PFM wrapper for a PFM type and its validated settings."""
+    from penpath.core.drawing.registry import get_pfm
+
+    _, settings_model = get_pfm(pfm_type)
+    validated = settings_model.model_validate(settings.model_dump())
+    if pfm_type == "sketch_lines":
+        return SketchLinesPFM(settings=cast(SketchLinesSettings, validated))
+    return RegisteredPFM(pfm_type=pfm_type, settings=validated)
+
+
+PFMSettingsUnion = SketchLinesPFM | RegisteredPFM
 
 
 class Project(BaseModel):
@@ -303,5 +347,7 @@ __all__ = [
     "Paper",
     "Pen",
     "Project",
+    "RegisteredPFM",
     "SketchLinesPFM",
+    "make_pfm_settings",
 ]

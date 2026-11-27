@@ -22,7 +22,7 @@ from penpath.core.models import Paper
 from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper, list_papers
 from penpath.presets.pens import get_pen, list_pens
-from penpath.presets.pfms import list_pfm_presets
+from penpath.presets.pfms import list_pfm_presets, list_presets_for_pfm
 
 if TYPE_CHECKING:
     pass
@@ -266,8 +266,8 @@ def info_pfms(fmt: str) -> None:
             {
                 "name": name,
                 "settings_model": settings_model.__name__,
-                "default_settings": default_settings.model_dump(),
-                "presets": [p for p in presets if p.startswith(name) or name == "sketch_lines"],
+                "default_settings": default_settings.model_dump(mode="json"),
+                "presets": list_presets_for_pfm(name),
             }
         )
 

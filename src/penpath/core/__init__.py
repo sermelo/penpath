@@ -72,7 +72,9 @@ from penpath.core.models import (
     PFMSettings,
     PFMSettingsUnion,
     Project,
+    RegisteredPFM,
     SketchLinesPFM,
+    make_pfm_settings,
 )
 from penpath.core.output import (
     FIT_TOLERANCE_MM,
@@ -185,6 +187,7 @@ __all__ = [
     "Project",
     "ProjectLoadError",
     "ProjectSaveError",
+    "RegisteredPFM",
     "SketchLinesPFM",
     "UnknownProfileError",
     "UnsupportedFormatError",
@@ -222,6 +225,7 @@ __all__ = [
     "load_image",
     "load_profile",
     "load_yaml",
+    "make_pfm_settings",
     "mask_background",
     "merge_lines",
     "mm_to_pixels",
