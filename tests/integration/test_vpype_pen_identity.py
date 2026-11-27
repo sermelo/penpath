@@ -210,7 +210,7 @@ class TestPenpathSvgLayout:
         preview = tmp_path / "preview.png"
         _convert(runner, reference, plot, "--pen", "red_fine")
 
-        result = runner.invoke(main, ["preview", str(plot), "-o", str(preview), "--dpi", "2"])
+        result = runner.invoke(main, ["preview", str(plot), "-o", str(preview), "--px-per-mm", "2"])
 
         assert result.exit_code == 0, result.output
         with Image.open(preview) as image:

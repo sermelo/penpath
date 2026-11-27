@@ -17,12 +17,12 @@ from penpath.cli.main import main
 from penpath.core import load_profile
 from penpath.presets.palettes import STABILO_88
 
-DPI = 5
+PX_PER_MM = 5
 COLORS = {pen.name: pen.color for pen in STABILO_88.pens}
 OUTLINE_RGB = ImageColor.getrgb(OUTLINE_COLOR)
 BED_MM = (210.0, 297.0)
 PAGE_MM = (190.0, 190.0)
-PAGE_TOP_PX = round((BED_MM[1] - PAGE_MM[1]) * DPI)
+PAGE_TOP_PX = round((BED_MM[1] - PAGE_MM[1]) * PX_PER_MM)
 RAMPED_PROFILE = Path(__file__).resolve().parents[1] / "fixtures" / "profiles" / "ramped.yaml"
 
 
@@ -51,7 +51,7 @@ def runner() -> CliRunner:
 
 def _preview(runner: CliRunner, source: Path, output: Path, *extra: str) -> Image.Image:
     result = runner.invoke(
-        main, ["preview", str(source), "-o", str(output), "--dpi", str(DPI), *extra]
+        main, ["preview", str(source), "-o", str(output), "--px-per-mm", str(PX_PER_MM), *extra]
     )
     assert result.exit_code == 0, result.output
     with Image.open(output) as image:
@@ -127,7 +127,7 @@ def test_gcode_preview_shows_bed_and_page_outlines(runner: CliRunner, tmp_path: 
 
     image = _preview(runner, gcode, tmp_path / "small-gcode.png")
 
-    assert image.size == (round(BED_MM[0] * DPI), round(BED_MM[1] * DPI))
+    assert image.size == (round(BED_MM[0] * PX_PER_MM), round(BED_MM[1] * PX_PER_MM))
     for pixel in ((0, 500), (1049, 500), (500, 0), (500, 1484)):
         assert image.getpixel(pixel) == OUTLINE_RGB, pixel
     for pixel in ((500, PAGE_TOP_PX), (950, 1000), (0, 1000)):
@@ -153,7 +153,7 @@ def test_gcode_preview_ink_matches_svg_in_page_region(runner: CliRunner, tmp_pat
     svg_image = _preview(runner, drawing, tmp_path / "small-svg.png")
     gcode_image = _preview(runner, gcode, tmp_path / "small-gcode.png")
     page_region = _without_outlines(gcode_image).crop(
-        (0, PAGE_TOP_PX, round(PAGE_MM[0] * DPI), round(BED_MM[1] * DPI))
+        (0, PAGE_TOP_PX, round(PAGE_MM[0] * PX_PER_MM), round(BED_MM[1] * PX_PER_MM))
     )
 
     assert page_region.size == svg_image.size == (950, 950)
@@ -188,8 +188,8 @@ def test_ramped_gcode_png_equals_svg_png(
     bed_svg = _bed_svg(drawing, (100.0, 100.0), BED_MM, (0.0, BED_MM[1] - 100.0))
     bed_svg_image = _preview(runner, bed_svg, tmp_path / "bed_svg.png")
 
-    assert gcode_image.size == (210 * DPI, 297 * DPI)
-    assert svg_image.size == (100 * DPI, 100 * DPI)
+    assert gcode_image.size == (210 * PX_PER_MM, 297 * PX_PER_MM)
+    assert svg_image.size == (100 * PX_PER_MM, 100 * PX_PER_MM)
     assert ImageChops.difference(_without_outlines(gcode_image), bed_svg_image).getbbox() is None
 
 
@@ -219,8 +219,8 @@ def test_gcode_preview_flips_ink_when_profile_does_not_invert_y(
 
     image = _preview(runner, gcode, tmp_path / "no_invert.png")
 
-    assert image.getpixel((100, round(287 * DPI))) == (0, 0, 0)
-    assert image.getpixel((100, round(10 * DPI))) == (255, 255, 255)
+    assert image.getpixel((100, round(287 * PX_PER_MM))) == (0, 0, 0)
+    assert image.getpixel((100, round(10 * PX_PER_MM))) == (255, 255, 255)
 
 
 def test_gcode_preview_layer_keeps_both_outlines(
@@ -305,10 +305,10 @@ def test_gcode_preview_shows_the_frame_as_ink(runner: CliRunner, tmp_path: Path)
     gcode = _framed_gcode(tmp_path, runner)
     image = _preview(runner, gcode, tmp_path / "frame.png")
 
-    assert image.size == (round(220 * DPI), round(220 * DPI))
+    assert image.size == (round(220 * PX_PER_MM), round(220 * PX_PER_MM))
     assert image.getpixel((83, 500)) == (0, 0, 0)
     assert image.getpixel((95, 500)) == (255, 255, 255)
-    assert image.getpixel((round(18.65 * DPI), 500)) == OUTLINE_RGB
+    assert image.getpixel((round(18.65 * PX_PER_MM), 500)) == OUTLINE_RGB
 
 
 def test_gcode_preview_layer_can_show_only_the_frame(runner: CliRunner, tmp_path: Path) -> None:
@@ -361,14 +361,16 @@ def test_preview_unknown_profile_falls_back_to_a4(runner: CliRunner, tmp_path: P
     )
     output = tmp_path / "foreign.png"
 
-    result = runner.invoke(main, ["preview", str(gcode), "-o", str(output), "--dpi", str(DPI)])
+    result = runner.invoke(
+        main, ["preview", str(gcode), "-o", str(output), "--px-per-mm", str(PX_PER_MM)]
+    )
 
     assert result.exit_code == 0, result.output
     assert "no_such_machine" in result.output
     assert "not found" in result.output
     assert "Traceback" not in result.output
     with Image.open(output) as image:
-        assert image.size == (210 * DPI, 297 * DPI)
+        assert image.size == (210 * PX_PER_MM, 297 * PX_PER_MM)
         assert OUTLINE_RGB not in set(image.getdata())
 
 

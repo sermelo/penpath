@@ -12,6 +12,7 @@ from PIL import Image, UnidentifiedImageError
 from rich.console import Console
 from rich.table import Table
 
+from penpath.cli.commands._resolution import enforce_render_budget, resolve_px_per_mm
 from penpath.core import (
     compute_edge_likeness,
     compute_layer_coverage,
@@ -26,7 +27,8 @@ from penpath.core import (
 )
 from penpath.core.simulation import LayerMetrics, MachineCostResult
 
-DEFAULT_PX_PER_MM = 96 / 25.4
+DEFAULT_DPI = 96.0
+DEFAULT_PX_PER_MM = DEFAULT_DPI / 25.4
 FALLBACK_PAPER_MM = (210.0, 297.0)
 
 console = Console(stderr=True)
@@ -88,11 +90,24 @@ def _cost_table(cost: MachineCostResult) -> Table:
 )
 @click.option(
     "--dpi",
-    "px_per_mm",
+    "dpi",
     type=float,
-    default=DEFAULT_PX_PER_MM,
-    show_default=True,
-    help="Resolution in pixels per millimetre (shared by simulation and likeness).",
+    default=None,
+    help="Resolution in dots per inch (converted with /25.4). "
+    f"Default: {DEFAULT_DPI:g} DPI ({DEFAULT_PX_PER_MM:g} px/mm).",
+)
+@click.option(
+    "--px-per-mm",
+    "px_per_mm_option",
+    type=float,
+    default=None,
+    help="Resolution in pixels per millimetre (shared by simulation and likeness). "
+    f"Default: {DEFAULT_PX_PER_MM:g}. Mutually exclusive with --dpi.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Evaluate even if the simulation exceeds 40 MP (bypasses only the pixel budget).",
 )
 @click.option(
     "--paper-color",
@@ -120,17 +135,23 @@ def evaluate_cmd(
     image: Path,
     drawing_svg: Path,
     as_json: bool,
-    px_per_mm: float,
+    dpi: float | None,
+    px_per_mm_option: float | None,
+    force: bool,
     paper_color: str,
     layer_label: str | None,
     coverage_warn_pct: float,
 ) -> None:
     """Evaluate DRAWING_SVG against the original IMAGE.
 
-    The SVG is simulated at the chosen resolution, cropped to the recorded
-    image placement, and scored with greyscale SSIM over the whole page,
-    greyscale SSIM over the source image's ink only, and edge SSIM. Whole-page
-    greyscale SSIM misses pale ink on a near-blank page and rewards agreeing
+    ``--dpi`` is real dots per inch and ``--px-per-mm`` is pixels per
+    millimetre; they are mutually exclusive, and the default is 96 DPI
+    (96/25.4 px/mm). A simulation over 40 MP is refused before allocation
+    unless ``--force`` is given. The SVG is simulated at the chosen resolution,
+    cropped to the recorded image placement, and scored with greyscale SSIM over
+    the whole page, greyscale SSIM over the source image's ink only, and edge
+    SSIM. Whole-page greyscale SSIM misses pale ink on a near-blank page and
+    rewards agreeing
     with mostly-white paper; ink-only SSIM averages the same SSIM map over the
     source ink pixels instead. Edge SSIM compares Sobel edge maps and penalises
     spurious structure. Machine cost, ink coverage and the pen name from the
@@ -138,8 +159,7 @@ def evaluate_cmd(
     the page warns on stderr. With --json, only a JSON object is written to
     stdout.
     """
-    if px_per_mm <= 0:
-        raise click.BadParameter("must be greater than zero", param_hint="--dpi")
+    px_per_mm = resolve_px_per_mm(dpi, px_per_mm_option, DEFAULT_PX_PER_MM)
 
     try:
         with Image.open(image) as opened:
@@ -166,6 +186,7 @@ def evaluate_cmd(
         raise click.ClickException(f"Could not read image placement: {exc}") from exc
 
     width_mm, height_mm = get_svg_paper_size(drawing_svg) or FALLBACK_PAPER_MM
+    enforce_render_budget(width_mm, height_mm, px_per_mm, force=force)
     try:
         simulated = simulate_plot(
             strokes,

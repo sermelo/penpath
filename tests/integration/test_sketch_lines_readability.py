@@ -29,7 +29,7 @@ PHOTOS = ("face.jpg", "photo.jpg")
 
 @pytest.mark.parametrize("name", PHOTOS)
 def test_default_convert_and_preview_show_readable_tone_steps(name: str, tmp_path: Path) -> None:
-    """The no-flag default path renders a photo with tone-following hatch gaps."""
+    """The default convert path renders a photo with tone-following hatch gaps."""
     svg = tmp_path / "plot.svg"
     png = tmp_path / "plot.png"
     result = CliRunner().invoke(
@@ -50,7 +50,10 @@ def test_default_convert_and_preview_show_readable_tone_steps(name: str, tmp_pat
         ],
     )
     assert result.exit_code == 0, result.output
-    preview = CliRunner().invoke(main, ["preview", str(svg), "-o", str(png)])
+    preview = CliRunner().invoke(
+        main,
+        ["preview", str(svg), "-o", str(png), "--px-per-mm", str(PREVIEW_PX_PER_MM)],
+    )
     assert preview.exit_code == 0, preview.output
 
     with Image.open(REFERENCE_DIR / name) as opened:

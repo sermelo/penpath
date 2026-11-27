@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 
+from penpath.cli.commands._resolution import enforce_render_budget, resolve_px_per_mm
 from penpath.core import (
     GcodePreviewError,
     MachineProfile,
@@ -24,7 +25,8 @@ from penpath.core import (
 from penpath.presets.palettes import STABILO_88
 from penpath.presets.pens import PEN_PRESETS
 
-DEFAULT_PX_PER_MM = 10.0
+DEFAULT_PX_PER_MM = 4.0
+DEFAULT_DPI = DEFAULT_PX_PER_MM * 25.4
 FALLBACK_PAPER_MM = (210.0, 297.0)
 TRAVEL_COLOR = "#C8C8C8"
 TRAVEL_WIDTH_MM = 0.1
@@ -137,11 +139,24 @@ def _preview_gcode(
 )
 @click.option(
     "--dpi",
-    "px_per_mm",
+    "dpi",
     type=float,
-    default=DEFAULT_PX_PER_MM,
-    show_default=True,
-    help="Resolution in pixels per millimetre.",
+    default=None,
+    help=f"Resolution in dots per inch (converted with /25.4). Default: {DEFAULT_DPI:g} DPI "
+    f"({DEFAULT_PX_PER_MM:g} px/mm).",
+)
+@click.option(
+    "--px-per-mm",
+    "px_per_mm_option",
+    type=float,
+    default=None,
+    help=f"Resolution in pixels per millimetre. Default: {DEFAULT_PX_PER_MM:g}. "
+    "Mutually exclusive with --dpi.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Render even if the image exceeds 40 MP (bypasses only the pixel budget).",
 )
 @click.option(
     "--paper-color",
@@ -167,7 +182,9 @@ def _preview_gcode(
 def preview_cmd(
     drawing: Path,
     output_path: Path,
-    px_per_mm: float,
+    dpi: float | None,
+    px_per_mm_option: float | None,
+    force: bool,
     paper_color: str,
     layer_label: str | None,
     travel: bool,
@@ -176,15 +193,17 @@ def preview_cmd(
 
     DRAWING is an SVG or a .gcode file; arcs (G2/G3) are not supported and
     other G-code dialects are out of scope. Strokes are drawn with the core plot
-    simulator at the requested resolution. For G-code naming a known profile the
-    canvas is the machine bed, with a thin grey bed and page outline under the
-    ink; the header's page_origin places the page. ``--layer`` filters the
-    ink only, leaving both outlines visible. ``--travel`` also draws pen-up moves
-    as thin light lines under the ink; the default stays ink-only. All messages
-    go to stderr, so stdout stays usable in a pipeline.
+    simulator at the requested resolution. ``--dpi`` is real dots per inch and
+    ``--px-per-mm`` is pixels per millimetre; they are mutually exclusive, and
+    the default is 4 px/mm (about 101 DPI). A raster over 40 MP is refused
+    before allocation unless ``--force`` is given. For G-code naming a known
+    profile the canvas is the machine bed, with a thin grey bed and page outline
+    under the ink; the header's page_origin places the page. ``--layer`` filters
+    the ink only, leaving both outlines visible. ``--travel`` also draws pen-up
+    moves as thin light lines under the ink; the default stays ink-only. All
+    messages go to stderr, so stdout stays usable in a pipeline.
     """
-    if px_per_mm <= 0:
-        raise click.BadParameter("must be greater than zero", param_hint="--dpi")
+    px_per_mm = resolve_px_per_mm(dpi, px_per_mm_option, DEFAULT_PX_PER_MM)
 
     outlines: list[PenStroke] = []
     if drawing.suffix.lower() == ".gcode":
@@ -203,6 +222,7 @@ def preview_cmd(
     if not strokes:
         raise click.ClickException("No pen strokes found in drawing (check --layer if used)")
 
+    enforce_render_budget(width_mm, height_mm, px_per_mm, force=force)
     try:
         image = simulate_plot(
             [*outlines, *strokes],
