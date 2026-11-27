@@ -499,7 +499,7 @@ def test_aquila_130x73_page_uses_the_usable_corner_without_a_warning(
     assert result.exit_code == 0, result.stderr
     assert "Warning:" not in result.stderr
     text = drawing.with_suffix(".gcode").read_text(encoding="ascii")
-    assert "page_origin=57.300,10.000 usable_x=10.000..187.300" in text
+    assert "place=front-right page_origin=57.300x10.000 usable_x=10.000..187.300" in text
     assert "usable_y=10.000..181.400" in text
 
 
@@ -580,7 +580,7 @@ gcode:
     assert result.exit_code == 0, result.stderr
     assert result.stdout.startswith(
         "; penpath gcode profile=asymmetric page=210.000x297.000 "
-        "page_origin=0.000,0.000 usable_x=4.000..208.000 usable_y=3.000..296.000 "
+        "place=origin page_origin=0.000x0.000 usable_x=4.000..208.000 usable_y=3.000..296.000 "
         "z_up=5.000 z_down=0.000\n"
     )
     assert "G0 X10.000 Y287.000 F6000\n" in result.stdout

@@ -7,11 +7,14 @@ from penpath.core.output.gcode import (
     FitResult,
     GcodeError,
     GcodeLayer,
+    PagePlacement,
+    PlacementName,
     PointOutsideBedError,
     build_gcode,
     fit_layers_to_drawable,
     lead_in_mm,
     page_origin_mm,
+    place_page,
     usable_area,
 )
 from penpath.core.output.svg import export_pen_layers, export_svg, write_penpath_svg
@@ -22,6 +25,8 @@ __all__ = [
     "FitResult",
     "GcodeError",
     "GcodeLayer",
+    "PagePlacement",
+    "PlacementName",
     "PointOutsideBedError",
     "build_gcode",
     "export_pen_layers",
@@ -30,6 +35,7 @@ __all__ = [
     "lead_in_mm",
     "optimize_with_vpype",
     "page_origin_mm",
+    "place_page",
     "usable_area",
     "write_penpath_svg",
 ]

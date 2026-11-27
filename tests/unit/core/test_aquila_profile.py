@@ -67,7 +67,8 @@ def test_aquila_start_block_matches_reference() -> None:
     """The header and start sequence are the reference's Plot.start body."""
     assert _gcode_lines()[:19] == [
         "; penpath gcode profile=aquila page=170.000x170.000 "
-        "page_origin=17.300,10.000 usable_x=10.000..187.300 usable_y=10.000..181.400 "
+        "place=front-right page_origin=17.300x10.000 "
+        "usable_x=10.000..187.300 usable_y=10.000..181.400 "
         "z_up=12.500 z_touch=10.000 z_down=9.000",
         "; BEFORE STARTING: paper held down, pen OUT of the clamp. Never home with a pen in.",
         "; touch Z 10.0, pen down Z 9.0, up Z 12.5, offset (-22.7, -28.6)",
