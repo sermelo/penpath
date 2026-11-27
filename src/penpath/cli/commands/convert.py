@@ -26,6 +26,7 @@ from penpath.core.drawing.pfm_hatch import (
 )
 from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings, with_layer_angle_offset
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+from penpath.core.drawing.pfm_tsp import TSPSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD, mask_background
@@ -608,7 +609,7 @@ def _run_convert_pipeline(
         }
         if updates:
             pfm_settings = pfm_settings.model_copy(update=updates)
-    # Hatch and Patch Hatch need the physical scale, which the serialisable settings do not
+    # Hatch, Patch Hatch and TSP need the physical scale, which the serialisable settings do not
     # carry. A palette rotates the angle set per pen so colour layers do not
     # sit exactly on top of one another; a single pen keeps the original angles.
     pixels_per_mm = working_width / image_placement.width
@@ -616,7 +617,7 @@ def _run_convert_pipeline(
     for index, image in enumerate(filtered_by_pen):
         pen_settings = pfm_settings
         pfm_kwargs: dict[str, object] = {}
-        if isinstance(pen_settings, (HatchSettings, PatchHatchSettings)):
+        if isinstance(pen_settings, (HatchSettings, PatchHatchSettings, TSPSettings)):
             if use_palette and isinstance(pen_settings, HatchSettings):
                 pen_settings = with_angle_offset(pen_settings, index * PALETTE_ANGLE_STEP_DEG)
             elif use_palette and isinstance(pen_settings, PatchHatchSettings):
