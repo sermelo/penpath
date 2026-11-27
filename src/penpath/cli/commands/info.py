@@ -15,6 +15,7 @@ from penpath.cli.palettes import resolve_palette
 from penpath.core import ProfileError, list_profile_sources, load_profile
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.image.load import load_image
+from penpath.core.image.palette_order import order_pens_for_drawing
 from penpath.core.image.pipeline import list_filters
 from penpath.core.image.resolution import plan_working_resolution
 from penpath.core.image.separate import palette_match
@@ -186,7 +187,7 @@ def info_palettes(fmt: str) -> None:
     for name in list_palettes():
         palette = get_palette(name)
         builtin_palettes.append({"name": name, "pen_count": len(palette.pens), "source": "builtin"})
-        for order, pen in enumerate(palette.pens, start=1):
+        for order, pen in enumerate(order_pens_for_drawing(palette.pens), start=1):
             palette_pens.append(
                 {
                     "palette": name,

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
 from click.testing import CliRunner
-from PIL import Image
+from PIL import Image, ImageColor
 
 from penpath.cli.main import main
 from penpath.core import separate_palette
@@ -127,3 +128,37 @@ def test_christmas_tree_meets_two_percent_share_and_layer_floor(tmp_path: Path) 
         )
     used = _used_pens(_convert("christmas_tree.jpg", tmp_path))
     assert used >= REQUIRED_TREE_PENS, f"missing tree layers: {sorted(REQUIRED_TREE_PENS - used)}"
+
+
+def _relative_luminance(color: str) -> float:
+    """Compute WCAG relative luminance straight from the SVG stroke colour."""
+
+    def linear(channel: float) -> float:
+        return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (channel / 255.0 for channel in ImageColor.getrgb(color)[:3])
+    return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+
+
+def _layer_darkness(svg_path: Path) -> list[tuple[str, float]]:
+    """Return each used layer's label and ink darkness (1 - relative luminance)."""
+    root = ET.parse(svg_path).getroot()
+    layers: list[tuple[str, float]] = []
+    for group in root.iter(SVG_NS + "g"):
+        if group.get(INKSCAPE_NS + "groupmode") != "layer":
+            continue
+        paths = group.findall(SVG_NS + "path")
+        if not any(path.get("d") for path in paths):
+            continue
+        label = str(group.get(INKSCAPE_NS + "label"))
+        layers.append((label, 1.0 - _relative_luminance(str(paths[0].get("stroke")))))
+    return layers
+
+
+def test_christmas_tree_layers_are_light_to_dark_with_black_last(tmp_path: Path) -> None:
+    """The SVG follows ink value, not the definition order of the palette."""
+    layers = _layer_darkness(_convert("christmas_tree.jpg", tmp_path))
+    assert len(layers) >= 3
+    assert layers[-1][0] == "stabilo_88_black"
+    non_black = layers[:-1]
+    assert all(earlier[1] <= later[1] for earlier, later in pairwise(non_black)), layers

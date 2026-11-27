@@ -23,6 +23,7 @@ from penpath.core.image.filters import (
     threshold,
 )
 from penpath.core.image.load import ImageLoadError, UnsupportedFormatError, load_image
+from penpath.core.image.palette_order import order_pens_for_drawing
 from penpath.core.image.pipeline import (
     FilterPipeline,
     FilterStep,
@@ -75,6 +76,7 @@ __all__ = [
     "list_filters",
     "load_image",
     "mask_background",
+    "order_pens_for_drawing",
     "palette_match",
     "plan_working_resolution",
     "posterize",
