@@ -49,6 +49,8 @@ DARK_TILE_TEXTURE = 20.0
 RANK_MIN = 0.75
 DARK_TILE_INK_MIN = 0.20
 DARK_TILE_INK_MAX = 0.92
+DARK_DECILE_QUANTILE = 0.10
+DARK_DECILE_INK_MAX = 0.85
 WHITE_THRESHOLD = 0.92
 WHITE_SAMPLE_STEP_MM = 0.1
 BORDER_EXCLUSION_MM = 1.0
@@ -74,6 +76,7 @@ class PlotMeasures:
     rank_correlation: float
     dark_textured_ink_max: float
     dark_textured_tiles: int
+    darkest_decile_ink: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +84,7 @@ class GateReport:
     """Measurements for an image and its blank, random and ideal baselines."""
 
     reference: str
+    svg_path: Path
     placement: ImagePlacement
     paper_size: tuple[float, float]
     stroke_count: int
@@ -155,6 +159,22 @@ def ink_mask(
     """Return the dark pixels of a simulated plot inside a placement crop."""
     greyscale = np.asarray(plot.convert("L").crop(crop))
     return greyscale < cutoff
+
+
+def darkest_decile_ink(
+    mask: NDArray[np.bool_],
+    original_crop: Image.Image,
+) -> float:
+    """Return the simulated ink share over the darkest source-tone pixels.
+
+    The darkest decile is the source crop's pixels at or below its 0.10
+    luminance quantile, using the same ``<=`` rule as :func:`tone_metrics`.
+    The returned value is the mean of the simulated ink mask over those
+    pixels: 1.0 is a solid-filled dark mass, 0.0 leaves all of it blank.
+    """
+    greyscale = np.asarray(original_crop.convert("L"), dtype=np.float64)
+    darkest = greyscale <= np.quantile(greyscale, DARK_DECILE_QUANTILE)
+    return float(mask[darkest].mean()) if darkest.any() else 0.0
 
 
 def coverage_fractions(
@@ -261,6 +281,7 @@ def measure_plot(
     spread = ink_spread(mask)
     dark, light, ratio = tone_metrics(mask, original_crop)
     correlation, dark_ink_max, dark_tiles = tile_readability(mask, original_crop)
+    decile_ink = darkest_decile_ink(mask, original_crop)
     ssim = compute_likeness(plot, original, placement, dpi_px_per_mm=PX_PER_MM)
     return PlotMeasures(
         ssim=ssim,
@@ -275,6 +296,7 @@ def measure_plot(
         rank_correlation=correlation,
         dark_textured_ink_max=dark_ink_max,
         dark_textured_tiles=dark_tiles,
+        darkest_decile_ink=decile_ink,
     )
 
 
@@ -424,6 +446,7 @@ def measure_svg(image_path: Path, svg_path: Path, work_dir: Path, seed: int = SE
 
     return GateReport(
         reference=image_path.name,
+        svg_path=svg_path,
         placement=placement,
         paper_size=paper_size,
         stroke_count=stroke_count,
@@ -448,7 +471,7 @@ def format_measurement_table(reports: Sequence[GateReport]) -> str:
     header = (
         f"{'image':<13} {'mode':<10} {'SSIM':>7} {'cov W':>7} {'cov H':>7} {'bbox':>7} "
         f"{'ink min':>8} {'ink max':>8} {'tone':>7} {'rank':>7} "
-        f"{'darkInk':>8} {'tiles':>5} {'white%':>7} {'strokes':>8}"
+        f"{'darkInk':>8} {'decInk':>7} {'tiles':>5} {'white%':>7} {'strokes':>8}"
     )
     rows = [
         "Sketch Lines likeness gate: default settings, fixed seed "
@@ -469,6 +492,7 @@ def format_measurement_table(reports: Sequence[GateReport]) -> str:
                 f"{measures.coverage_area:>7.3f} {measures.ink_spread_min:>8.4f} "
                 f"{measures.ink_spread_max:>8.4f} {measures.tone_ratio:>7.2f} "
                 f"{measures.rank_correlation:>7.3f} {measures.dark_textured_ink_max:>8.3f} "
+                f"{measures.darkest_decile_ink:>7.3f} "
                 f"{measures.dark_textured_tiles:>5d} {report.white_ink_share * 100:>6.3f} "
                 f"{report.stroke_count:>8d}"
             )
@@ -494,6 +518,7 @@ def finite_values(measures: PlotMeasures) -> tuple[float, ...]:
         measures.tone_ratio,
         measures.rank_correlation,
         measures.dark_textured_ink_max,
+        measures.darkest_decile_ink,
     )
 
 
@@ -504,6 +529,8 @@ def all_finite(measures: PlotMeasures) -> bool:
 
 __all__ = [
     "BORDER_EXCLUSION_MM",
+    "DARK_DECILE_INK_MAX",
+    "DARK_DECILE_QUANTILE",
     "DARK_TILE_DARKNESS",
     "DARK_TILE_INK_MAX",
     "DARK_TILE_INK_MIN",
@@ -522,6 +549,7 @@ __all__ = [
     "PlotMeasures",
     "all_finite",
     "coverage_fractions",
+    "darkest_decile_ink",
     "format_measurement_table",
     "ink_mask",
     "ink_spread",

@@ -737,6 +737,52 @@ uv run pytest tests/integration/test_sketch_lines_gate.py \
   tests/integration/test_sketch_squares_gate.py -s
 ```
 
+### Darkest-tone ink cap (LUC-194, 2026-11-27)
+
+`max_tone_ink` (default 0.85, 0–1) caps the share of the darkest source tenth
+that may receive ink. The gate's new `darkest_decile_ink` measure resizes the
+source to the placement crop, takes the pixels at or below its 0.10 luminance
+quantile with the same `<=` rule as `tone_metrics`, and averages the simulated
+ink mask over them. The engine counts one centre pixel per stroke step on the
+original grayscale before `max_fill`, and stops the tone run at 0.83 of the
+named cap because a simulated 0.3 mm pen covers about 1.2 of those pixels.
+`max_tone_ink=1.0` reproduces the post-LUC-193 drawing exactly; `0` draws
+nothing. Only the tone rule uses the cap, so flat shapes, smooth gradients,
+palette channels and Sketch Squares are untouched.
+
+| image | darkest-decile ink before | after | gate SSIM before | after | masked likeness at 3 px/mm before | after |
+|-------|--------------------------:|------:|-----------------:|------:|----------------------------------:|------:|
+| `face.jpg` | 0.752863 | 0.752863 | 0.608464 | 0.608464 | 0.521474 | 0.521474 |
+| `photo.jpg` | 0.880317 | **0.841871** | 0.533787 | **0.562880** | 0.441838 | **0.471291** |
+
+"Before" is `-s max_tone_ink=1.0`, which reproduces the post-part-1 `main`
+measurement from the same harness at seed 42. The gate asserts both photos
+stay below 0.85 and prints the measured values. Face was already below the cap
+and its drawing is byte-identical; the photo's dense forest and tree mass now
+keep about 16% of their darkest pixels blank, and its gate SSIM rises by 0.029.
+At the gate's own 3.7795 px/mm the ink-only SSIM for the photo falls
+0.573096 → 0.544438 (less ink on source-dark pixels), while at the 3 px/mm
+resolution requested for this task it rises 0.441838 → 0.471291; both are
+reported so the trade-off is visible. The older 0.47/0.49 reference floors
+predate the measured 3 px/mm baselines, as recorded for LUC-193 above. Every
+other LUC-47, readability, basic-shape, multi-pen and Sketch Squares floor is
+unchanged and still passes.
+
+The 3 px/mm convert/preview renders used for the visual check are committed
+under [`docs/images/luc-194/`](../images/luc-194/):
+[`face.png`](../images/luc-194/face.png) shows the astronaut's dark hair and
+surrounding tree mass already patterned with fine white gaps;
+[`photo.png`](../images/luc-194/photo.png) shows the right-hand tree mass and
+the forest strip hatched with visible white gaps instead of one solid black
+area, while the pale lake stays blank paper.
+
+Reproduce with:
+
+```bash
+uv run pytest tests/integration/test_sketch_lines_gate.py \
+  tests/integration/test_sketch_squares_gate.py -s
+```
+
 ### Auto equalization on by default (LUC-90, 2026-11-25)
 
 `convert` stretches the working image's luminance range `[lo, hi]` to

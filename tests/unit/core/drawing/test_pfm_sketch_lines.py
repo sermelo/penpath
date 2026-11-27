@@ -26,6 +26,7 @@ class TestSketchLinesSettings:
         assert settings.tone_coverage == 0.5
         assert settings.tone_exponent == 0.55
         assert settings.texture_limit == 0.8
+        assert settings.max_tone_ink == 0.85
         assert settings.min_length == 2.0
         assert settings.max_length == 40.0
         assert settings.angle_range == (-72.0, -52.0)
@@ -143,6 +144,14 @@ class TestSketchLinesSettings:
             SketchLinesSettings(tone_exponent=2.1)
         with pytest.raises(ValueError):
             SketchLinesSettings(texture_limit=1.1)
+
+    def test_max_tone_ink_bounds(self):
+        with pytest.raises(ValueError):
+            SketchLinesSettings(max_tone_ink=-0.1)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(max_tone_ink=1.1)
+        assert SketchLinesSettings(max_tone_ink=0.0).max_tone_ink == 0.0
+        assert SketchLinesSettings(max_tone_ink=1.0).max_tone_ink == 1.0
 
 
 class TestToneBudgets:
@@ -626,6 +635,32 @@ class TestSketchLinesAlgorithm:
             for mf in (60.0, 80.0, 100.0)
         ]
         assert lengths[0] < lengths[1] < lengths[2]
+
+
+class TestToneInkCap:
+    """The darkest-tone cap leaves part of a textured dark region uninked."""
+
+    @staticmethod
+    def _textured_image(size: int = 60) -> Image.Image:
+        rng = np.random.default_rng(42)
+        return Image.fromarray(rng.integers(0, 140, (size, size)).astype(np.uint8))
+
+    def test_cap_stops_the_tone_run_earlier_than_the_opt_out(self):
+        image = self._textured_image()
+        capped = sketch_lines(image, SketchLinesSettings(seed=42, max_tone_ink=0.5))
+        uncapped = sketch_lines(image, SketchLinesSettings(seed=42, max_tone_ink=1.0))
+        assert 0 < len(capped) < len(uncapped)
+
+    def test_zero_cap_draws_no_strokes(self):
+        lines = sketch_lines(self._textured_image(), SketchLinesSettings(seed=42, max_tone_ink=0.0))
+        assert lines == []
+
+    def test_cap_is_ignored_without_the_tone_rule(self):
+        image = Image.new("L", (60, 60), 0)
+        neutral = {"tone_coverage": 1.0, "tone_exponent": 1.0, "texture_limit": 0.0}
+        capped = sketch_lines(image, SketchLinesSettings(seed=42, max_tone_ink=0.5, **neutral))
+        uncapped = sketch_lines(image, SketchLinesSettings(seed=42, max_tone_ink=1.0, **neutral))
+        assert [list(line.coords) for line in capped] == [list(line.coords) for line in uncapped]
 
 
 class TestBresenhamLine:
