@@ -246,6 +246,11 @@ count.
   palette). Two page sizes were generated; the 130 × 73 mm one was plotted,
   replacing the 190 × 107 mm `santa.gcode` of the same name on the SD card at
   `/santa.gcode`. The reviewed SVG was `santa_130.svg`.
+  This is a record of that plot only: the 588 × 330 photo was **not** free to
+  use and has been replaced. The Santa source now used for tests and previews
+  is the free-to-use 498 × 646 px portrait committed at
+  `tests/fixtures/images/reference/santa.jpg` (LUC-146). Do not reuse or
+  commit the old photo.
 - **Commands**, all with the built-in `aquila` profile:
 
   ```sh
