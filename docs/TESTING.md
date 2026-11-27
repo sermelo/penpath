@@ -1627,11 +1627,11 @@ along the image border.
 
 | image | preset | strokes | points | length mm | tiny | tiny share | edge align | matched/sampled | cov W | cov H | bbox |
 |-------|--------|--------:|-------:|----------:|-----:|-----------:|-----------:|----------------:|------:|------:|-----:|
-| `face.jpg` | `contour_portrait` | 130 | 3107 | 10738.2 | 1 | 0.000 | 0.891 | 2541/2853 | 0.984 | 0.821 | 0.808 |
+| `face.jpg` | `contour_portrait` | 130 | 3135 | 10742.5 | 4 | 0.001 | 0.892 | 2568/2880 | 0.984 | 0.821 | 0.808 |
 | `face.jpg` | `contour_silhouette` | 16 | 508 | 2229.3 | 0 | 0.000 | 0.968 | 478/494 | 0.876 | 0.818 | 0.717 |
 | `photo.jpg` | `contour_portrait` | 46 | 1447 | 2565.5 | 9 | 0.006 | 0.782 | 1035/1324 | 0.998 | 0.997 | 0.995 |
 | `photo.jpg` | `contour_silhouette` | 11 | 473 | 1024.4 | 2 | 0.004 | 0.835 | 391/468 | 0.998 | 0.997 | 0.995 |
-| `santa.jpg` | `contour_portrait` | 55 | 2214 | 5536.4 | 1 | 0.000 | 0.856 | 1842/2152 | 0.772 | 0.998 | 0.771 |
+| `santa.jpg` | `contour_portrait` | 55 | 2220 | 5537.3 | 2 | 0.001 | 0.855 | 1846/2158 | 0.772 | 0.998 | 0.771 |
 | `santa.jpg` | `contour_silhouette` | 6 | 514 | 1720.7 | 0 | 0.000 | 0.955 | 486/509 | 0.668 | 0.882 | 0.590 |
 
 ### Enforced floors and caps
@@ -1642,7 +1642,7 @@ along the image border.
 | Covered width / height | >= 0.60 / 0.60 | A blank page scores 0; all measured drawings span at least 0.668 in width and 0.818 in height. |
 | Bounding-box area | >= 0.40 | Rejects a drawing squeezed into a strip; measured at least 0.590. |
 | Strokes | <= 250 | About twice the largest measurement (130 on `face.jpg` / `contour_portrait`). |
-| Drawing length | <= 28000 mm | Well above the largest measurement (10738.2 mm). |
+| Drawing length | <= 28000 mm | Well above the largest measurement (10742.5 mm). |
 | Tiny segments (<0.5 mm) | <= 10 and share <= 0.05 | Measured 0–9 segments and a 0–0.006 share; a flood of sub-half-millimetre moves is rejected. |
 
 `test_contour_gate.py` asserts these for all six image/preset pairs; the table
