@@ -17,6 +17,7 @@ from shapely import LineString
 from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
+from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD, mask_background
@@ -265,13 +266,18 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSetti
             f"Unknown PFM: '{pfm_name}'. Available PFMs: {registered}, presets: {presets}"
         )
 
+    # Keep the fields the preset or caller actually set so the drawing can tell
+    # an explicit value from a model default (flat images keep the calibrated
+    # legacy max_fill/line_density; see the tone rule in pfm_sketch_lines).
     if pfm_name in presets:
         pfm_type = get_pfm_for_preset(pfm_name)
-        base_settings = get_pfm_preset_settings(pfm_name).model_dump()
+        base_model = get_pfm_preset_settings(pfm_name)
     else:
         pfm_type = pfm_name
         _, settings_model = get_pfm(pfm_type)
-        base_settings = settings_model().model_dump()
+        base_model = settings_model()
+    base_settings = base_model.model_dump()
+    explicit_keys = set(base_model.model_fields_set) | set(pfm_settings)
 
     _, settings_model = get_pfm(pfm_type)
     for key, value_str in pfm_settings.items():
@@ -296,7 +302,9 @@ def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSetti
             ) from e
 
     try:
-        settings = settings_model.model_validate(base_settings)
+        settings = settings_model(
+            **{key: value for key, value in base_settings.items() if key in explicit_keys}
+        )
     except ValidationError as e:
         error = e.errors()[0]
         key = str(error["loc"][0]) if error.get("loc") else "pfm"
@@ -445,6 +453,19 @@ def _run_convert_pipeline(
     reporter.start("Generating lines (PFM)")
     pfm_fn, _ = get_pfm(project.pfm.pfm_type)
     pfm_settings = project.pfm.to_typed_settings()
+    if use_palette and isinstance(pfm_settings, SketchLinesSettings):
+        legacy = {
+            "max_fill": 80.0,
+            "line_density": 0.75,
+            "tone_coverage": 1.0,
+            "tone_exponent": 1.0,
+            "texture_limit": 0.0,
+        }
+        updates = {
+            key: value for key, value in legacy.items() if key not in pfm_settings.model_fields_set
+        }
+        if updates:
+            pfm_settings = pfm_settings.model_copy(update=updates)
     lines_by_pen = [pfm_fn(image, pfm_settings) for image in filtered_by_pen]
     reporter.finish()
 

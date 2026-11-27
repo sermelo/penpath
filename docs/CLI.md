@@ -277,8 +277,11 @@ with a message naming the setting.
 
 | Key | Type | Range | Default | Effect |
 |-----|------|-------|---------|--------|
-| `line_density` | float | 0.01–10.0 | `0.75` | Ink-density multiplier in the luminance-progress stop rule; higher draws more ink. |
-| `max_fill` | float | 1–100 % | `80.0` | Maximum ink coverage. Tones darker than `255 * (1 - max_fill / 100)` are treated as black; `100` keeps the full range, and the lower default keeps solid black areas plottable. |
+| `line_density` | float | 0.01–10.0 | `0.97` | Fraction of luminance progress at which drawing stops; higher draws more ink. With the tone rule on, values above 1 stop at full tone coverage. |
+| `max_fill` | float | 1–100 % | `90.0` | Maximum ink coverage. Tones darker than `255 * (1 - max_fill / 100)` are treated as black; `100` keeps the full range. |
+| `tone_coverage` | float | 0–1 | `0.5` | Fraction of a pixel's distance to white that may be spent on ink. `1` restores the pre-LUC-128 search. |
+| `tone_exponent` | float | 0–2 | `0.55` | Shape of the tone budget curve; below 1 gives mid tones a clearer hatch step. |
+| `texture_limit` | float | 0–1 | `0.8` | How much local texture reduces the budget in dark areas, so hair and foliage keep white gaps. |
 | `min_length` | float | 1–1000 px | `2.0` | Shortest segment the ray search may end at (pixels). Must be ≤ `max_length`. |
 | `max_length` | float | 1–5000 px | `40.0` | Longest segment the ray search may take (pixels). Must be ≥ `min_length`. |
 | `angle_range` | tuple | −360–360° each | `-72,-52` | Band of degrees for each random ray's start angle; the reference uses −72..−52. Min ≤ max. |
@@ -303,6 +306,16 @@ The cross-field limits above are validated, so `min_length=100 -s
 max_length=50` fails with a clear error rather than drawing nothing.
 
 **Example**: `-s line_density=0.5 -s max_fill=90 -s shading_enabled=true -s seed=42`
+
+The three tone settings apply when the image has local texture: at least 18%
+of pixels have a luminance standard deviation of 20 or more in a window the
+size of `sample_step`. Flat shapes and smooth gradients keep the calibrated
+luminance-progress rule so their ink spread does not change. `--palette` mode
+also keeps each separated pen channel on that legacy path (`max_fill=80`,
+`line_density=0.75`, neutral tone settings) unless a key is set explicitly with
+`-s`, so the per-pen gate pins stay unchanged. To restore the pre-LUC-128
+search on a photo, use `-s tone_coverage=1 -s tone_exponent=1
+-s texture_limit=0` together with `-s max_fill=80 -s line_density=0.75`.
 
 To draw the image's full tonal range, including near-solid black, opt into
 `-s max_fill=100`; 100 is never the default.

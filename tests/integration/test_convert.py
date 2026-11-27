@@ -231,6 +231,9 @@ class TestConvertSettings:
     ALL_SETTINGS: tuple[tuple[str, str, object], ...] = (
         ("line_density", "1.25", 1.25),
         ("max_fill", "90.0", 90.0),
+        ("tone_coverage", "0.4", 0.4),
+        ("tone_exponent", "0.7", 0.7),
+        ("texture_limit", "0.6", 0.6),
         ("min_length", "3.0", 3.0),
         ("max_length", "60.0", 60.0),
         ("angle_range", "-80,-40", (-80.0, -40.0)),

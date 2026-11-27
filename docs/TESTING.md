@@ -620,6 +620,69 @@ Fewer strokes and a little less SSIM are the expected cost of capping solid
 black. Coverage, ink spread and tone separation all stay above the LUC-47
 floors, so the drawings remain recognisable and plottable.
 
+### Readability gate for photos (LUC-128, 2026-11-26)
+
+The Sketch Lines tone defaults were retuned for textured photos. The gate below
+is added on top of the LUC-47 floors, which stay verbatim; the synthetic
+references use the calibrated legacy values and their SVGs are byte-identical
+to `main`.
+
+For each of the 8x8 tiles of the placement crop the harness measures source
+darkness `1 - L/255`, source standard deviation, and the share of simulated
+pixels darker than 128. It then computes the Spearman rank correlation between
+tile darkness and tile ink, and the largest ink share among tiles whose source
+darkness is at least 0.6 and whose standard deviation is at least 20. A flat
+black shape has no textured dark tiles and is exempt from that cap; a solid
+black rectangle in the same placement has ink 1.0 in every one of them.
+
+| image | mode | rank | dark textured tiles | max ink in them |
+|-------|------|------|--------------------:|----------------:|
+| `face.jpg` | algorithm | 0.975 | 23 | 0.760 |
+| `face.jpg` | blank | 0.000 | 23 | 0.000 |
+| `face.jpg` | random | -0.598 | 23 | 0.610 |
+| `face.jpg` | ideal | 1.000 | 23 | 0.966 |
+| `photo.jpg` | algorithm | 0.973 | 17 | 0.878 |
+| `photo.jpg` | blank | 0.000 | 17 | 0.000 |
+| `photo.jpg` | random | -0.069 | 17 | 0.817 |
+| `photo.jpg` | ideal | 1.000 | 17 | 0.885 |
+| `circle.png` | algorithm (flat) | 0.954 | 8 | 0.408 |
+| solid black | synthetic | 0.000 | 17 | 1.000 |
+
+The enforced floors are rank >= 0.75, max ink in a textured dark tile >= 0.20
+and <= 0.92. The blank page scores zero rank and zero ink, a random scribble
+scores negative rank on both photos, and a solid black placement scores zero
+rank and 1.0 ink. The new defaults clear all three; the ideal dithering is
+evidence only and is above the cap on `face.jpg`.
+
+Machine cost, same harness, seed 42, A4, vpype 1.15. "Before" is the LUC-89
+defaults (`line_density=0.75`, `max_fill=80`, no tone rule); "after" is the
+shipped defaults below.
+
+| image | before SSIM | after SSIM | strokes before → after | pen-down mm before → after |
+|-------|------------:|-----------:|-----------------------:|---------------------------:|
+| `circle.png` | 0.5381 | 0.5381 | 110 → 110 | 34329.1 → 34329.1 |
+| `gradient.png` | 0.5275 | 0.5275 | 185 → 185 | 44903.1 → 44903.1 |
+| `sphere.png` | 0.8011 | 0.8011 | 46 → 46 | 18708.6 → 18708.6 |
+| `face.jpg` | 0.6109 | 0.6066 | 917 → 968 | 135861.0 → 152564.6 |
+| `photo.jpg` | 0.5292 | 0.5340 | 731 → 905 | 86367.4 → 102483.6 |
+
+The three synthetic references are unchanged; photos gain 6% / 24% strokes
+and 12% / 19% pen-down length, which stays well inside the LUC-27 cost caps.
+The tone ratio stays above the 2.0 floor (face 8.91, photo 2.36), as do every
+coverage, spread and SSIM floor. The max_fill calibration above remains the
+record for flat images; textured photos now ship `max_fill=90`.
+
+Reproduce with:
+
+```bash
+uv run pytest tests/integration/test_sketch_lines_gate.py \
+  tests/integration/test_sketch_lines_readability.py -s
+```
+
+The 600 px repro previews used for the before/after visual check are committed
+under [`docs/images/luc-128/`](../images/luc-128/): `face_before.png` →
+`face_after.png` and `photo_before.png` → `photo_after.png`.
+
 ### Auto equalization on by default (LUC-90, 2026-11-25)
 
 `convert` stretches the working image's luminance range `[lo, hi]` to

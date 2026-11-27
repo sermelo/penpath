@@ -20,8 +20,11 @@ class TestSketchLinesSettings:
 
     def test_default_settings(self):
         settings = SketchLinesSettings()
-        assert settings.line_density == 0.75
-        assert settings.max_fill == 80.0
+        assert settings.line_density == 0.97
+        assert settings.max_fill == 90.0
+        assert settings.tone_coverage == 0.5
+        assert settings.tone_exponent == 0.55
+        assert settings.texture_limit == 0.8
         assert settings.min_length == 2.0
         assert settings.max_length == 40.0
         assert settings.angle_range == (-72.0, -52.0)
@@ -121,6 +124,51 @@ class TestSketchLinesSettings:
             SketchLinesSettings(sample_step=0.5)
         with pytest.raises(ValueError):
             SketchLinesSettings(sample_step=101.0)
+
+    def test_tone_setting_bounds(self):
+        with pytest.raises(ValueError):
+            SketchLinesSettings(tone_coverage=-0.1)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(tone_coverage=1.1)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(tone_exponent=2.1)
+        with pytest.raises(ValueError):
+            SketchLinesSettings(texture_limit=1.1)
+
+
+class TestToneBudgets:
+    """The contrast-adaptive budget follows tone and stops earlier on texture."""
+
+    @staticmethod
+    def _budgets(source: np.ndarray, texture_limit: float = 0.8) -> np.ndarray:
+        from penpath.core.drawing.pfm_sketch_lines import _local_texture, _tone_budgets
+
+        mean, std = _local_texture(source, 5)
+        return _tone_budgets(source, mean, std, 0.5, 0.55, texture_limit)
+
+    def test_neutral_settings_have_no_budget(self):
+        from penpath.core.drawing.pfm_sketch_lines import _local_texture, _tone_budgets
+
+        source = np.full((20, 20), 30.0)
+        mean, std = _local_texture(source, 5)
+        assert np.all(_tone_budgets(source, mean, std, 1.0, 1.0, 0.0) == 0.0)
+
+    def test_budget_ranks_dark_mid_and_light_tones(self):
+        source = np.full((60, 60), 255.0)
+        source[:20] = 30.0
+        source[20:40] = 128.0
+        source[40:] = 220.0
+        source[0, 0] = 255.0
+        budgets = self._budgets(source)
+        assert budgets[5, 30] > budgets[30, 30] > budgets[50, 30] > 0.0
+        assert budgets[0, 0] == 0.0
+
+    def test_texture_reduces_the_budget_of_dark_pixels(self):
+        flat = np.full((30, 30), 40.0)
+        textured = flat.copy()
+        textured[::2, ::2] = 0.0
+        textured[1::2, 1::2] = 200.0
+        assert self._budgets(textured).mean() < self._budgets(flat).mean()
 
 
 class TestSketchLinesAlgorithm:
@@ -448,13 +496,19 @@ class TestSketchLinesAlgorithm:
 
     def test_full_range_reproduces_the_pre_max_fill_drawing(self):
         """max_fill=100 is a no-op: the same seed draws the pre-LUC-89 strokes."""
+        neutral = {
+            "max_fill": 100.0,
+            "tone_coverage": 1.0,
+            "tone_exponent": 1.0,
+            "texture_limit": 0.0,
+        }
         dark = sketch_lines(
             self._create_test_image(),
-            SketchLinesSettings(seed=42, line_density=0.5, max_fill=100.0),
+            SketchLinesSettings(seed=42, line_density=0.5, **neutral),
         )
         gradient = sketch_lines(
             self._create_gradient_image(),
-            SketchLinesSettings(seed=42, line_density=1.0, max_fill=100.0),
+            SketchLinesSettings(seed=42, line_density=1.0, **neutral),
         )
         assert (
             hashlib.sha256(self._stroke_signature(dark).encode()).hexdigest()
@@ -771,7 +825,17 @@ class TestSparseCanvas:
                     image.putpixel(point, 40)
                     region.add(point)
 
-        lines = sketch_lines(image, SketchLinesSettings(seed=42))
+        lines = sketch_lines(
+            image,
+            SketchLinesSettings(
+                seed=42,
+                line_density=0.75,
+                max_fill=80.0,
+                tone_coverage=1.0,
+                tone_exponent=1.0,
+                texture_limit=0.0,
+            ),
+        )
         points = {(int(x), int(y)) for line in lines for x, y in line.coords}
 
         assert len(lines) == 7

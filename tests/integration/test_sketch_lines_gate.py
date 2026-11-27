@@ -16,11 +16,21 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
+from PIL import Image
 from sketch_lines_gate import (
+    DARK_TILE_INK_MAX,
+    DARK_TILE_INK_MIN,
+    PX_PER_MM,
+    RANK_MIN,
+    REFERENCE_DIR,
     REFERENCE_NAMES,
     GateReport,
     all_finite,
+    ink_mask,
+    make_solid_plot,
+    placement_crop,
     print_measurement_table,
+    tile_readability,
 )
 
 SSIM_THRESHOLDS: dict[str, float] = {
@@ -35,6 +45,7 @@ COVERAGE_HEIGHT_MIN = 0.60
 BBOX_AREA_MIN = 0.40
 INK_CELL_MIN = 0.0003
 TONE_RATIO_MIN = 2.0
+READABILITY_REFERENCES = ("face.jpg", "photo.jpg")
 
 
 def test_gate_harness_reports_every_reference_image(
@@ -77,3 +88,50 @@ def test_gate_reference_meets_published_thresholds(
         if value < floor
     ]
     assert not failures, "Sketch Lines likeness gate not met:\n" + "\n".join(failures)
+
+
+@pytest.mark.parametrize("reference", READABILITY_REFERENCES)
+def test_readability_ranks_ink_and_caps_textured_dark_tiles(
+    gate_report_factory: Callable[[str], GateReport], reference: str
+) -> None:
+    """A photo's ink follows its darkness and stays short of a solid mass."""
+    report = gate_report_factory(reference)
+    measured = report.algorithm
+    assert measured.rank_correlation >= RANK_MIN
+    assert measured.dark_textured_tiles >= 8
+    assert DARK_TILE_INK_MIN <= measured.dark_textured_ink_max <= DARK_TILE_INK_MAX
+    assert report.blank.rank_correlation < RANK_MIN
+    assert report.random.rank_correlation < RANK_MIN
+
+
+def test_solid_black_textured_region_fails_the_readability_cap(
+    gate_report_factory: Callable[[str], GateReport],
+) -> None:
+    """Filling the placement with black fails both the rank and the ink cap."""
+    report = gate_report_factory("photo.jpg")
+    placement = (
+        report.placement.x,
+        report.placement.y,
+        report.placement.width,
+        report.placement.height,
+    )
+    plot_size = (round(report.paper_size[0] * PX_PER_MM), round(report.paper_size[1] * PX_PER_MM))
+    solid = make_solid_plot(plot_size, placement)
+    crop = placement_crop(plot_size, placement)
+    with Image.open(REFERENCE_DIR / "photo.jpg") as opened:
+        original = opened.convert("RGB").resize(
+            (crop[2] - crop[0], crop[3] - crop[1]), Image.Resampling.LANCZOS
+        )
+    rank, ink_max, tiles = tile_readability(ink_mask(solid, crop), original)
+    assert tiles >= 1
+    assert rank < RANK_MIN
+    assert ink_max > DARK_TILE_INK_MAX
+
+
+def test_flat_black_shape_keeps_its_dark_coverage(
+    gate_report_factory: Callable[[str], GateReport],
+) -> None:
+    """The cap applies to textured tiles, not to a genuinely flat black disc."""
+    report = gate_report_factory("circle.png")
+    assert report.algorithm.rank_correlation >= RANK_MIN
+    assert report.algorithm.dark_textured_ink_max <= DARK_TILE_INK_MAX

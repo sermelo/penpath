@@ -209,6 +209,9 @@ class PFMSettings(BaseModel):
         their dumped fields straight through.
         """
         model_class = self.get_settings_model()
+        nested = getattr(self, "settings", None)
+        if isinstance(nested, model_class):
+            return nested
         data = self.model_dump(exclude={"pfm_type"})
         nested = data.get("settings")
         if isinstance(nested, dict):
@@ -262,7 +265,11 @@ def make_pfm_settings(pfm_type: str, settings: BaseModel) -> PFMSettingsUnion:
     from penpath.core.drawing.registry import get_pfm
 
     _, settings_model = get_pfm(pfm_type)
-    validated = settings_model.model_validate(settings.model_dump())
+    validated = (
+        settings
+        if isinstance(settings, settings_model)
+        else settings_model.model_validate(settings.model_dump())
+    )
     if pfm_type == "sketch_lines":
         return SketchLinesPFM(settings=cast(SketchLinesSettings, validated))
     return RegisteredPFM(pfm_type=pfm_type, settings=validated)
