@@ -563,6 +563,11 @@ def _nozzle(point: Coordinate, profile: MachineProfile) -> Coordinate:
     return (point[0] - offset_x, point[1] - offset_y)
 
 
+def _is_tap(points: list[Coordinate]) -> bool:
+    """Return whether a polyline stays at one point, so the pen only taps it."""
+    return bool(points) and all(math.dist(point, points[0]) <= 1e-6 for point in points[1:])
+
+
 def _ramped_path(
     points: list[Coordinate],
     profile: MachineProfile,
@@ -637,12 +642,24 @@ def _emit_stroke(
     feed_z: str,
     pen_is_down: bool,
 ) -> tuple[list[str], bool]:
-    """Emit one stroke exactly as both frame and drawing strokes are plotted."""
+    """Emit one stroke exactly as both frame and drawing strokes are plotted.
+
+    A zero-length polyline is a tap: travel to its point, lower to ``z_touch``
+    when the profile has one (otherwise ``z_down``), then raise again, with no
+    G1 and no ramp lead-in or lead-out.
+    """
     lines: list[str] = []
     pen_points = _pen_points(polyline, profile, page_height_mm, origin, usable)
     if pen_is_down:
         lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}{feed_z}")
         pen_is_down = False
+    if _is_tap(pen_points):
+        x, y = _nozzle(pen_points[0], profile)
+        touch = profile.pen.z_touch if profile.pen.z_touch is not None else profile.pen.z_down
+        lines.append(f"G0 X{_format_mm(x)} Y{_format_mm(y)}{feed_travel}")
+        lines.append(f"G0 Z{_format_mm(touch)}{feed_z}")
+        lines.append(f"G0 Z{_format_mm(profile.pen.z_up)}{feed_z}")
+        return lines, pen_is_down
     feed = f" F{line_values['feed_draw']}"
     lead = lead_in_mm(profile)
     if lead is not None:
@@ -839,7 +856,9 @@ def build_gcode(
     a lead-in before its first point and a lead-out after its last, and Z falls
     linearly from ``z_hover`` to ``z_down`` over ``lead_in_mm + ramp_mm`` and
     rises the same way, so the pen lands and lifts while moving. Profiles
-    without a ramp keep the plain travel/down/draw/up stroke.
+    without a ramp keep the plain travel/down/draw/up stroke. A zero-length
+    polyline is a tap instead: travel to the point, lower to ``z_touch`` when
+    present else ``z_down``, raise to ``z_up``, with no G1 and no ramp.
 
     Returns
     -------
