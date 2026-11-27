@@ -126,6 +126,27 @@ class TestSpiralStrokes:
         assert len(lines) <= 2
         assert all(line.length > 0.0 for line in lines)
 
+    def test_parabolic_teeth_at_page_edge_are_clamped_not_split(self):
+        width, height = 296, 384
+        yy, xx = np.mgrid[0:height, 0:width]
+        bright = (
+            ((xx - width / 2) / (width * 0.25)) ** 2 + ((yy - height / 2) / (height * 0.25)) ** 2
+        ) < 1
+        image = Image.fromarray(np.where(bright, 255.0, 10.0).astype(np.uint8))
+        lines = spiral_strokes(image, SpiralSettings(spiral_type="parabolic"))
+        assert len(lines) == 2
+        assert all(line.length > 0.0 for line in lines)
+        for line in lines:
+            for x, y in line.coords:
+                assert 0.0 <= x <= width - 1
+                assert 0.0 <= y <= height - 1
+        assert any(
+            x in (0.0, float(width - 1)) or y in (0.0, float(height - 1))
+            for line in lines
+            for x, y in line.coords
+        )
+        assert len(spiral_strokes(image, SpiralSettings())) == 1
+
     def test_disconnected_emits_two_point_teeth_and_respects_cap(self):
         lines = spiral_strokes(_sphere_image(), SpiralSettings(connected_lines=False))
         assert len(lines) > 10
