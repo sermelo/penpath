@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 from shapely import LineString
 
@@ -91,6 +93,33 @@ class TestSimplifyLine:
         result = simplify_line(line, tolerance_mm=1.0, paper_dpi=300)
         assert result.is_valid
         assert not result.is_empty
+
+    def test_simplify_line_keeps_a_closed_ring_intact(self):
+        """A stipple circle must stay round instead of becoming a diamond."""
+        points = [
+            (5.0 + 3.0 * math.cos(2 * math.pi * i / 12), 5.0 + 3.0 * math.sin(2 * math.pi * i / 12))
+            for i in range(12)
+        ]
+        ring = LineString([*points, points[0]])
+
+        result = simplify_line(ring, tolerance_mm=0.1, paper_dpi=300)
+
+        assert list(result.coords) == list(ring.coords)
+
+    def test_simplify_line_large_ring_still_simplifies(self):
+        """Only small dot rings are protected; large contours still simplify."""
+        points = [
+            (
+                100.0 + 100.0 * math.cos(2 * math.pi * i / 48),
+                100.0 + 100.0 * math.sin(2 * math.pi * i / 48),
+            )
+            for i in range(48)
+        ]
+        ring = LineString([*points, points[0]])
+
+        result = simplify_line(ring, tolerance_mm=0.1, paper_dpi=300)
+
+        assert len(result.coords) < len(ring.coords)
 
     def test_simplify_line_empty_line(self):
         """Empty line should return empty line."""

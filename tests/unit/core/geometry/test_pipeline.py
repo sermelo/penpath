@@ -26,6 +26,16 @@ class TestOptimize:
         assert len(result) == 1
         assert result[0].is_valid
 
+    def test_optimize_keeps_zero_length_strokes(self):
+        """Simplify, merge and sort all keep taps in the drawing."""
+        paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
+        taps = [LineString([(5, 5), (5, 5)]), LineString([(9, 9), (9, 9)])]
+
+        result = optimize(taps, paper)
+
+        assert len(result) == 2
+        assert all(line.length == 0.0 for line in result)
+
     def test_optimize_simplify_step(self):
         """Simplify step should reduce points on wiggly line."""
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)

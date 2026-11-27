@@ -197,32 +197,39 @@ def merge_lines(
     if not lines_list:
         return []
 
-    # Filter out empty/invalid lines
-    valid_lines = [line for line in lines_list if not line.is_empty and line.is_valid]
+    # A zero-length stroke is a tap: GEOS treats it as invalid and drops it in
+    # linemerge, so it is carried through unchanged beside the merged set.
+    present_lines = [
+        line for line in lines_list if not line.is_empty and len(list(line.coords)) >= 2
+    ]
+    drawable_lines = [line for line in present_lines if line.is_valid and line.length > 0.0]
+    taps = [line for line in present_lines if line.length <= 0.0]
 
-    if not valid_lines:
+    if not present_lines:
         return []
 
     # Step 1: Use shapely's linemerge to join lines sharing exact endpoints
     try:
-        merged_geom = linemerge(valid_lines)
+        merged_geom = linemerge(drawable_lines) if drawable_lines else None
         # Extract individual LineStrings from the merged result
-        if merged_geom.geom_type == "LineString":
+        if merged_geom is None:
+            linemerged_lines = []
+        elif merged_geom.geom_type == "LineString":
             linemerged_lines = [merged_geom]
         elif merged_geom.geom_type == "MultiLineString":
             linemerged_lines = list(merged_geom.geoms)
         else:
             # Fallback: treat as individual lines
-            linemerged_lines = valid_lines
+            linemerged_lines = drawable_lines
     except Exception:
         # If linemerge fails, fall back to original lines
-        linemerged_lines = valid_lines
+        linemerged_lines = drawable_lines
 
     # Step 2: Custom collinear join for near-collinear segments within distance tolerance
     dist_tol_px = mm_to_pixels(dist_tol_mm, paper_dpi)
     result = _merge_collinear_segments(linemerged_lines, angle_tol_deg, dist_tol_px)
 
-    return result
+    return [*result, *taps]
 
 
 __all__ = [
