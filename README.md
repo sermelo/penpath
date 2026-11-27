@@ -386,9 +386,10 @@ the plot is `penpath preview` of the SVG and the G-code view is `penpath preview
 of the output of `penpath gcode --profile generic`. The G-code preview draws a
 thin bed/page outline around the same ink. All examples use A4 paper, the
 default 0.3 mm black `fine` pen, `-s seed=42` and a smaller working resolution
-(`--max-resolution 800`) to keep the run short; each preview is 601×849 px
-(`--dpi 2.86`) and well under 200 KB. Run the script from a checkout with
-`penpath` on your PATH to regenerate the whole gallery.
+(`--max-resolution 800`) to keep the run short; previews are 601×849 px
+(`--dpi 2.86`) except the three pen-width plots, which use `--dpi 3.2` (672×950
+px) so the stroke widths stay distinguishable, all well under 200 KB. Run the
+script from a checkout with `penpath` on your PATH to regenerate the whole gallery.
 
 ### Worked Example: Photo → SVG → Preview
 
@@ -498,8 +499,9 @@ penpath preview build/gallery/spiral_sawtooth.gcode -o docs/images/luc-88/spiral
 
 On the free [lake photo](tests/fixtures/images/reference/photo.jpg), only the
 pen changes between the first three plots: `fine` is 0.3 mm, `medium` 0.5 mm and
-`bold` 0.8 mm. A wider pen also lowers the working resolution, so the bold plot
-trades fine texture for broad, nearly solid dark areas.
+`bold` 0.8 mm. The same strokes are drawn with broader marks as the pen widens,
+so the hillside and water fill in and the bold plot is nearly solid. These three
+previews use `--dpi 3.2` (672×950 px) so the different stroke widths stay visible.
 
 | `fine` (0.3 mm) | `medium` (0.5 mm) | `bold` (0.8 mm) |
 |:---------------:|:-----------------:|:---------------:|
@@ -515,11 +517,11 @@ the page and the same solid areas the pen will lay down:
 
 ```bash
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_fine.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen fine
-penpath preview build/gallery/pen_fine.svg -o docs/images/luc-88/pen_fine_plot.png --dpi 2.86
+penpath preview build/gallery/pen_fine.svg -o docs/images/luc-88/pen_fine_plot.png --dpi 3.2
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_medium.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen medium
-penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_plot.png --dpi 2.86
+penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_plot.png --dpi 3.2
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_bold.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen bold
-penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 2.86
+penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 3.2
 penpath gcode build/gallery/pen_bold.svg --profile generic -o build/gallery/pen_bold.gcode
 penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 2.86
 ```

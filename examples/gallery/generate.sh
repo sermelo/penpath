@@ -34,11 +34,11 @@ penpath preview build/gallery/spiral_sawtooth.gcode -o docs/images/luc-88/spiral
 
 # Pen width: identical settings, only the stroke width changes.
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_fine.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen fine
-penpath preview build/gallery/pen_fine.svg -o docs/images/luc-88/pen_fine_plot.png --dpi 2.86
+penpath preview build/gallery/pen_fine.svg -o docs/images/luc-88/pen_fine_plot.png --dpi 3.2
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_medium.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen medium
-penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_plot.png --dpi 2.86
+penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_plot.png --dpi 3.2
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_bold.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen bold
-penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 2.86
+penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 3.2
 penpath gcode build/gallery/pen_bold.svg --profile generic -o build/gallery/pen_bold.gcode
 penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 2.86
 
