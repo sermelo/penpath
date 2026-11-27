@@ -48,10 +48,11 @@ def test_contour_presets_draw_different_levels_of_detail(tmp_path: Path) -> None
 
 def test_contour_runs_once_per_pen_with_a_small_palette(tmp_path: Path) -> None:
     output = tmp_path / "palette.svg"
+    # --no-key-layer keeps this about contour runs per colour pen, not key edges.
     result = _convert(
         _BLOCKS,
         output,
-        "--pfm contour --palette 'red=0.3,#FF0000;blue=0.3,#0000FF' --paper 40x40",
+        "--pfm contour --palette 'red=0.3,#FF0000;blue=0.3,#0000FF' --paper 40x40 --no-key-layer",
     )
     assert result.exit_code == 0, result.output
     assert list_svg_layers(output) == [("layer1", "red"), ("layer2", "blue")]

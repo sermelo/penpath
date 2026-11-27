@@ -158,6 +158,7 @@ def test_pipeline_draws_and_optimises_each_pen_once(
             PALETTE,
             "-s",
             "seed=42",
+            "--no-key-layer",  # this counts colour pens, not the added key layer
             "--no-vpype",
         ],
     )
