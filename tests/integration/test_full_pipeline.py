@@ -96,7 +96,7 @@ class TestFullPipelineIntegration:
         assert root.get("width") == "210mm"
         assert root.get("height") == "297mm"
         assert root.get("viewBox") == "0 0 210 297"
-        assert len(root.findall(SVG_NS + "rect")) == 1
+        assert root.findall(SVG_NS + "rect") == []
         groups = list(root.iter(SVG_NS + "g"))
         assert len(groups) == 1
         assert groups[0].get("id") == "layer1"
