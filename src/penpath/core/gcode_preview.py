@@ -35,6 +35,7 @@ class GcodeHeader:
 
     profile: str | None = None
     page: tuple[float, float] | None = None
+    place: str | None = None
     page_origin: tuple[float, float] | None = None
     usable_x: tuple[float, float] | None = None
     usable_y: tuple[float, float] | None = None
@@ -101,6 +102,7 @@ def parse_gcode_header(text: str) -> GcodeHeader:
         return GcodeHeader(
             profile=fields.get("profile"),
             page=_page_size(fields["page"]) if "page" in fields else None,
+            place=fields.get("place"),
             page_origin=_origin(fields["page_origin"]) if "page_origin" in fields else None,
             usable_x=_pair(fields["usable_x"], "..") if "usable_x" in fields else None,
             usable_y=_pair(fields["usable_y"], "..") if "usable_y" in fields else None,
