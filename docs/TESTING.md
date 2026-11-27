@@ -1779,3 +1779,39 @@ the real CLI output (`--paper 190x190,10 --pen 0.4 -s seed=42 --no-vpype`,
 
 No shipped default was changed by this gate: `StippleSettings()` and its three
 presets already pass every floor and cap above.
+
+## Contact sheet readability (LUC-141, 2026-11-27)
+
+Acceptance is **by looking at the PNG**, not by exit code or a score. With the
+CLI installed (`uv sync --extra dev`, activated `.venv`), the committed Santa
+fixture was run under a shell timeout:
+
+```bash
+timeout 180 penpath compare tests/fixtures/images/reference/santa.jpg -o /tmp/sheet.png --dpi 4 --max-resolution 256
+```
+
+Measured wall time **100.163 s** on Python 3.14.10 (aarch64); exit 0, stdout 0
+bytes, stderr `Contact sheet saved to /tmp/sheet.png (1008x2156 px, 23 entries)`.
+The inspected PNG is committed as
+[contact_sheet.png](../images/luc-141/contact_sheet.png). The catalog has **23
+tiles**: the 19 of the original four PFMs plus four `spiral_sawtooth` tiles that
+appeared automatically when LUC-156 registered that PFM (LUC-141 specified 19
+before then); the CLI takes the live catalog rather than filtering a PFM out.
+The PNG was opened with `read`, captions also at 2x zoom: every label readable,
+styles visibly different, no unintended empty or error tile:
+
+| Rows | What is visible |
+|------|-----------------|
+| Contour (3) | Sparse black outlines on white: a few large shapes for `silhouette`, internal face and hat lines for `portrait`, a plain outline for the default. |
+| Sketch Lines (8) | Dense hatching of varied angles and lengths; `hatch_horizontal` and `hatch_vertical` are clear stripes, `squiggly` packs a solid black mass over the dark side of the face, `fine` leaves the bright beard as white paper. |
+| Sketch Squares (4) | Graphic grid/hatch texture with the face readable as a lighter shape; `coarse`, `crosshatch-grid` and `fine` differ in scale and direction. |
+| Spiral (4) | Concentric sawtooth rings; `bold` has wide teeth and a dark centre, `fine` is a tight even spiral, `parabolic` is more open on one side. |
+| Stipple (4) | Short dashes densest in the dark hat and background, with the white beard and suit left mostly empty; `bold` is coarser than `fine`. |
+
+The last row has three tiles on a light-grey sheet, with all captions, borders
+and 23 paper areas present. The `squiggly` tile's black mass is dense scribble,
+not an error tile (those show a `Type: message` line). Work is bounded by
+`--max-resolution` (longest working-image side in pixels) and `--dpi` (px/mm);
+both and `--columns` must be positive or the command exits 2. There is no
+per-tile timeout flag: use the shell's `timeout` as above. **QA Tester and Code
+Reviewer must open the committed PNG themselves** before accepting this task.
