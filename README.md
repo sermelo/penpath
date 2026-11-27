@@ -679,7 +679,7 @@ lists every PFM, its defaults and its presets.
 | `sketch_lines` | `sketch_lines:default`, `sketch_lines:fine`, `sketch_lines:bold`, `sketch_lines:shaded`, `sketch_lines:squiggly`, `sketch_lines:crosshatch`, `sketch_lines:hatch_horizontal`, `sketch_lines:hatch_vertical` | Free-angle hatching. The shipped `default` is calibrated for likeness; `fine` and `bold` change stroke length and density, the rest are directional or shaded looks. |
 | `sketch_squares` | `sketch_squares:coarse`, `sketch_squares:fine`, `sketch_squares:crosshatch-grid` | Short grid-aligned strokes: open, dense, or a rotated crosshatch grid. |
 | `contour` | `contour_portrait`, `contour_silhouette` | Four threshold levels for internal detail on a face; one level and a larger minimum speck size for a few bold outlines. |
-| `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. |
+| `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. `-s dot_shape=circle\|tap` switches dots from the default `dash` to closed rings or in-place pen taps. |
 | `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
 | `hatch` | `hatch:default`, `hatch:crosshatch`, `hatch:fine`, `hatch:single` | Straight parallel lines: two joined directions for `default` (`min_gap=0.5`, `join_runs=true`), four unjoined directions for `crosshatch`, 0.6 mm spacing for `fine`, or progressively tighter same-direction bands for `single`. |
 
@@ -707,6 +707,7 @@ penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -o grid.svg
 penpath convert photo.jpg --pfm contour -o outlines.svg
 penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg
 penpath convert photo.jpg --pfm stipple_fine --no-vpype -s seed=42 -o dots.svg
+penpath convert photo.jpg --pfm stipple -s dot_shape=circle -s seed=42 -o circles.svg
 penpath preview dots.svg -o dots.png --px-per-mm 4
 penpath convert photo.jpg --pfm spiral_sawtooth:bold -s seed=42 -o spiral.svg
 penpath convert photo.jpg --pfm hatch:crosshatch -o hatch.svg

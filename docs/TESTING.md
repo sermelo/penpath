@@ -1672,27 +1672,28 @@ millimetres and segments shorter than 0.5 mm.
 ### Measured values
 
 Measured on Python 3.14.10 with the command above; vpype is installed but the
-gate uses `--no-vpype` for speed and determinism.
+gate uses `--no-vpype` for speed and determinism. Values were refreshed after
+LUC-170 stopped contours from closing along the image border.
 
 | image | preset | strokes | points | length mm | tiny | tiny share | edge align | matched/sampled | cov W | cov H | bbox |
 |-------|--------|--------:|-------:|----------:|-----:|-----------:|-----------:|----------------:|------:|------:|-----:|
-| `face.jpg` | `contour_portrait` | 125 | 3131 | 13951.8 | 1 | 0.000 | 0.889 | 2541/2857 | 0.998 | 0.998 | 0.996 |
-| `face.jpg` | `contour_silhouette` | 15 | 511 | 3022.5 | 0 | 0.000 | 0.960 | 476/496 | 0.998 | 0.998 | 0.996 |
-| `photo.jpg` | `contour_portrait` | 31 | 1447 | 4462.4 | 2 | 0.001 | 0.779 | 1021/1311 | 0.998 | 0.997 | 0.995 |
-| `photo.jpg` | `contour_silhouette` | 6 | 467 | 1414.7 | 0 | 0.000 | 0.831 | 383/461 | 0.998 | 0.997 | 0.995 |
-| `santa.jpg` | `contour_portrait` | 56 | 2237 | 8971.9 | 1 | 0.000 | 0.854 | 1843/2158 | 0.997 | 0.998 | 0.996 |
-| `santa.jpg` | `contour_silhouette` | 6 | 518 | 2572.8 | 0 | 0.000 | 0.945 | 484/512 | 0.997 | 0.998 | 0.996 |
+| `face.jpg` | `contour_portrait` | 130 | 3135 | 10742.5 | 4 | 0.001 | 0.892 | 2568/2880 | 0.984 | 0.821 | 0.808 |
+| `face.jpg` | `contour_silhouette` | 16 | 508 | 2229.3 | 0 | 0.000 | 0.968 | 478/494 | 0.876 | 0.818 | 0.717 |
+| `photo.jpg` | `contour_portrait` | 46 | 1447 | 2565.5 | 9 | 0.006 | 0.782 | 1035/1324 | 0.998 | 0.997 | 0.995 |
+| `photo.jpg` | `contour_silhouette` | 11 | 473 | 1024.4 | 2 | 0.004 | 0.835 | 391/468 | 0.998 | 0.997 | 0.995 |
+| `santa.jpg` | `contour_portrait` | 55 | 2220 | 5537.3 | 2 | 0.001 | 0.855 | 1846/2158 | 0.772 | 0.998 | 0.771 |
+| `santa.jpg` | `contour_silhouette` | 6 | 514 | 1720.7 | 0 | 0.000 | 0.955 | 486/509 | 0.668 | 0.882 | 0.590 |
 
 ### Enforced floors and caps
 
 | Measure | Floor / cap | Why this number |
 |---------|------------:|-----------------|
-| Edge alignment | >= 0.60 | About three quarters of the lowest measurement (0.779 on `photo.jpg` / `contour_portrait`) and well above the 0.255 random baseline; a blank page scores 0. |
-| Covered width / height | >= 0.60 / 0.60 | A blank page scores 0; all measured drawings span at least 0.997 of both axes. |
-| Bounding-box area | >= 0.40 | Rejects a drawing squeezed into a strip; measured at least 0.995. |
-| Strokes | <= 250 | About twice the largest measurement (125 on `face.jpg` / `contour_portrait`). |
-| Drawing length | <= 28000 mm | About twice the largest measurement (13951.8 mm). |
-| Tiny segments (<0.5 mm) | <= 10 and share <= 0.05 | Measured 0–2 segments and a 0–0.001 share; a flood of sub-half-millimetre moves is rejected. |
+| Edge alignment | >= 0.60 | About three quarters of the lowest measurement (0.782 on `photo.jpg` / `contour_portrait`) and well above the 0.255 random baseline; a blank page scores 0. |
+| Covered width / height | >= 0.60 / 0.60 | A blank page scores 0; all measured drawings span at least 0.668 in width and 0.818 in height. |
+| Bounding-box area | >= 0.40 | Rejects a drawing squeezed into a strip; measured at least 0.590. |
+| Strokes | <= 250 | About twice the largest measurement (130 on `face.jpg` / `contour_portrait`). |
+| Drawing length | <= 28000 mm | Well above the largest measurement (10742.5 mm). |
+| Tiny segments (<0.5 mm) | <= 10 and share <= 0.05 | Measured 0–9 segments and a 0–0.006 share; a flood of sub-half-millimetre moves is rejected. |
 
 `test_contour_gate.py` asserts these for all six image/preset pairs; the table
 is printed by the first test and by `contour_gate.py`'s `main()`. Visual
@@ -1706,12 +1707,12 @@ no preview returned an image error.
 
 | image | preview | What is visible |
 |-------|---------|-----------------|
-| Santa | [contour_portrait.png](../images/luc-139/contour_portrait.png) | Single black outline on white: the red hat and brim are clear at the top, glasses frames and nose read at the eyes, the white beard and fur collar fill the lower half with nested outlines, and the coat shoulder closes the bottom. Glasses, nose, beard and hat outline are all recognisable. |
-| Santa | [contour_silhouette.png](../images/luc-139/contour_silhouette.png) | A much sparser version of the same face: hat outline, glasses and nose survive, the beard is reduced to a few bold edges and the coat runs down the right side; beard texture is dropped by design. |
-| `face.jpg` | [contour_portrait_face.png](../images/luc-139/contour_portrait_face.png) | An astronaut figure in black outline: face and helmet detail at the upper centre, a large round object at lower left, dense parallel lines on the right-hand chest panel and suit folds across the torso. |
-| `face.jpg` | [contour_silhouette_face.png](../images/luc-139/contour_silhouette_face.png) | The same figure in fewer lines: the face simplifies to a few contours, the round object keeps its rim and the chest panel keeps its parallel strokes. |
-| `photo.jpg` | [contour_portrait_photo.png](../images/luc-139/contour_portrait_photo.png) | Two long contour bands on white: the upper ridge rises to the right, the lower shoreline carries dense small loops for trees and rocks, and the empty middle reads as the lake surface. |
-| `photo.jpg` | [contour_silhouette_photo.png](../images/luc-139/contour_silhouette_photo.png) | The same landscape reduced to a few long lines: the upper ridge and lower shoreline remain, with most trees collapsed to one or two small loops. |
+| Santa | [contour_portrait.png](../images/luc-139/contour_portrait.png) | Single black outline on white: the red hat and brim are clear at the top, glasses frames and nose read at the eyes, the beard and fur collar fill the lower half and the coat runs to the bottom. The former rectangle along the image border is gone; outlines end open at the edges. |
+| Santa | [contour_silhouette.png](../images/luc-139/contour_silhouette.png) | A much sparser version of the same face: hat outline, glasses and nose survive, the beard is reduced to a few bold edges and the coat runs down the right side; no border rectangle. |
+| `face.jpg` | [contour_portrait_face.png](../images/luc-139/contour_portrait_face.png) | An astronaut figure in black outline: face and helmet detail at the upper centre, a large round object at lower left, dense parallel lines on the right-hand chest panel and suit folds across the torso; contours stop at the image edges instead of framing the page. |
+| `face.jpg` | [contour_silhouette_face.png](../images/luc-139/contour_silhouette_face.png) | The same figure in fewer lines: the face simplifies to a few contours, the round object keeps its open rim and the chest panel keeps its parallel strokes; no border rectangle. |
+| `photo.jpg` | [contour_portrait_photo.png](../images/luc-139/contour_portrait_photo.png) | Two long open contour bands on white: the upper ridge rises to the right, the lower shoreline carries dense small loops for trees and rocks, and the empty middle reads as the lake surface; the image border is no longer traced. |
+| `photo.jpg` | [contour_silhouette_photo.png](../images/luc-139/contour_silhouette_photo.png) | The same landscape reduced to a few long open lines: the upper ridge and lower shoreline remain, with most trees collapsed to one or two small loops; no border rectangle. |
 
 The Santa fixture is the free-to-use portrait supplied by sergio on 2026-11-26,
 498x646 px, committed at `tests/fixtures/images/reference/santa.jpg`. The old
