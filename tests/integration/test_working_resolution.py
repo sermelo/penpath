@@ -255,7 +255,7 @@ class TestInfoImageResolution:
 
 
 class TestPaperSizeAndScaling:
-    def test_smaller_paper_derives_a_finer_working_resolution(self) -> None:
+    def test_smaller_paper_derives_a_coarser_working_resolution(self) -> None:
         large = Paper(name="large", width_mm=190.0, height_mm=107.0, margin_mm=0.0)
         small = Paper(name="small", width_mm=130.0, height_mm=73.0, margin_mm=0.0)
 
