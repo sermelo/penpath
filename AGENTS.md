@@ -50,6 +50,7 @@ harder is not.
 - `docs/CONVENTIONS.md`: tooling, code style, typing, tests, versions.
 - `docs/TESTING.md`: how we prove features work, test data, tolerances.
 - `docs/CLI.md`: every command and option.
+- `BRANCH_PROTECTION_SETUP.md`: the branch protection ruleset on `main` and how to verify it.
 - `src/penpath/core/`: the library (no CLI code). `src/penpath/cli/`: the command line, on top of `core`.
 
 ## Before you open a pull request
@@ -85,6 +86,47 @@ changes.
   rewrite or force-push a branch under review.
 - Pull requests are **squash-merged**, so each lands on `main` as one
   commit with the PR title.
+
+## CI and branch protection
+
+`main` is protected on GitHub. A pull request can merge only when these
+CI checks pass: `Lint & Format`, `Type Check (mypy)`, `Unit Tests`,
+`Integration Tests` and `Build Wheel` (job names in
+`.github/workflows/ci.yml`), and only when its branch is up
+to date with `main` (strict required status checks; green checks alone
+don't unblock a branch that is behind). Nobody can push to
+`main` or bypass the checks, agents and people alike. The `Coverage Report`
+job reports but doesn't block.
+
+- **Passing on your machine is not enough.** Before you hand a pull
+  request to the next role, run `gh pr checks <number>` and read the
+  result. All five checks must be green. Don't hand it on while a check
+  fails or is still running.
+- **All checks green is not enough: the branch must also be up to date
+  with `main`.** GitHub's setting "Require branches to be up to date
+  before merging" is on. If another PR merged first, yours shows as
+  blocked (`gh pr view <number> --json mergeStateStatus` says `BEHIND`
+  or `BLOCKED`) even though every check is green, until the branch
+  contains the latest `main` and the checks pass again on that state.
+  Update it with `gh pr update-branch <number>` (or merge `origin/main`
+  into the branch), wait for the checks to run again, and re-read
+  `gh pr checks <number>`. Never rebase or force-push a branch under
+  review. Updating the branch is the fix, not a workaround.
+- **A red check is the author's to fix**, with a new commit on the same
+  branch (see "Fixes after review"). Quote the failing job and the exact
+  error line in the task.
+- **The reviewer merges only after confirming every check is green and
+  `mergeStateStatus` is not `BEHIND`/`BLOCKED`**, with `gh pr checks <number>` and
+  `gh pr view <number> --json mergeStateStatus`, then `gh pr merge <number> --squash`.
+- **If GitHub refuses a merge for another reason, don't work around it.** No admin
+  override, no changing branch protection or the workflow, no disabling
+  a check. Write the exact error in the task and hand it back to sergio.
+- **If CI fails for a reason outside your change** (broken `main`, a
+  flaky test, a missing dependency), say so in the task with the failing
+  job and error line. Don't merge anyway. Fixing a red `main` comes
+  before new feature work.
+- Don't weaken CI to make a check pass (skipping tests, loosening
+  lint, removing a job) unless sergio asks for it in a task.
 
 ## Dependencies
 
