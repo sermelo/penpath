@@ -286,7 +286,10 @@ validation run.
   the last draw speed F1500: LUC-97 (fixed on `main` after this run).
 - Dark, high-contrast photos became a solid scribble with an unreadable face:
   LUC-96.
-- Not yet tickets: the G-code preview shows no bed or page; the 130 mm drawing
-  is not a scaled copy of the 190 mm one because the working resolution depends
-  on the paper size; there is no outline/contour mode for portraits; and the
-  `M0` text should be checked for inline pens.
+- The 130 mm drawing is not a scaled copy of the 190 mm one because the working
+  resolution depends on paper size. That is the intended behaviour and is
+  tracked as LUC-142: with `--max-resolution` fixed, the same settings draw the
+  same strokes scaled into the smaller page. The other gaps noted in this run
+  (a bed/page in the G-code preview, an outline/contour mode for portraits and
+  the `M0` text for inline pens) have their own follow-ups or remain open
+  checks.
