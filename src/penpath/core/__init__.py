@@ -4,9 +4,11 @@ from penpath.core.drawing import (
     PIXEL_SETTING_FIELDS,
     ContourSettings,
     OutlineSettings,
+    StippleSettings,
     contour_strokes,
     outline_strokes,
     scale_pixel_settings,
+    stipple,
 )
 from penpath.core.gcode_preview import (
     GcodeHeader,
@@ -194,6 +196,7 @@ __all__ = [
     "ProjectSaveError",
     "RegisteredPFM",
     "SketchLinesPFM",
+    "StippleSettings",
     "UnknownProfileError",
     "UnsupportedFormatError",
     "WorkingResolution",
@@ -252,6 +255,7 @@ __all__ = [
     "simplify",
     "simplify_line",
     "simulate_plot",
+    "stipple",
     "threshold",
     "usable_area",
     "with_margin_mm",

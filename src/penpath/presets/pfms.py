@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from penpath.core.drawing.pfm_contour import ContourSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
+from penpath.core.drawing.pfm_stipple import StippleSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 
 PFM_PRESETS: dict[str, SketchLinesSettings] = {
@@ -187,6 +188,9 @@ register_pfm_preset(
         simplify_tolerance=1.5,
     ),
 )
+register_pfm_preset("stipple_default", "stipple", StippleSettings())
+register_pfm_preset("stipple_fine", "stipple", StippleSettings(min_radius=0.5, max_radius=1.5))
+register_pfm_preset("stipple_bold", "stipple", StippleSettings(min_radius=1.5, max_radius=5.0))
 
 for _preset_name, _preset_settings in SKETCH_SQUARES_PRESETS.items():
     register_pfm_preset(f"sketch_squares:{_preset_name}", "sketch_squares", _preset_settings)
