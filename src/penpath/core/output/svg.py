@@ -9,17 +9,18 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import svgwrite  # type: ignore[import-untyped]
 from PIL import ImageColor
-from shapely import LineString
+from shapely import GeometryCollection, LineString, MultiLineString, clip_by_rect
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from penpath.core.image.resolution import WorkingResolution
-    from penpath.core.models import Paper, Pen
+    from penpath.core.models import FitMode, Paper, Pen
 
 
 MM_PER_INCH = 25.4
 SVG_DPI = 96
+_FIT_MODES: tuple[str, ...] = ("fit", "fill", "none")
 
 PENPATH_NAMESPACE = "http://penpath.org/ns/penpath"
 ET.register_namespace("penpath", PENPATH_NAMESPACE)
@@ -79,12 +80,15 @@ def fit_image_placement(
     image_dpi: int = 300,
     offset_x_mm: float = 0.0,
     offset_y_mm: float = 0.0,
+    mode: FitMode = "fit",
 ) -> ImagePlacement:
-    """Fit an image into an area, preserving aspect ratio and centering it.
+    """Fit an image into an area, centred, using one of three modes.
 
-    The result is independent of ``image_dpi``: the DPI only fixes the
-    relationship between pixels and millimetres before the image is scaled
-    to fit the area.
+    ``fit`` (the default) contains the image in the area: the aspect ratio is
+    preserved and the image never exceeds the area. ``fill`` covers the area
+    with the aspect ratio preserved, so one dimension extends past it and the
+    exported ink is clipped to the area by the caller. ``none`` uses the pixel
+    size at ``image_dpi`` without scaling to the area at all.
 
     Parameters
     ----------
@@ -95,16 +99,26 @@ def fit_image_placement(
     area_height_mm : float
         Height of the area to fit the image into, in millimetres.
     image_dpi : int, optional
-        DPI of the source image. Defaults to 300.
+        DPI of the source image. Defaults to 300. Used directly by ``none``
+        and only as a starting scale by ``fit`` and ``fill``.
     offset_x_mm : float, optional
         Left edge of the area in paper millimetres. Defaults to 0.
     offset_y_mm : float, optional
         Top edge of the area in paper millimetres. Defaults to 0.
+    mode : {'fit', 'fill', 'none'}, optional
+        Placement mode. Defaults to ``fit``, which reproduces the original
+        contain behaviour exactly.
 
     Returns
     -------
     ImagePlacement
-        Placement of the fitted image in paper millimetres.
+        Image rectangle in paper millimetres. For ``fill`` this rectangle can
+        lie partly outside the area; it still maps source pixels to paper.
+
+    Raises
+    ------
+    ValueError
+        If the image, area or DPI is invalid, or the mode is unknown.
     """
     image_width_px, image_height_px = image_size_px
     if image_width_px <= 0 or image_height_px <= 0:
@@ -113,10 +127,18 @@ def fit_image_placement(
         raise ValueError("Placement area must have positive width and height")
     if image_dpi <= 0:
         raise ValueError("Image DPI must be positive")
+    if mode not in _FIT_MODES:
+        raise ValueError(f"Unknown fit mode {mode!r}; expected one of {', '.join(_FIT_MODES)}")
 
     image_width_mm = image_width_px * MM_PER_INCH / image_dpi
     image_height_mm = image_height_px * MM_PER_INCH / image_dpi
-    scale = min(area_width_mm / image_width_mm, area_height_mm / image_height_mm)
+
+    if mode == "fill":
+        scale = max(area_width_mm / image_width_mm, area_height_mm / image_height_mm)
+    elif mode == "none":
+        scale = 1.0
+    else:
+        scale = min(area_width_mm / image_width_mm, area_height_mm / image_height_mm)
 
     width_mm = image_width_mm * scale
     height_mm = image_height_mm * scale
@@ -129,12 +151,50 @@ def fit_image_placement(
     )
 
 
+def _clip_geometries_to_rect(
+    geometries: Iterable[LineString],
+    clip_rect: ImagePlacement,
+) -> list[LineString]:
+    """Clip millimetre geometries to a rectangle, keeping only two-point-or-longer lines."""
+    xmin = clip_rect.x
+    ymin = clip_rect.y
+    xmax = clip_rect.x + clip_rect.width
+    ymax = clip_rect.y + clip_rect.height
+
+    clipped: list[LineString] = []
+    for line in geometries:
+        if line.is_empty:
+            continue
+        result = clip_by_rect(line, xmin, ymin, xmax, ymax)
+        if result.is_empty:
+            continue
+        if isinstance(result, LineString):
+            parts = [result]
+        elif isinstance(result, MultiLineString):
+            parts = list(result.geoms)
+        elif isinstance(result, GeometryCollection):
+            parts = [part for part in result.geoms if isinstance(part, LineString)]
+        else:
+            parts = []
+        for part in parts:
+            coords = list(part.coords)
+            if len(coords) >= 2:
+                clipped.append(LineString(coords))
+    return clipped
+
+
 def _scale_geometries_to_placement(
     geometries: Iterable[LineString],
     placement: ImagePlacement,
     image_size_px: tuple[int, int],
+    clip_rect: ImagePlacement | None = None,
 ) -> list[LineString]:
-    """Map image pixel coordinates onto the placed image rectangle, in millimetres."""
+    """Map image pixel coordinates onto the placed image rectangle, in millimetres.
+
+    When ``clip_rect`` is given, the mapped geometry is clipped to that
+    rectangle. Both export paths pass the same rectangle for ``fill`` mode so
+    their ink agrees and never leaves the drawable area.
+    """
     image_width_px, image_height_px = image_size_px
     if image_width_px <= 0 or image_height_px <= 0:
         raise ValueError("Image size must have positive width and height")
@@ -151,6 +211,8 @@ def _scale_geometries_to_placement(
             continue
         new_coords = [(placement.x + x * scale_x, placement.y + y * scale_y) for x, y in coords]
         transformed.append(LineString(new_coords))
+    if clip_rect is not None:
+        return _clip_geometries_to_rect(transformed, clip_rect)
     return transformed
 
 
@@ -168,20 +230,40 @@ def _resolution_metadata(resolution: WorkingResolution | None) -> dict[str, str]
     }
 
 
+def _placement_attributes(
+    placement: ImagePlacement,
+    resolution: WorkingResolution | None = None,
+    mode: FitMode | None = None,
+    clip_rect: ImagePlacement | None = None,
+) -> dict[str, str]:
+    """Build the placement attributes; ``fit`` and ``clip-*`` are opt-in."""
+    attributes = {
+        "x": f"{placement.x:.4f}",
+        "y": f"{placement.y:.4f}",
+        "width": f"{placement.width:.4f}",
+        "height": f"{placement.height:.4f}",
+        **_resolution_metadata(resolution),
+    }
+    if mode is not None and mode != "fit":
+        attributes["fit"] = mode
+    if clip_rect is not None:
+        attributes["clip-x"] = f"{clip_rect.x:.4f}"
+        attributes["clip-y"] = f"{clip_rect.y:.4f}"
+        attributes["clip-width"] = f"{clip_rect.width:.4f}"
+        attributes["clip-height"] = f"{clip_rect.height:.4f}"
+    return attributes
+
+
 def _placement_metadata_element(
     placement: ImagePlacement,
     resolution: WorkingResolution | None = None,
+    mode: FitMode | None = None,
+    clip_rect: ImagePlacement | None = None,
 ) -> ET.Element:
     """Build the <penpath:image-placement> element for an SVG metadata block."""
     return ET.Element(
         f"{{{PENPATH_NAMESPACE}}}image-placement",
-        {
-            "x": f"{placement.x:.4f}",
-            "y": f"{placement.y:.4f}",
-            "width": f"{placement.width:.4f}",
-            "height": f"{placement.height:.4f}",
-            **_resolution_metadata(resolution),
-        },
+        _placement_attributes(placement, resolution, mode, clip_rect),
     )
 
 
@@ -189,6 +271,8 @@ def add_placement_metadata(
     svg_path: str | Path,
     placement: ImagePlacement | tuple[float, float, float, float],
     resolution: WorkingResolution | None = None,
+    mode: FitMode | None = None,
+    clip_rect: ImagePlacement | tuple[float, float, float, float] | None = None,
 ) -> None:
     """Insert or replace penpath image-placement metadata in an existing SVG.
 
@@ -204,20 +288,32 @@ def add_placement_metadata(
     resolution : WorkingResolution | None, optional
         Working resolution to record as image/source size attributes. When
         omitted, the metadata keeps only the placement rectangle.
+    mode : {'fit', 'fill', 'none'}, optional
+        Recorded only when not ``fit``, so old SVGs keep their exact bytes.
+    clip_rect : ImagePlacement | tuple, optional
+        Rectangle the ink was clipped to, recorded for ``fill`` mode.
     """
     path = Path(svg_path)
     placement_value = _as_placement(placement)
-    resolution_attrs = "".join(
-        f' {key}="{value}"' for key, value in _resolution_metadata(resolution).items()
+    attributes = _placement_attributes(
+        placement_value,
+        resolution,
+        mode,
+        _as_placement(clip_rect) if clip_rect is not None else None,
+    )
+    extra_attrs = "".join(
+        f' {key}="{value}"'
+        for key, value in attributes.items()
+        if key not in ("x", "y", "width", "height")
     )
     metadata_xml = (
         f'<metadata xmlns:penpath="{PENPATH_NAMESPACE}">'
         f"<penpath:image-placement "
-        f'x="{placement_value.x:.4f}" '
-        f'y="{placement_value.y:.4f}" '
-        f'width="{placement_value.width:.4f}" '
-        f'height="{placement_value.height:.4f}"'
-        f"{resolution_attrs}/>"
+        f'x="{attributes["x"]}" '
+        f'y="{attributes["y"]}" '
+        f'width="{attributes["width"]}" '
+        f'height="{attributes["height"]}"'
+        f"{extra_attrs}/>"
         "</metadata>"
     )
 
@@ -301,6 +397,8 @@ def write_penpath_svg(
     output_path: str | Path,
     image_placement: ImagePlacement | tuple[float, float, float, float] | None = None,
     resolution: WorkingResolution | None = None,
+    mode: FitMode | None = None,
+    clip_rect: ImagePlacement | tuple[float, float, float, float] | None = None,
 ) -> None:
     """Write penpath's SVG layout from geometry already in paper millimetres.
 
@@ -325,11 +423,23 @@ def write_penpath_svg(
         Rectangle (x, y, width, height in mm) written as placement metadata.
     resolution : WorkingResolution | None, optional
         Working resolution to record as image/source size attributes.
+    mode : {'fit', 'fill', 'none'}, optional
+        Placement mode recorded in the metadata when not ``fit``.
+    clip_rect : ImagePlacement | tuple, optional
+        Rectangle in paper millimetres that the already-scaled geometry is
+        clipped to before writing, and that is recorded in the metadata.
     """
     if not pens:
         raise ValueError("At least one pen must be provided")
     if len(strokes_by_pen) != len(pens):
         raise ValueError("strokes_by_pen must have one entry per pen")
+
+    clip = _as_placement(clip_rect) if clip_rect is not None else None
+    strokes_to_write = (
+        [_clip_geometries_to_rect(lines, clip) for lines in strokes_by_pen]
+        if clip is not None
+        else [list(lines) for lines in strokes_by_pen]
+    )
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -353,10 +463,12 @@ def write_penpath_svg(
         )
     )
     if image_placement is not None:
-        dwg.set_metadata(_placement_metadata_element(_as_placement(image_placement), resolution))
+        dwg.set_metadata(
+            _placement_metadata_element(_as_placement(image_placement), resolution, mode, clip)
+        )
 
     layer_number = 0
-    for pen, lines in zip(pens, strokes_by_pen, strict=True):
+    for pen, lines in zip(pens, strokes_to_write, strict=True):
         valid_lines = [line for line in lines if not line.is_empty and len(list(line.coords)) >= 2]
         if not valid_lines:
             continue
@@ -397,6 +509,8 @@ def export_pen_layers(
     image_placement: ImagePlacement | tuple[float, float, float, float],
     image_size_px: tuple[int, int],
     resolution: WorkingResolution | None = None,
+    mode: FitMode | None = None,
+    clip_rect: ImagePlacement | tuple[float, float, float, float] | None = None,
 ) -> None:
     """Export one geometry list per pen into that pen's Inkscape layer.
 
@@ -418,6 +532,10 @@ def export_pen_layers(
         Size of the image the geometries belong to, in pixels.
     resolution : WorkingResolution | None, optional
         Working resolution to record as image/source size attributes.
+    mode : {'fit', 'fill', 'none'}, optional
+        Placement mode recorded in the metadata when not ``fit``.
+    clip_rect : ImagePlacement | tuple, optional
+        Rectangle in paper millimetres that the ink is clipped to, for ``fill``.
 
     Notes
     -----
@@ -436,10 +554,14 @@ def export_pen_layers(
         raise ValueError("No valid geometries (need at least 2 points per line)")
 
     placement = _as_placement(image_placement)
+    clip = _as_placement(clip_rect) if clip_rect is not None else None
     transformed_by_pen = [
-        _scale_geometries_to_placement(lines, placement, image_size_px) for lines in valid_by_pen
+        _scale_geometries_to_placement(lines, placement, image_size_px, clip)
+        for lines in valid_by_pen
     ]
-    write_penpath_svg(transformed_by_pen, paper, pens, output_path, image_placement, resolution)
+    write_penpath_svg(
+        transformed_by_pen, paper, pens, output_path, image_placement, resolution, mode, clip
+    )
 
 
 def export_svg(
@@ -451,6 +573,8 @@ def export_svg(
     image_placement: ImagePlacement | tuple[float, float, float, float] | None = None,
     image_size_px: tuple[int, int] | None = None,
     resolution: WorkingResolution | None = None,
+    mode: FitMode | None = None,
+    clip_rect: ImagePlacement | tuple[float, float, float, float] | None = None,
 ) -> None:
     """Export geometries to a penpath SVG in millimetres.
 
@@ -480,6 +604,10 @@ def export_svg(
     resolution : WorkingResolution | None, optional
         Working resolution to record as image/source size attributes. When
         omitted, the metadata keeps only the placement rectangle.
+    mode : {'fit', 'fill', 'none'}, optional
+        Placement mode recorded in the metadata when not ``fit``.
+    clip_rect : ImagePlacement | tuple, optional
+        Rectangle in paper millimetres that the ink is clipped to, for ``fill``.
     """
     if not pens:
         raise ValueError("At least one pen must be provided")
@@ -494,12 +622,15 @@ def export_svg(
     if image_placement is not None and image_size_px is None:
         raise ValueError("image_size_px is required when image_placement is provided")
 
+    clip = _as_placement(clip_rect) if clip_rect is not None else None
     if image_placement is not None and image_size_px is not None:
         transformed = _scale_geometries_to_placement(
-            valid_geometries, _as_placement(image_placement), image_size_px
+            valid_geometries, _as_placement(image_placement), image_size_px, clip
         )
     else:
         transformed = _scale_and_translate_geometries(valid_geometries, paper, image_dpi)
+        if clip is not None:
+            transformed = _clip_geometries_to_rect(transformed, clip)
 
     write_penpath_svg(
         [transformed, *([[]] * (len(pens) - 1))],
@@ -508,6 +639,8 @@ def export_svg(
         output_path,
         image_placement,
         resolution,
+        mode,
+        clip,
     )
 
 

@@ -37,7 +37,12 @@ from penpath.core.models import (
     Project,
     make_pfm_settings,
 )
-from penpath.core.output.svg import export_pen_layers, fit_image_placement, write_penpath_svg
+from penpath.core.output.svg import (
+    ImagePlacement,
+    export_pen_layers,
+    fit_image_placement,
+    write_penpath_svg,
+)
 from penpath.core.output.vpype import optimize_with_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
 from penpath.core.styles import STYLE_NAMES, StyleName, draw_styled_lines, get_style
@@ -431,6 +436,7 @@ def _run_convert_pipeline(
     image = load_image(project.image.path)
     source_size_px = image.size
     origin_x_mm, origin_y_mm = project.paper.drawable_origin_mm
+    fit_mode = project.paper.fit
     image_placement = fit_image_placement(
         image_size_px=source_size_px,
         area_width_mm=project.paper.drawable_width_mm,
@@ -438,6 +444,17 @@ def _run_convert_pipeline(
         image_dpi=project.image.dpi,
         offset_x_mm=origin_x_mm,
         offset_y_mm=origin_y_mm,
+        mode=fit_mode,
+    )
+    clip_rect = (
+        ImagePlacement(
+            origin_x_mm,
+            origin_y_mm,
+            project.paper.drawable_width_mm,
+            project.paper.drawable_height_mm,
+        )
+        if fit_mode == "fill"
+        else None
     )
     resolution = plan_working_resolution(
         source_size_px,
@@ -562,6 +579,7 @@ def _run_convert_pipeline(
                 vpype_path,
                 image_placement,
                 working_size_px,
+                clip_rect,
             )
             write_penpath_svg(
                 [
@@ -573,6 +591,8 @@ def _run_convert_pipeline(
                 project.output_path,
                 image_placement,
                 resolution,
+                fit_mode,
+                clip_rect,
             )
         except FileNotFoundError:
             reporter.message(
@@ -589,6 +609,8 @@ def _run_convert_pipeline(
                 image_placement,
                 working_size_px,
                 resolution,
+                fit_mode,
+                clip_rect,
             )
     else:
         export_pen_layers(
@@ -599,6 +621,8 @@ def _run_convert_pipeline(
             image_placement,
             working_size_px,
             resolution,
+            fit_mode,
+            clip_rect,
         )
 
     reporter.finish()

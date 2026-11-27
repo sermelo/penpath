@@ -19,6 +19,7 @@ from penpath.core.output.svg import (
     SVG_DPI,
     ImagePlacement,
     _as_placement,
+    _clip_geometries_to_rect,
     _scale_geometries_to_placement,
 )
 
@@ -148,6 +149,7 @@ def optimize_with_vpype(
     vpype_path: str = "vpype",
     image_placement: ImagePlacement | tuple[float, float, float, float] | None = None,
     image_size_px: tuple[int, int] | None = None,
+    clip_rect: ImagePlacement | tuple[float, float, float, float] | None = None,
 ) -> list[list[PenStroke]]:
     """Optimise each pen's geometry in exactly one vpype call per pen.
 
@@ -173,6 +175,10 @@ def optimize_with_vpype(
         ``image_size_px`` must also be provided.
     image_size_px : tuple[int, int], optional
         Original image size (width, height) in pixels.
+    clip_rect : ImagePlacement | tuple, optional
+        Rectangle in paper millimetres that the placed geometry is clipped to
+        before vpype sees it, for ``fill`` mode. Keeps both export paths in
+        agreement and prevents vpype from optimizing cropped-away ink.
 
     Returns
     -------
@@ -204,16 +210,22 @@ def optimize_with_vpype(
         raise ValueError("No valid geometries (need at least 2 points per line)")
 
     placement = _as_placement(image_placement) if image_placement is not None else None
+    clip = _as_placement(clip_rect) if clip_rect is not None else None
     optimized: list[list[PenStroke]] = []
     for lines in valid_by_pen:
         if not lines:
             optimized.append([])
             continue
         if placement is not None and image_size_px is not None:
-            placed_mm = _scale_geometries_to_placement(lines, placement, image_size_px)
-            vpype_geometry = _to_vpype_units(placed_mm)
+            placed_mm = _scale_geometries_to_placement(lines, placement, image_size_px, clip)
         else:
-            vpype_geometry = lines
+            placed_mm = lines
+        if clip is not None:
+            placed_mm = _clip_geometries_to_rect(placed_mm, clip)
+        if not placed_mm:
+            optimized.append([])
+            continue
+        vpype_geometry = _to_vpype_units(placed_mm) if placement is not None else placed_mm
         optimized.append(
             _optimise_one_pen(vpype_geometry, paper, vpype_path, center=placement is None)
         )
