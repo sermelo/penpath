@@ -310,8 +310,11 @@ max_length=50` fails with a clear error rather than drawing nothing.
 The three tone settings apply when the image has local texture: at least 18%
 of pixels have a luminance standard deviation of 20 or more in a window the
 size of `sample_step`. Flat shapes and smooth gradients keep the calibrated
-luminance-progress rule so their ink spread does not change. To restore the
-pre-LUC-128 search on a photo, use `-s tone_coverage=1 -s tone_exponent=1
+luminance-progress rule so their ink spread does not change. `--palette` mode
+also keeps each separated pen channel on that legacy path (`max_fill=80`,
+`line_density=0.75`, neutral tone settings) unless a key is set explicitly with
+`-s`, so the per-pen gate pins stay unchanged. To restore the pre-LUC-128
+search on a photo, use `-s tone_coverage=1 -s tone_exponent=1
 -s texture_limit=0` together with `-s max_fill=80 -s line_density=0.75`.
 
 To draw the image's full tonal range, including near-solid black, opt into

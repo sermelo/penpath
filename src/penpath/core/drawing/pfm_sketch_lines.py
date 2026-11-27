@@ -496,7 +496,11 @@ class _SketchEngineSettings(Protocol):
     tone_coverage: float
     tone_exponent: float
     texture_limit: float
-    model_fields_set: set[str]
+
+    @property
+    def model_fields_set(self) -> set[str]:
+        """Fields explicitly set by the caller, used for the legacy fallback."""
+        ...
 
 
 _AngleProvider = Callable[[random.Random, int, int, int], float]

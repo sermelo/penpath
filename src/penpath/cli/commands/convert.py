@@ -17,6 +17,7 @@ from shapely import LineString
 from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
+from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD, mask_background
@@ -452,6 +453,19 @@ def _run_convert_pipeline(
     reporter.start("Generating lines (PFM)")
     pfm_fn, _ = get_pfm(project.pfm.pfm_type)
     pfm_settings = project.pfm.to_typed_settings()
+    if use_palette and isinstance(pfm_settings, SketchLinesSettings):
+        legacy = {
+            "max_fill": 80.0,
+            "line_density": 0.75,
+            "tone_coverage": 1.0,
+            "tone_exponent": 1.0,
+            "texture_limit": 0.0,
+        }
+        updates = {
+            key: value for key, value in legacy.items() if key not in pfm_settings.model_fields_set
+        }
+        if updates:
+            pfm_settings = pfm_settings.model_copy(update=updates)
     lines_by_pen = [pfm_fn(image, pfm_settings) for image in filtered_by_pen]
     reporter.finish()
 
