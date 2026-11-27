@@ -14,6 +14,7 @@ from penpath.cli.main import main
 from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
 from penpath.core.image.load import load_image
 from penpath.core.svg_parse import parse_svg_strokes
+from penpath.presets.pfms import SPIRAL_PRESETS
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
 INKSCAPE_NS = "{http://www.inkscape.org/namespaces/inkscape}"
@@ -69,8 +70,16 @@ class TestSpiralConvert:
         strokes = spiral_strokes(load_image(FACE), SpiralSettings())
         assert len(strokes) == 1
 
-    def test_qualified_fine_preset_converts(self, runner: CliRunner, tmp_path: Path) -> None:
-        output = tmp_path / "fine.svg"
+    @pytest.mark.parametrize(
+        ("preset", "expected_strokes"),
+        [("fine", 1), ("bold", 1), ("parabolic", 2)],
+    )
+    def test_qualified_preset_converts_with_expected_strokes(
+        self, runner: CliRunner, tmp_path: Path, preset: str, expected_strokes: int
+    ) -> None:
+        strokes = spiral_strokes(load_image(FACE), SPIRAL_PRESETS[preset])
+        assert len(strokes) == expected_strokes
+        output = tmp_path / f"{preset}.svg"
         result = runner.invoke(
             main,
             [
@@ -79,7 +88,7 @@ class TestSpiralConvert:
                 "-o",
                 str(output),
                 "--pfm",
-                "spiral_sawtooth:fine",
+                f"spiral_sawtooth:{preset}",
                 "-s",
                 "seed=42",
                 "--no-vpype",
