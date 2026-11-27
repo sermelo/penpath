@@ -155,6 +155,68 @@ def test_convert_selects_and_overrides_fake_pfm(
     assert output.exists()
 
 
+def test_convert_reads_registered_pfm_from_project_file(
+    image: Path,
+    tmp_path: Path,
+    fake_pfm: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[FakeDotsSettings] = []
+
+    def capture(pfm_image: object, settings: FakeDotsSettings) -> list[LineString]:
+        seen.append(settings)
+        return fake_dots(pfm_image, settings)
+
+    monkeypatch.setitem(
+        registry_module.get_registry()._pfms, "fake_dots", (capture, FakeDotsSettings)
+    )
+    output = tmp_path / "from_project.svg"
+    project = Project(
+        image=ImageRef(path=image, filters=FilterPipeline()),
+        paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
+        pen=Pen(name="fine", width_mm=0.3),
+        pfm=RegisteredPFM(
+            pfm_type="fake_dots", settings=FakeDotsSettings(dots_per_cm=9, jitter=0.25)
+        ),
+        output_path=output,
+    )
+    project_path = tmp_path / "project.yaml"
+    save_yaml(project, project_path)
+
+    result = CliRunner().invoke(
+        main, ["convert", str(image), "--project", str(project_path), "--no-vpype"]
+    )
+    assert result.exit_code == 0, result.output
+    assert len(seen) == 1
+    assert isinstance(seen[0], FakeDotsSettings)
+    assert seen[0].dots_per_cm == 9
+    assert seen[0].jitter == 0.25
+    assert output.exists()
+
+    override = tmp_path / "override.svg"
+    override_result = CliRunner().invoke(
+        main,
+        [
+            "convert",
+            str(image),
+            "--project",
+            str(project_path),
+            "--pfm",
+            "fake_fine",
+            "-s",
+            "dots_per_cm=15",
+            "--no-vpype",
+            "-o",
+            str(override),
+        ],
+    )
+    assert override_result.exit_code == 0, override_result.output
+    assert len(seen) == 2
+    assert seen[1].dots_per_cm == 15
+    assert seen[1].jitter == 0.5
+    assert override.exists()
+
+
 @pytest.mark.parametrize(
     ("setting", "expected_in_output"),
     [("bogus=1", "bogus"), ("dots_per_cm=abc", "dots_per_cm"), ("dots_per_cm=99", "dots_per_cm")],
