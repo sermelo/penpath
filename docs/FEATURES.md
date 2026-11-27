@@ -28,7 +28,7 @@
 | 13 | Sketch Lines (hatching) | Versatile pen-and-ink look from photos | Line density, max fill, min/max length, angle range, shading on/off, squiggles, erasing, seed | `pfm/PFMSketchLinesBasic.java` + settings in `Register.java` | L | NumPy, custom geometry | **MVP** |
 | 14 | Sketch Squares (grid hatching) | Structured, graphic look | Grid angle, line density, min/max length | `pfm/PFMSketchSquaresBasic.java` | M | NumPy | **later** |
 | 15 | Spiral (sawtooth) | Continuous-line, single-pass plots | Spiral type (Archimedean/parabolic), centre, ring spacing, amplitude, velocity range, connected lines | `pfm/PFMSpiralBasic.java` | M | NumPy | **later** |
-| 16 | Contour tracing (potrace-style) | Clean vector outlines from thresholded image | Turn policy, turd size, alpha max, opticurve | New (DrawingBotV3 Premium only) | L | potrace / pypotrace | **later** |
+| 16 | Contour tracing (potrace-style) | Clean vector outlines from thresholded image | Turn policy, turd size, alpha max, opticurve | New (DrawingBotV3 Premium only) | L | scikit-image, Shapely | **done** — registered `contour` PFM with presets and `-s` settings (LUC-144/145); no DrawingBotV3 code ported |
 | 17 | Stippling / pointillism | Dot-based shading | Dot density, min/max radius, jitter, seed | New | M | NumPy, Poisson disk | **out** — niche, can be built on Sketch Lines |
 | 18 | Multi-pen / colour separation | CMYK, RGB, or custom palette splits | Separation mode (CMYK, RGB, threshold layers), per-layer PFM | `drawing/ColorSeparationHandler.java` (Default only in free) | L | — | **MVP** — sergio approved on 2026-11-24; the Christmas card needs it and the default path stays simple: one pen gives one layer, exactly as before |
 | **Pens & Colour** |||||||
@@ -101,11 +101,10 @@ the user-facing style flag.
 | 30 | Project file | Reproducibility, handoff |
 | 32 | CLI config | Sensible defaults without flags every run |
 
-**MVP Scope**: One PFM (Sketch Lines), one pen by default and an ordered palette for multi-pen, vpype for optimization/export, minimal but complete filter chain for photo prep.
+**MVP Scope**: Two PFMs (Sketch Lines and Contour), one pen by default and an ordered palette for multi-pen, vpype for optimization/export, minimal but complete filter chain for photo prep.
 
-### Later (10 features) — "Polish and versatility"
+### Later (9 features) — "Polish and versatility"
 - Sketch Squares, Spiral (additional styles)
-- Contour tracing (clean outlines)
 - Edge detect (outline mode)
 - Filter pipeline/presets, pen pressure, preview renders, preset system
 - Batch input

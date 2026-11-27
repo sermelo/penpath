@@ -28,7 +28,8 @@
 
 ### `penpath convert` — Photo → SVG (Main Command)
 
-Convert a raster image to a plottable SVG using the Sketch Lines algorithm.
+Convert a raster image to a plottable SVG with the selected PFM (Sketch Lines
+or Contour).
 
 ```bash
 penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
@@ -106,8 +107,8 @@ with `--palette`: a single pen ignores them rather than failing.
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--pfm NAME` | — | `sketch_lines` | PFM algorithm or built-in preset (see **PFM Presets** below) |
-| `--pfm-setting KEY=VALUE` | `-s` | — | PFM-specific setting (repeatable). See **PFM Settings** below. |
+| `--pfm NAME` | — | `sketch_lines` | Registered PFM (`sketch_lines` or `contour`) or any built-in preset name (see **PFM Presets** below) |
+| `--pfm-setting KEY=VALUE` | `-s` | — | Setting of the selected PFM (repeatable). See **PFM Settings** below. |
 | `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
 | `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,margins]` (e.g., `a4`, `210x297,10`) |
@@ -324,11 +325,33 @@ To draw the image's full tonal range, including near-solid black, opt into
 rule instead of counting lines per millimetre, and `min_length` and
 `max_length` are image pixels rather than millimetres.
 
+#### PFM Settings (Contour)
+
+With `--pfm contour` (or a Contour preset), every field of `ContourSettings` is
+accepted by `-s KEY=VALUE`. Booleans use the same `true`/`false`, `1`/`0`,
+`yes`/`no` and `on`/`off` spellings as Sketch Lines; invalid keys, values or
+out-of-range numbers exit 2 with the setting named.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `threshold` | int | 0–255 | `128` | Base grey level; darker pixels are traced. |
+| `levels` | int | 1–8 | `1` | Number of levels; above 1 the others are evenly spaced up to 255 for nested outlines. |
+| `turn_policy` | str | `black`, `white`, `left`, `right`, `minority`, `majority`, `random` | `minority` | Which side ambiguous corners join; `random` uses `seed`. |
+| `turd_size` | int | 0–10000 px² | `20` | Drop enclosed areas below this size. |
+| `alpha_max` | float | 0–1.3334 | `1.0` | Tangent of the smallest turn kept sharp while smoothing. |
+| `opticurve` | bool | — | `true` | Enable corner-preserving smoothing. |
+| `smoothing` | float | 0–1 | `0.5` | Smoothing strength; `0` is a no-op. |
+| `simplify_tolerance` | float | 0–10 px | `0.75` | RDP tolerance before smoothing. |
+| `seed` | int | any | random | Seed for `turn_policy=random`; other policies ignore it. |
+
+**Example**: `--pfm contour -s levels=4 -s threshold=110 -s turd_size=30`
+
 #### PFM Presets (`--pfm NAME`)
 
-`--pfm` accepts both the registered algorithm name (`sketch_lines`) and a
-built-in preset name. A preset supplies a bundle of the settings above; any
-`-s` override is applied on top of it. Run `penpath info pfms` to list them.
+`--pfm` accepts a registered PFM name (`sketch_lines` or `contour`) and any
+built-in preset name. A preset supplies a bundle of settings for its own PFM;
+any `-s` override is applied on top of it with that PFM's field types. Run
+`penpath info pfms` to list each PFM with only its own presets.
 
 | Preset | Character |
 |--------|-----------|
@@ -340,6 +363,11 @@ built-in preset name. A preset supplies a bundle of the settings above; any
 | `crosshatch` | Angles restricted to 45–135°, so strokes cross in a woven grid. |
 | `hatch_horizontal` | Angles near 85–95°, giving near-horizontal hatching. |
 | `hatch_vertical` | Angles near 0–10°, giving near-vertical hatching. |
+
+| Preset | PFM | Character |
+|--------|-----|-----------|
+| `contour_portrait` | `contour` | Four threshold levels with a 30 px² speck limit: interior detail, tuned on `face.jpg`. |
+| `contour_silhouette` | `contour` | One threshold at 140 with a 100 px² speck limit: fewer, bolder outlines. |
 
 The three hatch presets and `squiggly` are style choices: they deliberately
 give up photo likeness for a particular look. Only `default` is calibrated
@@ -745,7 +773,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `pens` | List built-in pen presets |
 | `palettes` | List built-in palettes and their pens in drawing order |
 | `papers` | List built-in paper presets |
-| `pfms` | List available PFMs (MVP: only `sketch_lines`) |
+| `pfms` | List registered PFMs with their settings and only their own presets |
 | `profiles` | List built-in and user machine profiles (source, description, bed size, feeds) |
 | `filters` | List available filters with parameters |
 | `image PATH` | Show image info (size, mode, EXIF, DPI, planned working resolution) |

@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel
 
+from penpath.core.drawing.pfm_contour import ContourSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm
 
@@ -129,6 +130,36 @@ def register_pfm_preset(name: str, pfm_type: str, settings: BaseModel) -> None:
     except KeyError as e:
         raise ValueError(f"Unknown PFM: {pfm_type}") from e
     _EXTRA_PFM_PRESETS[name] = (pfm_type, settings_model.model_validate(settings.model_dump()))
+
+
+register_pfm_preset(
+    "contour_portrait",
+    "contour",
+    ContourSettings(
+        threshold=110,
+        levels=4,
+        turn_policy="minority",
+        turd_size=30,
+        alpha_max=0.7,
+        opticurve=True,
+        smoothing=0.65,
+        simplify_tolerance=0.6,
+    ),
+)
+register_pfm_preset(
+    "contour_silhouette",
+    "contour",
+    ContourSettings(
+        threshold=140,
+        levels=1,
+        turn_policy="majority",
+        turd_size=100,
+        alpha_max=1.2,
+        opticurve=True,
+        smoothing=0.35,
+        simplify_tolerance=1.5,
+    ),
+)
 
 
 def get_pfm_preset(name: str) -> SketchLinesSettings:

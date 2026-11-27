@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from penpath.core.drawing.pfm_contour import ContourSettings, contour_strokes
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 
 if TYPE_CHECKING:
@@ -124,6 +125,7 @@ def list_pfms() -> list[str]:
 
 
 register_pfm("sketch_lines", sketch_lines, SketchLinesSettings)
+register_pfm("contour", contour_strokes, ContourSettings)
 
 __all__ = [
     "PFMRegistry",
