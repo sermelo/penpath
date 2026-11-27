@@ -812,5 +812,43 @@ class TestSketchSquaresPFMProjectFiles:
         assert loaded.pfm.to_typed_settings() == original.pfm.settings
 
 
+class TestStyleProjectFiles:
+    """The saved look is a documented project field."""
+
+    def test_old_project_loads_without_a_style(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        assert load_yaml(_write_yaml(tmp_path, data)).style is None
+
+    @pytest.mark.parametrize("style", ["sketch", "hatch", "outline"])
+    def test_style_round_trips(self, tmp_path: Path, style: str) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        data["style"] = style
+        project = load_yaml(_write_yaml(tmp_path, data))
+        assert project.style == style
+
+        path = tmp_path / "saved.yaml"
+        save_yaml(project, path)
+        saved = yaml.safe_load(path.read_text())
+        assert saved["style"] == style
+        assert "# Saved look preset" in path.read_text()
+        assert load_yaml(path).style == style
+
+    def test_unset_style_is_not_written_on_save(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        path = tmp_path / "saved.yaml"
+        save_yaml(load_yaml(_write_yaml(tmp_path, data)), path)
+        assert "style" not in yaml.safe_load(path.read_text())
+
+    def test_unknown_style_is_a_clear_error(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        data["style"] = "scribble"
+        with pytest.raises(ProjectLoadError, match="validation failed"):
+            load_yaml(_write_yaml(tmp_path, data))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-xvs"])

@@ -144,6 +144,12 @@ def _add_yaml_comments(data: dict[str, Any], palette_name: str | None = None) ->
         lines.append("")
         add_section("Ordered pens (drawing order)", "pens", data["pens"])
 
+    # Saved look preset
+    style = data.get("style")
+    if style:
+        lines.append("")
+        add_section("Saved look preset (sketch, hatch or outline)", "style", style)
+
     # PFM
     pfm = data.get("pfm", {})
     if pfm:
@@ -266,6 +272,8 @@ def save_yaml(project: Project, path: Path) -> None:
     data["version"] = PROJECT_FILE_VERSION
     if data["image"].get("background") is None:
         del data["image"]["background"]
+    if data.get("style") is None:
+        del data["style"]
 
     # Add metadata if not present
     if "metadata" not in data:

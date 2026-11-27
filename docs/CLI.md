@@ -109,9 +109,40 @@ with `--palette`: a single pen ignores them rather than failing.
 |--------|-------|---------|-------------|
 | `--pfm NAME` | — | `sketch_lines` | Registered PFM (`sketch_lines`, `sketch_squares` or `contour`), legacy preset or qualified `PFM:PRESET` id (see **PFM Presets** below) |
 | `--pfm-setting KEY=VALUE` | `-s` | — | Setting of the selected PFM (repeatable). See **PFM Settings** below. |
+| `--style [sketch\|hatch\|outline]` | — | — | Saved look: chooses the Sketch Lines settings, and the outline pass for `outline`. See **Saved Looks** below. |
 | `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
 | `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,margins]` (e.g., `a4`, `210x297,10`) |
+
+#### Saved Looks (`--style`)
+
+`--style` picks one of three saved looks, so a recognisable drawing needs no
+tuning. Any other value exits 2 and lists the valid names. Leaving the flag out
+keeps the part 1 defaults exactly: the same settings, the same outline-free
+pipeline and the same SVG.
+
+| Style | Look |
+|-------|------|
+| `sketch` | The shipped part 1 default: tone-adaptive lines with visible tone steps. |
+| `hatch` | Directional cross-hatching (45–135°, shading on) with clear tone steps and a lighter ink budget. |
+| `outline` | The deterministic edge pass first, then a light tone pass; shapes stay readable with minimal ink. |
+
+Precedence, from strongest to weakest:
+
+1. `-s KEY=VALUE` overrides any single value, whichever look or PFM supplied it.
+2. An explicit non-default `--pfm NAME` (or the `pfm:` settings saved in a
+   project file) supplies the PFM settings.
+3. `--style NAME` (or `style:` in a project file) supplies the look's settings.
+   `--pfm default` is *not* a non-default PFM, so the style still applies.
+4. The built-in defaults apply when nothing else is given.
+
+The look still decides the outline pass even if a non-default `--pfm` supplies
+the tone settings: `--style outline --pfm fine` draws fine pen strokes plus
+edge strokes. With `--project`, adding only `-s` overrides the file's saved
+settings; adding `--style` or `--pfm` replaces them from that look or preset.
+`--style` also overrides the file's `style:` field for that run. The library
+counterparts are `penpath.core.get_style`, `list_styles` and
+`draw_styled_lines`.
 
 #### Pens (`--pen`)
 
@@ -448,6 +479,11 @@ penpath convert --project my_project.yaml
 
 # Override project settings
 penpath convert --project my_project.yaml --pen "0.5,#FF0000" -o red_plot.svg
+
+# Saved looks: sketch (the default), hatch, outline
+penpath convert photo.jpg --style sketch -o sketch.svg
+penpath convert photo.jpg --style hatch -o hatch.svg
+penpath convert photo.jpg --style outline -o outline.svg
 
 # Use a built-in palette or an inline ordered list
 penpath convert photo.jpg --palette stabilo_88
@@ -983,6 +1019,8 @@ penpath config edit
 # penpath project file v1
 version: 1
 
+style: hatch                 # saved look: sketch, hatch or outline (optional)
+
 input:
   path: "photo.jpg"
   auto_orient: true
@@ -1062,6 +1100,14 @@ unset `background` so a single-pen project round-trips with today's output.
 `--background`, `--no-background`, `--background-threshold` and
 `--background-method` override the file for one run; `--no-background` wins on
 the same command line.
+
+`style: sketch|hatch|outline` records the saved look. It is optional: an old
+file without the key runs the default path, and `save_yaml` omits it when no
+look was chosen. The look's values are already resolved into `pfm.settings`, so
+a file's `pfm:` settings win over the named look on load; an `outline` look
+still adds the edge pass. `--style` on the command line replaces the file's
+look and settings for that run, and `-s KEY=VALUE` overrides individual keys on
+top of the file's saved settings.
 
 ```yaml
 image:

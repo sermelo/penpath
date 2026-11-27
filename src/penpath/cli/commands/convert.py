@@ -11,7 +11,7 @@ from typing import Any, Literal, Union, get_args, get_origin
 
 import click
 from click.core import ParameterSource
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from rich.console import Console
 from shapely import LineString
 
@@ -40,6 +40,7 @@ from penpath.core.models import (
 from penpath.core.output.svg import export_pen_layers, fit_image_placement, write_penpath_svg
 from penpath.core.output.vpype import optimize_with_vpype
 from penpath.core.project import ProjectLoadError, load_yaml
+from penpath.core.styles import STYLE_NAMES, StyleName, draw_styled_lines, get_style
 from penpath.presets.palettes import list_palettes
 from penpath.presets.papers import get_paper
 from penpath.presets.pens import get_pen
@@ -294,35 +295,53 @@ def _coerce_setting_value(annotation: object, value_str: str, key: str) -> objec
     return value_str
 
 
-def _resolve_pfm(pfm_name: str | None, pfm_settings: dict[str, str]) -> PFMSettingsUnion:
-    """Resolve a registered PFM name, legacy preset or qualified id with overrides."""
-    if pfm_name is None:
-        pfm_name = DEFAULT_PFM
+def _resolve_pfm(
+    pfm_name: str | None,
+    pfm_settings: dict[str, str],
+    style_name: str | None = None,
+    base_pfm: PFMSettingsUnion | None = None,
+) -> PFMSettingsUnion:
+    """Resolve a registered id, legacy preset, saved look and ``-s`` overrides.
 
-    pfm_type: str | None = None
-    base_model: BaseModel | None = None
-    if ":" in pfm_name:
-        try:
-            pfm_type, base_model = get_pfm_preset_by_id(pfm_name)
-        except ValueError as e:
-            raise click.BadParameter(str(e), param_hint="--pfm") from e
-    elif pfm_name in list_pfm_presets():
-        pfm_type = get_pfm_for_preset(pfm_name)
-        base_model = get_pfm_preset_settings(pfm_name)
-    elif pfm_name in list_pfms():
-        pfm_type = pfm_name
-        _, settings_model = get_pfm(pfm_type)
-        base_model = settings_model()
+    An explicit non-default ``--pfm`` picks the algorithm or preset. Otherwise a
+    ``--style`` picks the settings bundle, and ``-s KEY=VALUE`` wins on top of
+    either. With ``--project`` and only ``-s``, the file's saved PFM settings are
+    the base so an override does not discard the rest of the saved look.
+    """
+    if base_pfm is not None and pfm_name is None and style_name is None:
+        pfm_type = base_pfm.pfm_type
+        base_model = base_pfm.to_typed_settings()
     else:
-        try:
-            get_pfm_preset_by_id(pfm_name)
-        except ValueError as e:
-            raise click.BadParameter(f"Unknown PFM or preset: {e}", param_hint="--pfm") from e
-        raise click.BadParameter(f"Unknown PFM: '{pfm_name}'", param_hint="--pfm")
+        if pfm_name is None:
+            pfm_name = DEFAULT_PFM
 
-    # Keep the fields the preset or caller actually set so the drawing can tell
-    # an explicit value from a model default (flat images keep the calibrated
-    # legacy max_fill/line_density; see the tone rule in pfm_sketch_lines).
+        if ":" in pfm_name:
+            try:
+                pfm_type, base_model = get_pfm_preset_by_id(pfm_name)
+            except ValueError as e:
+                raise click.BadParameter(str(e), param_hint="--pfm") from e
+        elif pfm_name in list_pfm_presets():
+            pfm_type = get_pfm_for_preset(pfm_name)
+            base_model = get_pfm_preset_settings(pfm_name)
+        elif pfm_name in list_pfms():
+            pfm_type = pfm_name
+            _, settings_model = get_pfm(pfm_type)
+            base_model = settings_model()
+        else:
+            try:
+                get_pfm_preset_by_id(pfm_name)
+            except ValueError as e:
+                raise click.BadParameter(f"Unknown PFM or preset: {e}", param_hint="--pfm") from e
+            raise click.BadParameter(f"Unknown PFM: '{pfm_name}'", param_hint="--pfm")
+
+        # "default" is not a non-default --pfm, so a style still applies to it.
+        if style_name is not None and pfm_name == DEFAULT_PFM:
+            base_model = get_style(style_name).sketch_lines
+            pfm_type = "sketch_lines"
+
+    # Keep the fields the preset, style or caller actually set so the drawing
+    # can tell an explicit value from a model default (flat images keep the
+    # calibrated legacy max_fill/line_density; see the tone rule in pfm_sketch_lines).
     explicit_keys = set(base_model.model_fields_set) | set(pfm_settings)
 
     _, settings_model = get_pfm(pfm_type)
@@ -507,7 +526,9 @@ def _run_convert_pipeline(
         }
         if updates:
             pfm_settings = pfm_settings.model_copy(update=updates)
-    lines_by_pen = [pfm_fn(image, pfm_settings) for image in filtered_by_pen]
+    lines_by_pen = [
+        draw_styled_lines(image, pfm_fn, pfm_settings, project.style) for image in filtered_by_pen
+    ]
     reporter.finish()
 
     if not any(lines_by_pen):
@@ -651,6 +672,12 @@ def _run_convert_pipeline(
     help="Choose the chroma multiplier from the image and palette; --saturation wins",
 )
 @click.option(
+    "--style",
+    "style_name",
+    type=click.Choice(STYLE_NAMES),
+    help="Saved look: sketch (the default), hatch or outline. -s overrides its values",
+)
+@click.option(
     "--pfm",
     "pfm_name",
     help=(
@@ -728,6 +755,7 @@ def convert_cmd(
     background_method: Literal["global", "local"],
     saturation: float,
     palette_adapt: bool,
+    style_name: StyleName | None,
     pfm_name: str | None,
     pfm_settings: tuple[str, ...],
     pen_spec: str | None,
@@ -786,8 +814,16 @@ def convert_cmd(
         # Override with CLI flags
         if filter_specs:
             project.image.filters = _build_filter_pipeline(list(filter_specs))
-        if pfm_name or pfm_settings:
-            project.pfm = _resolve_pfm(pfm_name, _parse_pfm_settings(pfm_settings))
+        if style_name is not None:
+            project.style = style_name
+        if pfm_name or pfm_settings or style_name:
+            parsed_settings = _parse_pfm_settings(pfm_settings)
+            project.pfm = _resolve_pfm(
+                pfm_name,
+                parsed_settings,
+                style_name,
+                base_pfm=project.pfm if not (pfm_name or style_name) else None,
+            )
         if pen_spec:
             project.pen = _resolve_pen(pen_spec, config)
         if palette_spec:
@@ -837,7 +873,7 @@ def convert_cmd(
             palette_name = None
 
         paper = _resolve_paper(paper_spec, config)
-        pfm = _resolve_pfm(pfm_name, _parse_pfm_settings(pfm_settings))
+        pfm = _resolve_pfm(pfm_name, _parse_pfm_settings(pfm_settings), style_name)
         output = _determine_output_path(
             input_path, str(resolved_output) if resolved_output else None
         )
@@ -869,6 +905,7 @@ def convert_cmd(
             pens=pens,
             palette_name=palette_name,
             pfm=pfm,
+            style=style_name,
             output_path=output,
         )
 
