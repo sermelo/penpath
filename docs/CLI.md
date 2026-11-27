@@ -113,7 +113,44 @@ with `--palette`: a single pen ignores them rather than failing.
 | `--style [sketch\|hatch\|outline]` | — | — | Saved look: chooses the Sketch Lines settings, and the outline pass for `outline`. See **Saved Looks** below. |
 | `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
-| `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,margins]` (e.g., `a4`, `210x297,10`) |
+| `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,MARGINS]` (e.g., `a4`, `210x297,10`, `190x190,20,5,20,5`) |
+| `--margin MM` | — | paper value | Override the paper margin for one run: one value or four in top,right,bottom,left order |
+| `--fit [fit\|fill\|none]` | — | `fit` | Image placement on the paper: contain, cover and crop, or use the `--dpi` pixel size |
+
+#### Paper Fit and Margins
+
+`--fit` chooses how the source image is placed in the drawable area (the paper
+inset by its margins):
+
+| Mode | Result |
+|------|--------|
+| `fit` (default) | Contain the whole image in the drawable area, keeping its aspect ratio and centred; one dimension touches the area edge. |
+| `fill` | Cover the drawable area, keeping the aspect ratio, and crop the ink that falls outside it. |
+| `none` | Draw at the image's pixel size at `--dpi`, centred on the paper; the drawing can run off the page. |
+
+`--dpi` therefore sets the drawn size **only** with `--fit none`: `fit` and
+`fill` scale the image to the paper and ignore the DPI for sizing. `--dpi`
+defaults to 300.
+
+`--margin MM` replaces the paper's margins for that run, including when
+`--project` supplies the paper. Give one non-negative millimetre value for all
+four sides, or four comma-separated values in **top,right,bottom,left** order.
+`--paper WIDTHxHEIGHT[,MARGINS]` takes the same one-or-four margin form, with
+the same order. A negative, non-finite or wrongly counted margin is a usage
+error (exit 2) naming the option; a margin that leaves no drawable area is
+rejected with a message suggesting a smaller margin or a larger paper.
+
+In a project file the same controls are `paper.margin_mm` (a scalar or a
+four-item list) and `paper.fit`; `--margin` and `--fit` override them for one
+run. See [Project File Format](#project-file-format-projectyaml).
+
+Simulated previews of the same landscape gradient on 190x190 mm paper with a
+5 mm margin show the three modes:
+[fit](../images/luc-163/fit.png) leaves banded white above and below the 180x120
+rectangle; [fill](../images/luc-163/fill.png) covers the square drawable area
+and crops the sides with longer strokes;
+[none](../images/luc-163/none.png) draws the small 300-dpi rectangle in the
+middle of an otherwise empty page.
 
 #### Saved Looks (`--style`)
 
@@ -597,6 +634,17 @@ penpath convert photo.jpg --palette stabilo_88
 penpath convert photo.jpg --palette "red=0.4,#E4002B;blue=0.4,#1B4C9E"
 # The ordered pens become layer1, layer2, ... in drawing order; pens that
 # receive no strokes are skipped, so a palette of twelve may yield fewer layers.
+
+# Paper fit: contain the whole image (the default), cover and crop, or use the
+# image's pixel size at --dpi. On 190x190 the default fit draws 170x170 mm.
+penpath convert photo.jpg -o fit.svg --paper 190x190 --fit fit
+penpath convert photo.jpg -o fill.svg --paper 190x190 --fit fill
+penpath convert photo.jpg -o none.svg --paper 190x190 --fit none --dpi 300
+
+# Override margins for one run: one value, or top,right,bottom,left
+penpath convert photo.jpg -o margin.svg --paper 190x190 --margin 5
+penpath convert photo.jpg -o sides.svg --paper 190x190 --margin 20,5,20,5
+penpath convert photo.jpg --paper "190x190,20,5,20,5"
 
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
@@ -1323,10 +1371,12 @@ pen:
 paper:
   name: a4
   # or inline:
-  # size_mm: [210, 297]
+  # width_mm: 210
+  # height_mm: 297
   # margin_mm: 10
   # or four per-side margins in [top, right, bottom, left] order:
   # margin_mm: [10, 20, 10, 20]
+  # fit: fit                   # fit, fill or none (default: fit)
 
 output:
   path: "plot.svg"
@@ -1352,6 +1402,12 @@ unset `background` so a single-pen project round-trips with today's output.
 `--background`, `--no-background`, `--background-threshold` and
 `--background-method` override the file for one run; `--no-background` wins on
 the same command line.
+
+The paper keys are `width_mm`, `height_mm`, `margin_mm` and `fit`. A scalar
+`margin_mm` applies to all four sides; a four-item list uses
+`[top, right, bottom, left]`. `fit` is `fit`, `fill` or `none` (default `fit`).
+`--paper`, `--margin` and `--fit` override the file's paper for one run, and
+`--margin` wins over any margins in `--paper` when both are given.
 
 `style: sketch|hatch|outline` records the saved look. It is optional: an old
 file without the key runs the default path, and `save_yaml` omits it when no
@@ -1632,11 +1688,16 @@ with its coordinates instead of writing G-code the machine cannot follow.
 | `square_200` | 200 × 200 | 10 all sides |
 | `square_300` | 300 × 300 | 10 all sides |
 
-**Inline Format**: `WIDTHxHEIGHT[,MARGIN]` — e.g., `210x297,10` or `300x200,15`
+**Inline Format**: `WIDTHxHEIGHT[,MARGINS]` — one margin, e.g. `210x297,10`, or
+four in top,right,bottom,left order, e.g. `300x200,15,10,15,10`.
 
 **Project files** accept a scalar `paper.margin_mm` for all four sides or a
 four-item list `[top, right, bottom, left]`; both round-trip through `save_yaml`.
 The drawable area insets each side by its own margin and starts at `(left, top)`.
+`--margin` on the command line overrides the margin for one run, including a
+margin saved in a project file. `--fit fit|fill|none` chooses how the image is
+placed in that area (default `fit`); `--dpi` changes the drawn size only with
+`--fit none`. A margin that leaves no drawable area is a usage error.
 
 ---
 
