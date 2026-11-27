@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from pydantic import BaseModel, Field, SerializeAsAny, field_validator, model_validator
 
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
 
 if TYPE_CHECKING:
@@ -226,6 +227,13 @@ class SketchLinesPFM(PFMSettings):
     settings: SketchLinesSettings = Field(default_factory=SketchLinesSettings)
 
 
+class SketchSquaresPFM(PFMSettings):
+    """Sketch Squares PFM settings."""
+
+    pfm_type: Literal["sketch_squares"] = "sketch_squares"
+    settings: SketchSquaresSettings = Field(default_factory=SketchSquaresSettings)
+
+
 class _EmptyPFMSettings(BaseModel):
     pass
 
@@ -260,8 +268,14 @@ class RegisteredPFM(PFMSettings):
         return validated
 
 
+_PFM_WRAPPERS: dict[str, type[PFMSettings]] = {
+    "sketch_lines": SketchLinesPFM,
+    "sketch_squares": SketchSquaresPFM,
+}
+
+
 def make_pfm_settings(pfm_type: str, settings: BaseModel) -> PFMSettingsUnion:
-    """Build the project PFM wrapper for a PFM type and its validated settings."""
+    """Build the typed project PFM wrapper for a registered PFM and its settings."""
     from penpath.core.drawing.registry import get_pfm
 
     _, settings_model = get_pfm(pfm_type)
@@ -270,12 +284,12 @@ def make_pfm_settings(pfm_type: str, settings: BaseModel) -> PFMSettingsUnion:
         if isinstance(settings, settings_model)
         else settings_model.model_validate(settings.model_dump())
     )
-    if pfm_type == "sketch_lines":
-        return SketchLinesPFM(settings=cast(SketchLinesSettings, validated))
-    return RegisteredPFM(pfm_type=pfm_type, settings=validated)
+    wrapper_cls = _PFM_WRAPPERS.get(pfm_type, RegisteredPFM)
+    wrapper = wrapper_cls.model_validate({"pfm_type": pfm_type, "settings": validated})
+    return cast("PFMSettingsUnion", wrapper)
 
 
-PFMSettingsUnion = SketchLinesPFM | RegisteredPFM
+PFMSettingsUnion = SketchLinesPFM | SketchSquaresPFM | RegisteredPFM
 
 
 class Project(BaseModel):
@@ -356,5 +370,6 @@ __all__ = [
     "Project",
     "RegisteredPFM",
     "SketchLinesPFM",
+    "SketchSquaresPFM",
     "make_pfm_settings",
 ]

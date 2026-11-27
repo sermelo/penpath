@@ -1,10 +1,13 @@
 """Built-in PFM presets for penpath."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 from penpath.core.drawing.pfm_contour import ContourSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
-from penpath.core.drawing.registry import get_pfm
+from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
+from penpath.core.drawing.registry import get_pfm, list_pfms
 
 PFM_PRESETS: dict[str, SketchLinesSettings] = {
     "fine": SketchLinesSettings(
@@ -115,6 +118,30 @@ PFM_PRESETS: dict[str, SketchLinesSettings] = {
     "default": SketchLinesSettings(),
 }
 
+SKETCH_SQUARES_PRESETS: dict[str, SketchSquaresSettings] = {
+    "coarse": SketchSquaresSettings(
+        grid_angle=45.0,
+        line_density=0.45,
+        min_length=8.0,
+        max_length=120.0,
+        max_fill=80.0,
+    ),
+    "fine": SketchSquaresSettings(
+        grid_angle=45.0,
+        line_density=0.9,
+        min_length=2.0,
+        max_length=30.0,
+        max_fill=85.0,
+    ),
+    "crosshatch-grid": SketchSquaresSettings(
+        grid_angle=0.0,
+        line_density=0.75,
+        min_length=4.0,
+        max_length=60.0,
+        max_fill=80.0,
+    ),
+}
+
 DEFAULT_PFM = "default"
 
 PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
@@ -160,6 +187,14 @@ register_pfm_preset(
         simplify_tolerance=1.5,
     ),
 )
+
+for _preset_name, _preset_settings in SKETCH_SQUARES_PRESETS.items():
+    register_pfm_preset(f"sketch_squares:{_preset_name}", "sketch_squares", _preset_settings)
+
+PFM_PRESET_TYPES: dict[str, str] = {
+    **{f"sketch_lines:{name}": "sketch_lines" for name in PFM_PRESETS},
+    **{name: owner for name, (owner, _) in _EXTRA_PFM_PRESETS.items() if ":" in name},
+}
 
 
 def get_pfm_preset(name: str) -> SketchLinesSettings:
@@ -221,13 +256,71 @@ def list_pfm_presets() -> list[str]:
     return sorted(set(PFM_PRESETS) | set(_EXTRA_PFM_PRESETS))
 
 
+def list_pfm_preset_ids() -> list[str]:
+    """List all built-in presets as qualified ``PFM:PRESET`` ids.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of qualified preset ids.
+    """
+    return sorted(
+        {f"sketch_lines:{name}" for name in PFM_PRESETS}
+        | {pid for pid in _EXTRA_PFM_PRESETS if ":" in pid}
+    )
+
+
+def get_pfm_preset_by_id(preset_id: str) -> tuple[str, BaseModel]:
+    """Resolve a qualified ``PFM:PRESET`` id to its PFM type and settings.
+
+    Parameters
+    ----------
+    preset_id : str
+        Qualified preset id, for example ``sketch_squares:fine``.
+
+    Returns
+    -------
+    tuple[str, BaseModel]
+        The registered PFM name and a fresh copy of the preset settings.
+
+    Raises
+    ------
+    ValueError
+        If the id is unknown, names an unregistered PFM or omits the PFM prefix.
+    """
+    if ":" not in preset_id:
+        bare_matches = [pid for pid in list_pfm_preset_ids() if pid.partition(":")[2] == preset_id]
+        if bare_matches:
+            suggestions = " or ".join(f"'{pid}'" for pid in bare_matches)
+            raise ValueError(f"Unknown PFM preset '{preset_id}'; did you mean {suggestions}?")
+        raise ValueError(
+            f"Unknown PFM preset '{preset_id}'. Use a qualified 'PFM:PRESET' id "
+            f"or a registered PFM name: {list_pfms()}"
+        )
+
+    pfm_name, _, preset_name = preset_id.partition(":")
+    if pfm_name not in list_pfms():
+        raise ValueError(f"Unknown PFM: '{pfm_name}'. Available: {list_pfms()}")
+    if pfm_name == "sketch_lines" and preset_name in PFM_PRESETS:
+        return pfm_name, get_pfm_preset(preset_name).model_copy(deep=True)
+    if preset_id in _EXTRA_PFM_PRESETS and _EXTRA_PFM_PRESETS[preset_id][0] == pfm_name:
+        return pfm_name, get_pfm_preset_settings(preset_id).model_copy(deep=True)
+
+    available = [pid for pid in list_pfm_preset_ids() if pid.startswith(f"{pfm_name}:")]
+    raise ValueError(f"Unknown PFM preset '{preset_id}'. Available for {pfm_name}: {available}")
+
+
 __all__ = [
     "DEFAULT_PFM",
     "PFM_PRESETS",
     "PFM_PRESET_OWNERS",
+    "PFM_PRESET_TYPES",
+    "SKETCH_SQUARES_PRESETS",
     "get_pfm_for_preset",
     "get_pfm_preset",
+    "get_pfm_preset_by_id",
     "get_pfm_preset_settings",
+    "list_pfm_preset_ids",
     "list_pfm_presets",
     "list_presets_for_pfm",
     "register_pfm_preset",
