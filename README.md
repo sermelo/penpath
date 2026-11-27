@@ -171,7 +171,8 @@ penpath gcode card.svg --profile aquila -o card.gcode
 # stderr; add --no-fit to keep the strict error instead
 penpath gcode card.svg --profile aquila
 
-# Check the G-code without a machine: the PNG matches the SVG preview
+# Check the G-code without a machine: the PNG shows the bed, the page and the
+# same ink as the SVG preview
 penpath preview plot.gcode -o gcode_preview.png
 ```
 

@@ -460,14 +460,14 @@ penpath preview DRAWING -o OUTPUT [OPTIONS]
 | `--output PATH` | `-o` | — | Output image path (required, PNG) |
 | `--dpi FLOAT` | — | `10.0` | Resolution in **pixels per millimetre** |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour (hex or named CSS colour) |
-| `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name) |
+| `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name; bed and page outlines stay visible) |
 | `--travel/--no-travel` | — | `false` | Draw pen-up travel moves as thin light lines |
 
 For an SVG the page size is read from `width`/`height` or `viewBox`; SVGs without
-one fall back to A4. For G-code the page is the `page=WIDTHxHEIGHT` value in the
-header (the source SVG page in millimetres), falling back to the bed of the
-profile named in the header and then to A4. All messages go to stderr, so stdout
-stays clean.
+one fall back to A4. For G-code naming a known profile, the canvas is the profile
+bed and the preview draws a thin grey bed outline and page outline under the ink;
+without a profile the canvas stays page-sized and no bed is drawn. All messages
+go to stderr, so stdout stays clean.
 
 #### Previewing G-code
 
@@ -475,15 +475,25 @@ A `.gcode` file is read by a small interpreter for `G0`/`G1` moves, `Z` pen
 up/down, `F` feeds and comments; everything else is ignored. **Arcs (`G2`/`G3`)
 are not supported** and fail with a clear error. The header carries the profile
 name, the source page size as `page=WIDTHxHEIGHT` in millimetres (three decimals,
-as the Z fields), and Z values: a segment is drawn when the pen is at or below
-`z_touch`, or `z_down` when no touch height is declared. A file without a header
-uses its lowest Z as "down". The preview flips Y around the header page height
-and undoes the page origin, pen offset and Y inversion with the same shared
-`page_origin_mm()` helper the emitter uses, so the G-code PNG matches the SVG
-PNG at the same `--dpi` even when the page differs from the bed or the profile
-uses `reachable_corner`. Layers use the width and colour of their pen from the
-built-in presets (`stabilo_88_*`, `red_fine`, ...); an unknown pen renders black
-at 0.3 mm because G-code carries no colours.
+as the Z fields), the page placement as `place=<name>`, the pen-space page
+origin as `page_origin=XxY`, and Z values: a segment is drawn when the pen is at
+or below `z_touch`, or `z_down` when no touch height is declared. A file without
+a header uses its lowest Z as "down".
+
+When the header names an installed profile, the canvas is the bed in pen space
+with Y drawn downwards on the image (the bed's front edge is at the bottom). The
+`page_origin` from the header places the page rectangle on that canvas; an older
+header without it falls back to `page_origin_mm()` as the emitter does. Strokes
+are undone from nozzle to page space with that same origin, pen offset and
+`bed.invert_y`, then drawn on the bed, so the ink region matches the reviewed SVG
+at the same `--dpi` even when the page is smaller than the bed or uses
+`reachable_corner`. The bed and page outlines are thin grey (0.2 mm, `#A0A0A0`)
+lines under the ink, are always drawn, and are not filtered by `--layer`. A file
+without a usable profile stays A4/page-sized with no bed outline.
+
+Layers use the width and colour of their pen from the built-in presets
+(`stabilo_88_*`, `red_fine`, ...); an unknown pen renders black at 0.3 mm because
+G-code carries no colours.
 
 #### Showing pen-up travel
 
@@ -507,7 +517,8 @@ penpath preview plot.svg -o fine.png --layer fine
 # Show pen-up travel as thin light lines under the ink (default: ink only)
 penpath preview plot.svg -o travel.png --travel
 
-# Check the G-code against the reviewed SVG (the two PNGs match)
+# Check the G-code against the reviewed SVG: the ink matches, and the PNG also
+# shows the bed and the page placed on it
 penpath gcode card.svg --profile generic -o card.gcode
 penpath preview card.gcode -o card.png
 penpath preview card.gcode -o red.png --layer stabilo_88_red

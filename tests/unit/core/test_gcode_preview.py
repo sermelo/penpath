@@ -53,6 +53,54 @@ def test_parse_gcode_header_reads_page_size() -> None:
     assert parse_gcode_header("; penpath gcode profile=generic page=bad z_up=5.000\n").page is None
 
 
+def test_parse_gcode_header_reads_place_and_page_origin() -> None:
+    header = parse_gcode_header(
+        "; penpath gcode profile=aquila page=170.000x170.000 place=front-right "
+        "page_origin=17.300x10.000 z_up=12.500 z_down=9.000\n"
+    )
+
+    assert header.place == "front-right"
+    assert header.page_origin == (17.3, 10.0)
+    assert parse_gcode_header(
+        "; penpath gcode profile=generic page_origin=1.000,2.000\n"
+    ).page_origin == (
+        1.0,
+        2.0,
+    )
+
+
+def test_gcode_to_strokes_uses_header_page_origin_when_it_differs_from_profile() -> None:
+    page = (190.0, 190.0)
+    points = [(10.0, 10.0), (20.0, 10.0)]
+    text = build_gcode(
+        [GcodeLayer("black", [points])],
+        load_profile("generic"),
+        page,
+    )
+    text = text.replace("page_origin=0.000x0.000", "page_origin=30.000x40.000", 1)
+
+    strokes = gcode_to_strokes(text, (210.0, 297.0), load_profile("generic"))
+
+    assert len(strokes) == 1
+    assert strokes[0].polyline == [(-20.0, 50.0), (-10.0, 50.0)]
+
+
+def test_gcode_to_strokes_without_page_origin_falls_back_to_profile_origin() -> None:
+    profile = _reachable_corner_profile()
+    page = (190.0, 190.0)
+    points = [(10.0, 10.0), (20.0, 10.0)]
+    text = build_gcode([GcodeLayer("black", [points])], profile, page)
+    lines = text.splitlines()
+    header_fields = [field for field in lines[0].split() if not field.startswith("page_origin=")]
+    text = " ".join(header_fields) + "\n" + "\n".join(lines[1:]) + "\n"
+    assert parse_gcode_header(text).page_origin is None
+
+    strokes = gcode_to_strokes(text, (210.0, 297.0), profile)
+
+    assert strokes[0].polyline == points
+    assert page_origin_mm(profile, page) == (15.0, 27.0)
+
+
 def test_gcode_to_strokes_draws_at_or_below_touch_z() -> None:
     text = (
         HEADER
