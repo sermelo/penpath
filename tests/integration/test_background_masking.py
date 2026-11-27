@@ -41,6 +41,8 @@ def _convert(
         "-s",
         "max_fill=80",
         "-s",
+        "white_threshold=1",
+        "-s",
         "line_density=0.75",
         "-s",
         "tone_coverage=1",
@@ -183,6 +185,7 @@ pfm:
     tone_coverage: 1
     tone_exponent: 1
     texture_limit: 0
+    white_threshold: 1
 output_path: "{off}"
 """
         )
@@ -231,6 +234,7 @@ pfm:
     tone_coverage: 1
     tone_exponent: 1
     texture_limit: 0
+    white_threshold: 1
 output_path: "{masked}"
 """
         )

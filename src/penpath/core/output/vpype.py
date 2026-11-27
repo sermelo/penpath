@@ -95,7 +95,12 @@ def _optimise_one_pen(
     vpype_path: str,
     center: bool,
 ) -> list[PenStroke]:
-    """Run one vpype call for one pen and read the optimised strokes back."""
+    """Run one vpype call for one pen and read the optimised strokes back.
+
+    vpype's ``reloop`` picks a random seam on closed paths, so the call pins
+    vpype's own RNG with ``-s 0``; the PFM's seed alone cannot make the export
+    reproducible.
+    """
     from penpath.core.svg_parse import parse_svg_strokes
 
     script_content = _create_vpype_script(geometries, 1)
@@ -105,6 +110,8 @@ def _optimise_one_pen(
 
         cmd = [
             vpype_path,
+            "-s",
+            "0",
             "script",
             "--layer",
             "1",
