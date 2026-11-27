@@ -49,6 +49,22 @@ class TestMergeLines:
         coords = list(result[0].coords)
         assert coords == [(0.0, 0.0), (100.0, 0.0), (200.0, 0.0)]
 
+    def test_merge_lines_keeps_zero_length_strokes(self):
+        """A tap is a real stroke and must not be dropped by linemerge."""
+        taps = [
+            LineString([(5, 5), (5, 5)]),
+            LineString([(9, 9), (9, 9)]),
+            LineString([(20, 20), (30, 20)]),
+        ]
+
+        result = merge_lines(taps, angle_tol_deg=5.0, dist_tol_mm=0.1, paper_dpi=300)
+
+        assert [list(line.coords) for line in result] == [
+            [(20.0, 20.0), (30.0, 20.0)],
+            [(5.0, 5.0), (5.0, 5.0)],
+            [(9.0, 9.0), (9.0, 9.0)],
+        ]
+
     def test_merge_lines_disjoint_lines_unchanged(self):
         """Disjoint lines should remain separate."""
         lines = [

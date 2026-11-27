@@ -6,6 +6,7 @@ with tolerance specified in millimetres and converted to pixels using paper DPI.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from shapely import LineString
@@ -72,7 +73,9 @@ def simplify_line(
     Returns
     -------
     LineString
-        Simplified line in the same coordinate system.
+        Simplified line in the same coordinate system. Closed rings smaller
+        than a few tolerance units are kept intact: RDP would reduce a small
+        stipple circle to a diamond.
     """
     if tolerance_mm < 0:
         raise ValueError("tolerance_mm must be >= 0")
@@ -86,6 +89,8 @@ def simplify_line(
         return line
 
     tolerance_px = mm_to_pixels(tolerance_mm, paper_dpi)
+    if line.is_ring and line.length <= 8.0 * math.pi * tolerance_px:
+        return line
     simplified = line.simplify(tolerance_px, preserve_topology=True)
 
     # Ensure we always return a LineString

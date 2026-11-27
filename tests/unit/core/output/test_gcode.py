@@ -507,11 +507,27 @@ def test_build_gcode_ramp_clamps_a_short_stroke_without_dividing_by_zero() -> No
     assert produced.rstrip().endswith("G0 Z5.000 F600\nM2")
 
 
-def test_build_gcode_ramp_skips_a_stroke_with_no_movement() -> None:
+def test_build_gcode_ramp_touches_a_stroke_with_no_movement() -> None:
     produced = build_gcode(_one_layer(((1.0, 1.0), (1.0, 1.0))), _ramped_profile(), (10.0, 10.0))
 
-    assert "G1 X" not in produced
+    assert "G0 X3.000 Y12.000 F3600\nG0 Z2.000 F600\nG0 Z5.000 F600\nM2\n" in produced
     assert "; layer 1/1 pen=ink" in produced
+    assert "G1 X" not in produced
+
+
+def test_build_gcode_plain_profile_touches_a_zero_length_stroke() -> None:
+    tap = _one_layer(((1.0, 1.0), (1.0, 1.0)))
+    plain = build_gcode(tap, _profile(), (10.0, 10.0))
+    with_touch = build_gcode(
+        tap,
+        _profile(pen={"z_up": 5.0, "z_down": 1.0, "z_touch": 2.0, "z_hover": 3.0}),
+        (10.0, 10.0),
+    )
+
+    assert "G0 X1.000 Y9.000 F3600\nG0 Z1.000 F3600\nG0 Z4.000 F3600\n" in plain
+    assert "G0 X1.000 Y9.000 F3600\nG0 Z2.000 F3600\nG0 Z5.000 F3600\n" in with_touch
+    assert "Z3.000" not in with_touch
+    assert "G1 X" not in plain and "G1 X" not in with_touch
 
 
 def test_build_gcode_without_ramp_keeps_the_plain_stroke_with_touch_and_hover() -> None:
@@ -534,6 +550,15 @@ def test_fit_layers_to_drawable_inside_keeps_the_original_layers() -> None:
     assert fitted.scale == 1.0
     assert fitted.offset_mm == (0.0, 0.0)
     assert fitted.overshoot_mm == (0.0, 0.0)
+
+
+def test_fit_layers_to_drawable_keeps_a_tap_only_drawing() -> None:
+    layers = _one_layer(((10.0, 10.0), (10.0, 10.0)))
+
+    fitted = fit_layers_to_drawable(layers, _ramped_profile(), (100.0, 100.0))
+
+    assert not fitted.changed
+    assert fitted.layers is layers
 
 
 def test_fit_layers_to_drawable_uses_the_supplied_tolerance() -> None:
