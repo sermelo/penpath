@@ -708,10 +708,26 @@ penpath preview DRAWING -o OUTPUT [OPTIONS]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--output PATH` | `-o` | — | Output image path (required, PNG) |
-| `--dpi FLOAT` | — | `10.0` | Resolution in **pixels per millimetre** |
+| `--dpi FLOAT` | — | `101.6` | Resolution in **real dots per inch**, converted with `/25.4` |
+| `--px-per-mm FLOAT` | — | `4.0` | Resolution in **pixels per millimetre** |
+| `--force` | — | `false` | Render even if the raster exceeds 40 MP (bypasses only the pixel budget) |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour (hex or named CSS colour) |
 | `--layer LABEL` | — | all | Only preview this pen layer (layer label or id; for G-code, the pen name; bed and page outlines stay visible) |
 | `--travel/--no-travel` | — | `false` | Draw pen-up travel moves as thin light lines |
+
+`--dpi` and `--px-per-mm` are mutually exclusive: giving both exits 2 naming
+both flags. Each value must be finite and greater than zero (exit 2 naming the
+flag), including with `--force`; the default 4 px/mm is about 101 DPI. The
+resolved raster is checked against the 40 MP budget **before** any image is
+allocated, so an over-limit request exits non-zero and writes no file. The
+stderr error names the size, megapixels and the fix, for example:
+
+```
+Error: Render too large: renders 148000x210000 px (31080.0 MP), above the 40 MP limit. Lower --px-per-mm (or --dpi) or pass --force.
+```
+
+`--force` skips only that pixel-budget check; it never accepts a bad value or
+replaces a missing argument.
 
 For an SVG the page size is read from `width`/`height` or `viewBox`; SVGs without
 one fall back to A4. For G-code naming a known profile, the canvas is the profile
@@ -736,7 +752,7 @@ with Y drawn downwards on the image (the bed's front edge is at the bottom). The
 header without it falls back to `page_origin_mm()` as the emitter does. Strokes
 are undone from nozzle to page space with that same origin, pen offset and
 `bed.invert_y`, then drawn on the bed, so the ink region matches the reviewed SVG
-at the same `--dpi` even when the page is smaller than the bed or uses
+at the same resolution even when the page is smaller than the bed or uses
 `reachable_corner`. The bed and page outlines are thin grey (0.2 mm, `#A0A0A0`)
 lines under the ink, are always drawn, and are not filtered by `--layer`. A file
 without a usable profile stays A4/page-sized with no bed outline.
@@ -765,14 +781,14 @@ and travels are shown.
 
 ```bash
 penpath preview plot.svg -o preview.png
-penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
+penpath preview plot.svg -o preview.png --px-per-mm 20 --paper-color "#F5F5DC"
 penpath preview plot.svg -o fine.png --layer fine
 # Show pen-up travel as thin light lines under the ink (default: ink only)
 penpath preview plot.svg -o travel.png --travel
 
 # Inspect a structured Sketch Squares preset before plotting (ink-only PNG)
 penpath convert santa.jpg -o santa_grid.svg --pfm sketch_squares:crosshatch-grid -s seed=42 --max-resolution 384 --no-vpype
-penpath preview santa_grid.svg -o santa_grid.png --dpi 4
+penpath preview santa_grid.svg -o santa_grid.png --px-per-mm 4
 
 # Check the G-code against the reviewed SVG: the ink matches, and the PNG also
 # shows the bed and the page placed on it
@@ -1103,7 +1119,7 @@ structure the original does not have is penalised. All three use the same crop,
 256x256 size and blur sigma 1.5. Also reports machine cost (drawing length,
 pen-up travel, pen lifts, short segments and stroke count) plus ink coverage
 and the pen name per pen layer and in total. Coverage is the share of the whole
-page inked by a layer's pen-down strokes at the chosen `--dpi`; per-layer
+page inked by a layer's pen-down strokes at the chosen resolution; per-layer
 shares may overlap, so they need not add up to the total.
 
 ```bash
@@ -1122,10 +1138,26 @@ penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--json` | — | `false` | Print only JSON on stdout (for scripts/agents) |
-| `--dpi FLOAT` | — | `96/25.4` | Resolution in **pixels per millimetre**, shared by simulation and likeness |
+| `--dpi FLOAT` | — | `96` | Resolution in **real dots per inch**, converted with `/25.4` |
+| `--px-per-mm FLOAT` | — | `96/25.4` | Resolution in **pixels per millimetre**, shared by simulation and likeness |
+| `--force` | — | `false` | Evaluate even if the simulation exceeds 40 MP (bypasses only the pixel budget) |
 | `--paper-color COLOR` | — | `#FFFFFF` | Paper background colour |
 | `--layer LABEL` | — | all | Only evaluate this pen layer |
 | `--coverage-warn PCT` | — | `50` | Warn on stderr when a layer covers more than this percentage of the page; `0` disables the warning; value must be `>= 0` |
+
+`--dpi` and `--px-per-mm` are mutually exclusive: giving both exits 2 naming
+both flags. Each value must be finite and greater than zero (exit 2 naming the
+flag), including with `--force`. The default 96 DPI equals 96/25.4 px/mm and is
+shared by the simulation, likeness crop and coverage rasterisation. The 40 MP
+budget is checked before any image or coverage mask is allocated, so an
+over-limit request exits non-zero and writes no JSON. The stderr error has the
+shape:
+
+```
+Error: Render too large: renders 148000x210000 px (31080.0 MP), above the 40 MP limit. Lower --px-per-mm (or --dpi) or pass --force.
+```
+
+`--force` skips only that pixel-budget check; it never accepts a bad value.
 
 For SVGs without placement metadata, the image is fitted to the page keeping
 its aspect ratio and centered — the same fallback used by
@@ -1191,7 +1223,7 @@ penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
 penpath evaluate photo.jpg plot.svg --json | jq '.masked_likeness'
 penpath evaluate photo.jpg plot.svg --json | jq '.edge_likeness'
-penpath evaluate photo.jpg plot.svg --dpi 5 --layer fine
+penpath evaluate photo.jpg plot.svg --px-per-mm 5 --layer fine
 penpath evaluate photo.jpg plot.svg --coverage-warn 75
 penpath evaluate photo.jpg plot.svg --coverage-warn 0
 ```

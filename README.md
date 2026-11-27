@@ -172,7 +172,7 @@ penpath convert photo.jpg -o sides.svg --paper 190x190 --margin 20,5,20,5
 penpath convert photo.jpg --no-vpype
 
 # Preview the simulated plot as an image
-penpath preview plot.svg -o preview.png --dpi 10
+penpath preview plot.svg -o preview.png --px-per-mm 10
 # Also show pen-up travel as thin light lines (default stays ink-only)
 penpath preview plot.svg -o travel_preview.png --travel
 
@@ -208,6 +208,15 @@ penpath preview framed.gcode -o framed.png
 # same ink as the SVG preview
 penpath preview plot.gcode -o gcode_preview.png
 ```
+
+`preview` and `evaluate` take either `--px-per-mm` (pixels per millimetre) or
+`--dpi` (real dots per inch, divided by 25.4); the two flags are mutually
+exclusive. `preview` defaults to 4 px/mm (about 101 DPI) and `evaluate` to 96
+DPI (96/25.4 px/mm). A render above 40 MP is refused before any image is
+allocated with `Render too large: ... above the 40 MP limit`; pass `--force`
+to override that guard only (invalid values are still rejected). The flag on
+`penpath convert --dpi` is different: it sets the drawn image size with
+`--fit none`.
 
 ### Working resolution
 
@@ -386,7 +395,7 @@ penpath convert photo.jpg -f grayscale -f threshold --no-vpype -o debug.svg
 ```bash
 penpath convert photo.jpg -o plot.svg
 # Render a preview at 10 px/mm on cream paper
-penpath preview plot.svg -o preview.png --dpi 10 --paper-color "#FFFDD0"
+penpath preview plot.svg -o preview.png --px-per-mm 10 --paper-color "#FFFDD0"
 # Check likeness against the original (whole-page, ink-only and edge SSIM + machine cost)
 penpath evaluate photo.jpg plot.svg
 # Machine-readable output for scripts and agents
@@ -417,8 +426,8 @@ thin bed/page outline around the same ink. All examples use A4 paper,
 `-s seed=42` and a smaller working resolution (`--max-resolution 800`) to keep
 the run short. The algorithm rows use the default 0.3 mm black `fine` pen; the
 pen-width, colour and palette examples change the pen deliberately. Previews
-are 601×849 px (`--dpi 2.86`) except the three pen-width plots and the bold
-G-code preview, which use `--dpi 3.2` (672×950 px) so the wider strokes stay
+are 601×849 px (`--px-per-mm 2.86`) except the three pen-width plots and the bold
+G-code preview, which use `--px-per-mm 3.2` (672×950 px) so the wider strokes stay
 distinguishable and the bold ink looks solid, all well under 200 KB. Run the
 script from a checkout with `penpath` on your PATH to regenerate the whole gallery.
 
@@ -432,7 +441,7 @@ whole path on one of them, from a repository checkout:
 penpath convert tests/fixtures/images/reference/photo.jpg -o photo_plot.svg -s seed=42
 
 # Render the simulated plot as an image
-penpath preview photo_plot.svg -o photo_preview.png --dpi 10
+penpath preview photo_plot.svg -o photo_preview.png --px-per-mm 10
 
 # Score likeness (whole-page SSIM 0.5099 with these defaults), ink-only SSIM and machine cost
 penpath evaluate tests/fixtures/images/reference/photo.jpg photo_plot.svg
@@ -465,9 +474,9 @@ continuous-line reading rather than a portrait).
 
 ```bash
 penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/sketch_lines.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm sketch_lines
-penpath preview build/gallery/sketch_lines.svg -o docs/images/luc-88/sketch_lines_plot.png --dpi 2.86
+penpath preview build/gallery/sketch_lines.svg -o docs/images/luc-88/sketch_lines_plot.png --px-per-mm 2.86
 penpath gcode build/gallery/sketch_lines.svg --profile generic -o build/gallery/sketch_lines.gcode
-penpath preview build/gallery/sketch_lines.gcode -o docs/images/luc-88/sketch_lines_gcode.png --dpi 2.86
+penpath preview build/gallery/sketch_lines.gcode -o docs/images/luc-88/sketch_lines_gcode.png --px-per-mm 2.86
 ```
 
 #### `sketch_squares:fine`
@@ -479,9 +488,9 @@ penpath preview build/gallery/sketch_lines.gcode -o docs/images/luc-88/sketch_li
 
 ```bash
 penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/sketch_squares.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm sketch_squares:fine
-penpath preview build/gallery/sketch_squares.svg -o docs/images/luc-88/sketch_squares_plot.png --dpi 2.86
+penpath preview build/gallery/sketch_squares.svg -o docs/images/luc-88/sketch_squares_plot.png --px-per-mm 2.86
 penpath gcode build/gallery/sketch_squares.svg --profile generic -o build/gallery/sketch_squares.gcode
-penpath preview build/gallery/sketch_squares.gcode -o docs/images/luc-88/sketch_squares_gcode.png --dpi 2.86
+penpath preview build/gallery/sketch_squares.gcode -o docs/images/luc-88/sketch_squares_gcode.png --px-per-mm 2.86
 ```
 
 #### `contour_portrait`
@@ -493,9 +502,9 @@ penpath preview build/gallery/sketch_squares.gcode -o docs/images/luc-88/sketch_
 
 ```bash
 penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/contour.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm contour_portrait
-penpath preview build/gallery/contour.svg -o docs/images/luc-88/contour_plot.png --dpi 2.86
+penpath preview build/gallery/contour.svg -o docs/images/luc-88/contour_plot.png --px-per-mm 2.86
 penpath gcode build/gallery/contour.svg --profile generic -o build/gallery/contour.gcode
-penpath preview build/gallery/contour.gcode -o docs/images/luc-88/contour_gcode.png --dpi 2.86
+penpath preview build/gallery/contour.gcode -o docs/images/luc-88/contour_gcode.png --px-per-mm 2.86
 ```
 
 #### `stipple_default`
@@ -507,9 +516,9 @@ penpath preview build/gallery/contour.gcode -o docs/images/luc-88/contour_gcode.
 
 ```bash
 penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/stipple.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm stipple_default
-penpath preview build/gallery/stipple.svg -o docs/images/luc-88/stipple_plot.png --dpi 2.86
+penpath preview build/gallery/stipple.svg -o docs/images/luc-88/stipple_plot.png --px-per-mm 2.86
 penpath gcode build/gallery/stipple.svg --profile generic -o build/gallery/stipple.gcode
-penpath preview build/gallery/stipple.gcode -o docs/images/luc-88/stipple_gcode.png --dpi 2.86
+penpath preview build/gallery/stipple.gcode -o docs/images/luc-88/stipple_gcode.png --px-per-mm 2.86
 ```
 
 #### `spiral_sawtooth:fine`
@@ -521,9 +530,9 @@ penpath preview build/gallery/stipple.gcode -o docs/images/luc-88/stipple_gcode.
 
 ```bash
 penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/spiral_sawtooth.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm spiral_sawtooth:fine
-penpath preview build/gallery/spiral_sawtooth.svg -o docs/images/luc-88/spiral_sawtooth_plot.png --dpi 2.86
+penpath preview build/gallery/spiral_sawtooth.svg -o docs/images/luc-88/spiral_sawtooth_plot.png --px-per-mm 2.86
 penpath gcode build/gallery/spiral_sawtooth.svg --profile generic -o build/gallery/spiral_sawtooth.gcode
-penpath preview build/gallery/spiral_sawtooth.gcode -o docs/images/luc-88/spiral_sawtooth_gcode.png --dpi 2.86
+penpath preview build/gallery/spiral_sawtooth.gcode -o docs/images/luc-88/spiral_sawtooth_gcode.png --px-per-mm 2.86
 ```
 
 ### Pen width and colour
@@ -532,7 +541,7 @@ On the free [lake photo](tests/fixtures/images/reference/photo.jpg), only the
 pen changes between the first three plots: `fine` is 0.3 mm, `medium` 0.5 mm and
 `bold` 0.8 mm. The same strokes are drawn with broader marks as the pen widens,
 so the hillside and water fill in and the bold plot is nearly solid. These three
-previews use `--dpi 3.2` (672×950 px) so the different stroke widths stay visible.
+previews use `--px-per-mm 3.2` (672×950 px) so the different stroke widths stay visible.
 
 | `fine` (0.3 mm) | `medium` (0.5 mm) | `bold` (0.8 mm) |
 |:---------------:|:-----------------:|:---------------:|
@@ -548,13 +557,13 @@ the page and the same solid areas the pen will lay down:
 
 ```bash
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_fine.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen fine
-penpath preview build/gallery/pen_fine.svg -o docs/images/luc-88/pen_fine_plot.png --dpi 3.2
+penpath preview build/gallery/pen_fine.svg -o docs/images/luc-88/pen_fine_plot.png --px-per-mm 3.2
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_medium.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen medium
-penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_plot.png --dpi 3.2
+penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_plot.png --px-per-mm 3.2
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_bold.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen bold
-penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 3.2
+penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --px-per-mm 3.2
 penpath gcode build/gallery/pen_bold.svg --profile generic -o build/gallery/pen_bold.gcode
-penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 3.2
+penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --px-per-mm 3.2
 ```
 
 A pen can also carry its own colour inline. Here the geometry is unchanged and
@@ -567,7 +576,7 @@ only the stroke colour becomes red:
 
 ```bash
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_colour.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen "0.4,#E4002B"
-penpath preview build/gallery/pen_colour.svg -o docs/images/luc-88/pen_colour_plot.png --dpi 2.86
+penpath preview build/gallery/pen_colour.svg -o docs/images/luc-88/pen_colour_plot.png --px-per-mm 2.86
 ```
 
 ### Multi-pen palette
@@ -584,9 +593,9 @@ the colours so you can check which pen goes where before plotting.
 
 ```bash
 penpath convert tests/fixtures/images/colour/christmas_tree.jpg -o build/gallery/palette.svg --paper a4 --max-resolution 800 -s seed=42 -q --palette stabilo_88
-penpath preview build/gallery/palette.svg -o docs/images/luc-88/palette_plot.png --dpi 2.86
+penpath preview build/gallery/palette.svg -o docs/images/luc-88/palette_plot.png --px-per-mm 2.86
 penpath gcode build/gallery/palette.svg --profile generic -o build/gallery/palette.gcode
-penpath preview build/gallery/palette.gcode -o docs/images/luc-88/palette_gcode.png --dpi 2.86
+penpath preview build/gallery/palette.gcode -o docs/images/luc-88/palette_gcode.png --px-per-mm 2.86
 ```
 
 ### Saved looks (styles)
@@ -602,11 +611,11 @@ SVG plots on the same lake photo are enough to compare them.
 
 ```bash
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/style_sketch.svg --paper a4 --max-resolution 800 -s seed=42 -q --style sketch
-penpath preview build/gallery/style_sketch.svg -o docs/images/luc-88/style_sketch_plot.png --dpi 2.86
+penpath preview build/gallery/style_sketch.svg -o docs/images/luc-88/style_sketch_plot.png --px-per-mm 2.86
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/style_hatch.svg --paper a4 --max-resolution 800 -s seed=42 -q --style hatch
-penpath preview build/gallery/style_hatch.svg -o docs/images/luc-88/style_hatch_plot.png --dpi 2.86
+penpath preview build/gallery/style_hatch.svg -o docs/images/luc-88/style_hatch_plot.png --px-per-mm 2.86
 penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/style_outline.svg --paper a4 --max-resolution 800 -s seed=42 -q --style outline
-penpath preview build/gallery/style_outline.svg -o docs/images/luc-88/style_outline_plot.png --dpi 2.86
+penpath preview build/gallery/style_outline.svg -o docs/images/luc-88/style_outline_plot.png --px-per-mm 2.86
 ```
 
 ### Reproducible Results
@@ -684,7 +693,7 @@ penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -o grid.svg
 penpath convert photo.jpg --pfm contour -o outlines.svg
 penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg
 penpath convert photo.jpg --pfm stipple_fine --no-vpype -s seed=42 -o dots.svg
-penpath preview dots.svg -o dots.png --dpi 4
+penpath preview dots.svg -o dots.png --px-per-mm 4
 penpath convert photo.jpg --pfm spiral_sawtooth:bold -s seed=42 -o spiral.svg
 # Every PFM and preset side by side; stdout stays empty
 penpath compare photo.jpg -o compare.png --dpi 2 --max-resolution 64
@@ -723,7 +732,7 @@ penpath info palette-match photo.jpg --palette stabilo_88 --format json
 penpath info palette-match photo.jpg --palette "red=0.4,#FF0000;blue=0.4,#0000FF"
 
 # Check the result before plotting
-penpath preview card.svg -o card.png --dpi 10
+penpath preview card.svg -o card.png --px-per-mm 10
 penpath evaluate photo.jpg card.svg
 ```
 

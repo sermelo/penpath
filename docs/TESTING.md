@@ -1120,8 +1120,29 @@ penpath evaluate photo.jpg plot.svg --json | jq '.machine_cost.total'
 `preview` reads the same strokes but skips travel moves, so it shows the ink
 only. `evaluate --json` writes one JSON object (`likeness` and `machine_cost`)
 to stdout and prints its human tables to stderr, so it is safe to pipe. Use
-`--dpi` (pixels per millimetre) to change the simulation resolution and
-`--layer` to evaluate just one pen layer. See `docs/CLI.md` for every option.
+`--px-per-mm` (pixels per millimetre) or `--dpi` (real dots per inch, divided
+by 25.4) to change the simulation resolution, and `--layer` to evaluate just
+one pen layer. See `docs/CLI.md` for every option.
+
+### Resolution flags and render guard (LUC-186 part 2)
+
+`preview` and `evaluate` take either `--px-per-mm` or `--dpi`, never both, and
+the chosen resolution is shared by simulation, likeness and coverage. The
+defaults are 4 px/mm for `preview` and 96 DPI (96/25.4 px/mm) for `evaluate`.
+`tests/integration/test_preview_evaluate.py` enforces three acceptance checks:
+
+- An A5 page (148x210 mm) rendered with `--dpi 100` is about **583x827 px**
+  (the test allows +/- 1 px); with the default 4 px/mm it is 592x840 px.
+- A request above 40 MP (A5 at `--px-per-mm 1000`, planned 148000x210000 px /
+  31080.0 MP) exits non-zero, writes no output PNG and writes no JSON on
+  stdout. The error on stderr is
+  `Render too large: renders 148000x210000 px (31080.0 MP), above the 40 MP limit. Lower --px-per-mm (or --dpi) or pass --force.`
+  and no image or coverage mask is allocated.
+- `--force` on that same request reaches the simulator and completes; it
+  bypasses only the pixel budget, so `--px-per-mm 0 --force` still exits 2
+  naming the flag.
+
+Reproduce with `uv run pytest tests/integration/test_preview_evaluate.py -q`.
 
 ### Performance Budgets (CI)
 | Operation | Max Time (400×300 image) |
@@ -1823,7 +1844,7 @@ dots in its own half of the page and no cross-pen colour mixing.
 All three preset previews were opened with the `read` tool and compared with
 `santa.jpg` by eye; none returned an image error. They are 570x570 px renders of
 the real CLI output (`--paper 190x190,10 --pen 0.4 -s seed=42 --no-vpype`,
-`preview --dpi 3`, each step under `timeout 120`).
+`preview --px-per-mm 3`, each step under `timeout 120`).
 
 | preset | preview | What is visible |
 |--------|---------|-----------------|
@@ -1948,7 +1969,7 @@ whole drawing is one pen-down run.
 Each committed PNG was opened with `read` and compared with the original
 `santa.jpg`; none returned an image error. The commands were the documented
 `convert ... --pfm spiral_sawtooth:<preset> -s seed=42 --paper 190x190,0 --pen
-0.4,#000000,fineliner` followed by `penpath preview --dpi 60` (11400 px square).
+0.4,#000000,fineliner` followed by `penpath preview --px-per-mm 60` (11400 px square).
 The 570 px versions below are downscaled copies of those renders, as in
 `docs/images/luc-128/`. Santa was used for every preset, including the algorithm
 defaults, because its hat, glasses and beard give more structure to look for;
