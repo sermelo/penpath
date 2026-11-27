@@ -430,13 +430,14 @@ def _run_convert_pipeline(
     reporter.start("Loading image")
     image = load_image(project.image.path)
     source_size_px = image.size
+    origin_x_mm, origin_y_mm = project.paper.drawable_origin_mm
     image_placement = fit_image_placement(
         image_size_px=source_size_px,
         area_width_mm=project.paper.drawable_width_mm,
         area_height_mm=project.paper.drawable_height_mm,
         image_dpi=project.image.dpi,
-        offset_x_mm=project.paper.margin_mm,
-        offset_y_mm=project.paper.margin_mm,
+        offset_x_mm=origin_x_mm,
+        offset_y_mm=origin_y_mm,
     )
     resolution = plan_working_resolution(
         source_size_px,
