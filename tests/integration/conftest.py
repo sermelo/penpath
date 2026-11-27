@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from contour_gate import ContourReport, measure
 from sketch_lines_gate import REFERENCE_DIR, GateReport, measure_reference
+from sketch_squares_gate import SquaresReport
+from sketch_squares_gate import measure as measure_squares
 
 
 @pytest.fixture(scope="session")
@@ -45,6 +47,23 @@ def contour_report_factory(
         key = (reference, preset)
         if key not in cache:
             cache[key] = measure(REFERENCE_DIR / reference, preset, work_dir / reference)
+        return cache[key]
+
+    return report_for
+
+
+@pytest.fixture(scope="session")
+def squares_report_factory(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Callable[[str, str], SquaresReport]:
+    """Convert and measure each reference/preset pair at most once per session."""
+    work_dir = tmp_path_factory.mktemp("sketch-squares-gate")
+    cache: dict[tuple[str, str], SquaresReport] = {}
+
+    def report_for(reference: str, preset: str) -> SquaresReport:
+        key = (reference, preset)
+        if key not in cache:
+            cache[key] = measure_squares(REFERENCE_DIR / reference, preset, work_dir / reference)
         return cache[key]
 
     return report_for

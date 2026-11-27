@@ -141,7 +141,7 @@ penpath convert photo.jpg --style outline -o outline.svg
 # Adjust PFM (Sketch Lines) settings; -s wins over a look's value
 penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
 
-# Draw with the grid-hatched Sketch Squares PFM, or one of its presets
+# Grid hatching bends short strokes into a structured, graphic page; presets set the look
 penpath convert photo.jpg --pfm sketch_squares -s seed=42
 penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -s seed=42
 
