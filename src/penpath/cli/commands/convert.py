@@ -681,9 +681,8 @@ def _run_convert_pipeline(
     "--pfm",
     "pfm_name",
     help=(
-        "PFM algorithm (sketch_lines, contour, sketch_squares or stipple), legacy preset "
-        "or qualified PFM:PRESET id (default: sketch_lines). "
-        "Run 'penpath info pfms' to list them."
+        "Registered PFM algorithm, legacy preset or qualified PFM:PRESET id "
+        "(default: sketch_lines). Run 'penpath info pfms' to list them."
     ),
 )
 @click.option(

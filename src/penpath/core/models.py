@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, SerializeAsAny, field_validator, model_va
 
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
+from penpath.core.drawing.pfm_spiral import SpiralSettings
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
 from penpath.core.styles import StyleName
 
@@ -235,6 +236,13 @@ class SketchSquaresPFM(PFMSettings):
     settings: SketchSquaresSettings = Field(default_factory=SketchSquaresSettings)
 
 
+class SpiralPFM(PFMSettings):
+    """Spiral Sawtooth PFM settings."""
+
+    pfm_type: Literal["spiral_sawtooth"] = "spiral_sawtooth"
+    settings: SpiralSettings = Field(default_factory=SpiralSettings)
+
+
 class _EmptyPFMSettings(BaseModel):
     pass
 
@@ -272,6 +280,7 @@ class RegisteredPFM(PFMSettings):
 _PFM_WRAPPERS: dict[str, type[PFMSettings]] = {
     "sketch_lines": SketchLinesPFM,
     "sketch_squares": SketchSquaresPFM,
+    "spiral_sawtooth": SpiralPFM,
 }
 
 
@@ -290,7 +299,7 @@ def make_pfm_settings(pfm_type: str, settings: BaseModel) -> PFMSettingsUnion:
     return cast("PFMSettingsUnion", wrapper)
 
 
-PFMSettingsUnion = SketchLinesPFM | SketchSquaresPFM | RegisteredPFM
+PFMSettingsUnion = SketchLinesPFM | SketchSquaresPFM | SpiralPFM | RegisteredPFM
 
 
 class Project(BaseModel):
@@ -377,5 +386,6 @@ __all__ = [
     "RegisteredPFM",
     "SketchLinesPFM",
     "SketchSquaresPFM",
+    "SpiralPFM",
     "make_pfm_settings",
 ]

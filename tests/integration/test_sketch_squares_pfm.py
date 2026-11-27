@@ -229,7 +229,13 @@ class TestInfoPFMs:
         assert result.exit_code == 0, result.output
         data = json.loads(result.stdout)
         rows = {row["name"]: row for row in data["available_pfms"]}
-        assert set(rows) == {"sketch_lines", "sketch_squares", "contour", "stipple"}
+        assert set(rows) == {
+            "sketch_lines",
+            "sketch_squares",
+            "contour",
+            "stipple",
+            "spiral_sawtooth",
+        }
         assert rows["sketch_lines"]["settings_model"] == "SketchLinesSettings"
         assert rows["sketch_lines"]["presets"]  # legacy bare names still listed
         squares = rows["sketch_squares"]

@@ -62,7 +62,8 @@ def test_contour_help_and_bad_input_are_clear(tmp_path: Path) -> None:
     runner = CliRunner()
     help_result = runner.invoke(main, ["convert", "--help"])
     assert help_result.exit_code == 0
-    assert "contour" in help_result.output
+    assert "--pfm TEXT" in help_result.output
+    assert "penpath info pfms" in help_result.output
 
     bad_pfm = _convert(_FACE, tmp_path / "bad.svg", "--pfm nope")
     assert bad_pfm.exit_code == 2
