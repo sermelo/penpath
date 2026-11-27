@@ -66,6 +66,8 @@ _VALUE_OPTIONS = frozenset(
         "--vpype-path",
         "--profile",
         "--profiles",
+        "--place",
+        "--at",
         "--format",
     }
 )

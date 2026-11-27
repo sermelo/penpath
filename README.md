@@ -170,6 +170,10 @@ penpath gcode card.svg --profile aquila -o card.gcode
 # A page slightly past the usable area is fitted by default, with a warning on
 # stderr; add --no-fit to keep the strict error instead
 penpath gcode card.svg --profile aquila
+# Place the page at a named spot or an exact pen-space lower-left corner; with
+# neither, the profile decides (Aquila: front-right, generic/ramped: origin)
+penpath gcode card.svg --profile aquila --place center -o centred.gcode
+penpath gcode card.svg --profile aquila --at 20,20 -o corner.gcode
 
 # Check the G-code without a machine: the PNG shows the bed, the page and the
 # same ink as the SVG preview

@@ -734,7 +734,7 @@ def test_gcode_margin_help_names_the_option(runner: CliRunner) -> None:
 
     assert result.exit_code == 0
     assert "--margin" in result.stdout
-    assert "is allowed but not recommended on the Aquila" in result.stdout
+    assert "is allowed but not recommended on the Aquila" in " ".join(result.stdout.split())
 
 
 def test_gcode_margin_end_to_end_from_the_shell(tmp_path: Path) -> None:
@@ -764,3 +764,206 @@ def test_gcode_margin_end_to_end_from_the_shell(tmp_path: Path) -> None:
         line.startswith((";", "G", "M")) for line in result.stdout.splitlines() if line.strip()
     )
     assert not drawing.with_suffix(".gcode").exists()
+
+
+def _stroke_points(gcode: str) -> list[tuple[float, float]]:
+    """Return nozzle XY points of drawn G1 moves, skipping verbatim blocks."""
+    points: list[tuple[float, float]] = []
+    for line in gcode.splitlines():
+        if not line.startswith("G1 ") or " Z" not in line:
+            continue
+        x_coord: float | None = None
+        y_coord: float | None = None
+        for token in line.split():
+            if token.startswith("X"):
+                x_coord = float(token[1:])
+            elif token.startswith("Y"):
+                y_coord = float(token[1:])
+        if x_coord is not None and y_coord is not None:
+            points.append((x_coord, y_coord))
+    return points
+
+
+@pytest.mark.parametrize(
+    ("place", "expected"),
+    [
+        ("center", "33.650, 59.200"),
+        ("front-right", "57.300, 10.000"),
+        ("front-left", "10.000, 10.000"),
+        ("back-right", "57.300, 108.400"),
+        ("back-left", "10.000, 108.400"),
+        ("origin", "10.000, 10.000"),
+    ],
+)
+def test_gcode_place_lands_each_named_position(
+    runner: CliRunner, tmp_path: Path, place: str, expected: str
+) -> None:
+    """Every --place choice puts the page where the usable area says it should."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--place", place, "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert f"Page placed at {expected} (bed 220x220)" in result.stderr
+    origin = expected.replace(", ", "x")
+    assert f"place={place} page_origin={origin}" in result.stdout
+    if place == "origin":
+        assert "Warning: page at 0.000, 0.000 is outside the aquila drawable area" in result.stderr
+    else:
+        assert "Warning:" not in result.stderr
+
+
+def test_gcode_place_center_keeps_every_drawn_point_on_the_bed(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """A page centred by --place center draws only inside the Aquila's reach."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "0,0 130,0 130,73 0,73 0,0")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--place", "center", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert "Page placed at 33.650, 59.200 (bed 220x220)" in result.stderr
+    points = _stroke_points(result.stdout)
+    assert points
+    assert all(0.0 <= x <= 197.3 and 0.0 <= y <= 191.4 for x, y in points)
+
+
+def test_gcode_at_inside_uses_the_exact_position(runner: CliRunner, tmp_path: Path) -> None:
+    """--at keeps an already reachable lower-left and records it in the header."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--at", "20,30", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert "Page placed at 20.000, 30.000 (bed 220x220)" in result.stderr
+    assert "place=origin page_origin=20.000x30.000" in result.stdout
+    assert "Warning:" not in result.stderr
+
+
+def test_gcode_at_outside_is_shifted_with_a_warning(runner: CliRunner, tmp_path: Path) -> None:
+    """The default fit moves an out-of-reach --at page into the usable area."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila", "--at", "300,0"])
+
+    assert result.exit_code == 0, result.stderr
+    assert drawing.with_suffix(".gcode").is_file()
+    assert (
+        "Warning: page at 300.000, 0.000 is outside the aquila drawable area "
+        "X 10.000..187.300, Y 10.000..181.400; placed at 57.300, 10.000 mm"
+    ) in result.stderr
+    assert "Page placed at 57.300, 10.000 (bed 220x220)" in result.stderr
+    assert "place=origin page_origin=57.300x10.000" in drawing.with_suffix(".gcode").read_text()
+
+
+def test_gcode_at_outside_and_oversized_drawing_warn_twice(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """Both the page shift and the drawing fit can warn on one run."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "0,0 130,0 130,73 0,73 0,0")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--at", "300,0", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert "Warning: page at 300.000, 0.000 is outside the aquila drawable area" in result.stderr
+    assert "Warning: drawing is" in result.stderr
+    assert "past the aquila usable area" in result.stderr
+    assert "Page placed at 57.300, 10.000 (bed 220x220)" in result.stderr
+    assert "Warning:" not in result.stdout
+
+
+def test_gcode_no_fit_rejects_outside_page_with_fix(runner: CliRunner, tmp_path: Path) -> None:
+    """--no-fit names the requested origin, the valid area and the fix."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--at", "300,0", "--no-fit"]
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert "requested page origin (x=300.000, y=0.000)" in result.stderr
+    assert "outside the usable area X 10.000..187.300, Y 10.000..181.400" in result.stderr
+    assert "use --fit (the default)" in result.stderr
+    assert not drawing.with_suffix(".gcode").exists()
+
+
+def test_gcode_place_and_at_are_mutually_exclusive(runner: CliRunner, tmp_path: Path) -> None:
+    """Giving both placement flags is a usage error that names them."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+
+    result = runner.invoke(
+        main,
+        ["gcode", str(drawing), "--profile", "aquila", "--place", "center", "--at", "20,30"],
+    )
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "--place" in result.stderr
+    assert "--at" in result.stderr
+    assert not drawing.with_suffix(".gcode").exists()
+
+
+@pytest.mark.parametrize("value", ["300", "1,2,3", "abc,0", "1,nope"])
+def test_gcode_invalid_at_exits_2(runner: CliRunner, tmp_path: Path, value: str) -> None:
+    """A malformed --at value is a usage error before any file is written."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--at", value, "--dry-run"]
+    )
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Invalid value for '--at'" in result.stderr
+
+
+def test_gcode_placement_dry_run_keeps_stdout_gcode_only(runner: CliRunner, tmp_path: Path) -> None:
+    """The Page placed line and both warnings stay on stderr under --dry-run."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "0,0 130,0 130,73 0,73 0,0")
+
+    result = runner.invoke(
+        main, ["gcode", str(drawing), "--profile", "aquila", "--at", "300,0", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.startswith("; penpath gcode profile=aquila ")
+    assert all(
+        line.startswith((";", "G", "M")) for line in result.stdout.splitlines() if line.strip()
+    )
+    assert "Page placed at 57.300, 10.000 (bed 220x220)" in result.stderr
+    assert "Warning:" in result.stderr
+    assert all(marker not in result.stdout for marker in ("Page placed", "Warning:"))
+    assert not drawing.with_suffix(".gcode").exists()
+
+
+def test_gcode_default_placement_still_uses_the_aquila_corner(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """With no placement flags the Aquila default is unchanged."""
+    drawing = _aquila_svg(tmp_path, 130.0, 73.0, "5,5 125,68")
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila", "--dry-run"])
+
+    assert result.exit_code == 0, result.stderr
+    assert "Page placed at 57.300, 10.000 (bed 220x220)" in result.stderr
+    assert "place=front-right page_origin=57.300x10.000" in result.stdout
+    assert "Warning:" not in result.stderr
+
+
+def test_gcode_placement_help_lists_both_flags(runner: CliRunner) -> None:
+    result = runner.invoke(main, ["gcode", "--help"])
+
+    assert result.exit_code == 0
+    assert "--place" in result.stdout
+    assert "--at X,Y" in result.stdout
+    assert "bed.page.placement" in result.stdout
+    assert "Mutually exclusive with --at" in result.stdout

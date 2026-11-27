@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from penpath.cli.commands.gcode import ProfileValidationError, _estimate_plot_seconds
+import pytest
+
+from penpath.cli.commands.gcode import (
+    PLACEMENT_CHOICES,
+    ProfileValidationError,
+    _estimate_plot_seconds,
+    _parse_at,
+)
 from penpath.core import MachineProfile
 
 PROFILE = MachineProfile.model_validate(
@@ -49,3 +56,25 @@ def test_estimate_plot_seconds_uses_travel_feed_and_no_z_moves_when_empty() -> N
 
 def test_profile_validation_error_exits_3() -> None:
     assert ProfileValidationError("bad profile").exit_code == 3
+
+
+def test_parse_at_accepts_signed_and_spaced_floats() -> None:
+    assert _parse_at("20,10") == (20.0, 10.0)
+    assert _parse_at(" -3.5, +300 ") == (-3.5, 300.0)
+
+
+@pytest.mark.parametrize("value", ["300", "1,2,3", "1,", ",2", "x,2", "1,y", "", "nan,1"])
+def test_parse_at_rejects_malformed_values(value: str) -> None:
+    with pytest.raises(ValueError):
+        _parse_at(value)
+
+
+def test_placement_choices_list_every_named_position() -> None:
+    assert PLACEMENT_CHOICES == (
+        "center",
+        "front-right",
+        "front-left",
+        "back-right",
+        "back-left",
+        "origin",
+    )
