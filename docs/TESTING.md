@@ -1511,3 +1511,82 @@ not golden files; no test compares against them.
 | `horizontal_line` | [horizontal_line.png](../images/luc-75/horizontal_line.png) |
 | `checkerboard` | [checkerboard.png](../images/luc-75/checkerboard.png) |
 | `triangle` | [triangle.png](../images/luc-75/triangle.png) |
+
+---
+
+## Contour readability and plot-cost gate (LUC-146, 2026-11-27)
+
+The Contour PFM is accepted by **looking at the previews**, not by SSIM: SSIM
+rewards a near-empty page, which a one-level outline of a portrait often is.
+The CI gate is the supporting, non-empty check: contour points must follow
+source edges, span the image and cost a reasonable amount of pen time.
+
+Reproduce the numbers and the previews with:
+
+```bash
+uv run pytest tests/integration/test_contour_gate.py \
+  tests/integration/test_contour_gate_measures.py -s
+uv run python tests/integration/contour_gate.py
+```
+
+The harness (`tests/integration/contour_gate.py`) runs the real `penpath convert`
+CLI for each built-in contour preset (`contour_portrait`, `contour_silhouette`)
+on `face.jpg`, `photo.jpg` and `santa.jpg`: A4 paper, one 0.3 mm black pen,
+`--dpi 96`, `--max-resolution 512`, `--no-vpype` and `--quiet`. It parses the
+exported SVG, reads the working image size from the placement metadata and
+checks that every stroke is valid, inside the page and free of zero-length
+segments. Each distinct stroke pixel is mapped back through the placement into
+the working image; **edge alignment** is the share of those pixels within 2 px
+of a scikit-image Canny edge (sigma 1, thresholds 0.1/0.2) of that same working
+image. A blank page samples no pixels and scores 0; 1311 seeded random points
+in `photo.jpg`'s placement score 0.255. Coverage is the clipped stroke bounding
+box as a fraction of the placement. Plot cost counts strokes, pen-down
+millimetres and segments shorter than 0.5 mm.
+
+### Measured values
+
+Measured on Python 3.14.10 with the command above; vpype is installed but the
+gate uses `--no-vpype` for speed and determinism.
+
+| image | preset | strokes | points | length mm | tiny | tiny share | edge align | matched/sampled | cov W | cov H | bbox |
+|-------|--------|--------:|-------:|----------:|-----:|-----------:|-----------:|----------------:|------:|------:|-----:|
+| `face.jpg` | `contour_portrait` | 125 | 3131 | 13951.8 | 1 | 0.000 | 0.889 | 2541/2857 | 0.998 | 0.998 | 0.996 |
+| `face.jpg` | `contour_silhouette` | 15 | 511 | 3022.5 | 0 | 0.000 | 0.960 | 476/496 | 0.998 | 0.998 | 0.996 |
+| `photo.jpg` | `contour_portrait` | 31 | 1447 | 4462.4 | 2 | 0.001 | 0.779 | 1021/1311 | 0.998 | 0.997 | 0.995 |
+| `photo.jpg` | `contour_silhouette` | 6 | 467 | 1414.7 | 0 | 0.000 | 0.831 | 383/461 | 0.998 | 0.997 | 0.995 |
+| `santa.jpg` | `contour_portrait` | 56 | 2237 | 8971.9 | 1 | 0.000 | 0.854 | 1843/2158 | 0.997 | 0.998 | 0.996 |
+| `santa.jpg` | `contour_silhouette` | 6 | 518 | 2572.8 | 0 | 0.000 | 0.945 | 484/512 | 0.997 | 0.998 | 0.996 |
+
+### Enforced floors and caps
+
+| Measure | Floor / cap | Why this number |
+|---------|------------:|-----------------|
+| Edge alignment | >= 0.60 | About three quarters of the lowest measurement (0.779 on `photo.jpg` / `contour_portrait`) and well above the 0.255 random baseline; a blank page scores 0. |
+| Covered width / height | >= 0.60 / 0.60 | A blank page scores 0; all measured drawings span at least 0.997 of both axes. |
+| Bounding-box area | >= 0.40 | Rejects a drawing squeezed into a strip; measured at least 0.995. |
+| Strokes | <= 250 | About twice the largest measurement (125 on `face.jpg` / `contour_portrait`). |
+| Drawing length | <= 28000 mm | About twice the largest measurement (13951.8 mm). |
+| Tiny segments (<0.5 mm) | <= 10 and share <= 0.05 | Measured 0–2 segments and a 0–0.001 share; a flood of sub-half-millimetre moves is rejected. |
+
+`test_contour_gate.py` asserts these for all six image/preset pairs; the table
+is printed by the first test and by `contour_gate.py`'s `main()`. Visual
+acceptance is **required** and is separate from these thresholds.
+
+### Visual acceptance (required)
+
+SSIM and the numbers above are supporting evidence only. Every committed
+preview was opened with the `read` tool and compared with its original by eye:
+no preview returned an image error.
+
+| image | preview | What is visible |
+|-------|---------|-----------------|
+| Santa | [contour_portrait.png](../images/luc-139/contour_portrait.png) | Single black outline on white: the red hat and brim are clear at the top, glasses frames and nose read at the eyes, the white beard and fur collar fill the lower half with nested outlines, and the coat shoulder closes the bottom. Glasses, nose, beard and hat outline are all recognisable. |
+| Santa | [contour_silhouette.png](../images/luc-139/contour_silhouette.png) | A much sparser version of the same face: hat outline, glasses and nose survive, the beard is reduced to a few bold edges and the coat runs down the right side; beard texture is dropped by design. |
+| `face.jpg` | [contour_portrait_face.png](../images/luc-139/contour_portrait_face.png) | An astronaut figure in black outline: face and helmet detail at the upper centre, a large round object at lower left, dense parallel lines on the right-hand chest panel and suit folds across the torso. |
+| `face.jpg` | [contour_silhouette_face.png](../images/luc-139/contour_silhouette_face.png) | The same figure in fewer lines: the face simplifies to a few contours, the round object keeps its rim and the chest panel keeps its parallel strokes. |
+| `photo.jpg` | [contour_portrait_photo.png](../images/luc-139/contour_portrait_photo.png) | Two long contour bands on white: the upper ridge rises to the right, the lower shoreline carries dense small loops for trees and rocks, and the empty middle reads as the lake surface. |
+| `photo.jpg` | [contour_silhouette_photo.png](../images/luc-139/contour_silhouette_photo.png) | The same landscape reduced to a few long lines: the upper ridge and lower shoreline remain, with most trees collapsed to one or two small loops. |
+
+The Santa fixture is the free-to-use portrait supplied by sergio on 2026-11-26,
+498x646 px, committed at `tests/fixtures/images/reference/santa.jpg`. The old
+non-free 588x330 photo was neither used nor committed.
