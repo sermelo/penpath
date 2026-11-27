@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from click.testing import CliRunner
 from PIL import Image, ImageDraw
 
+from penpath.cli.commands import evaluate as evaluate_module
+from penpath.cli.commands import preview as preview_module
 from penpath.cli.main import main
 from penpath.core import (
+    CoverageResult,
     get_image_placement,
     get_svg_paper_size,
     parse_svg_strokes,
@@ -117,6 +121,20 @@ def filled_drawing(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def a5_drawing(tmp_path: Path) -> Path:
+    """An A5 page (148x210 mm) with one short stroke."""
+    path = tmp_path / "a5.svg"
+    path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="148mm" height="210mm" '
+        'viewBox="0 0 148 210">'
+        '<path d="M 10 10 L 40 40" fill="none" stroke="#000000" stroke-width="1"/>'
+        "</svg>",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
 
@@ -172,7 +190,7 @@ def matching_plot(tmp_path: Path) -> Path:
     return path
 
 
-PLACED_DPI = 10
+PLACED_PX_PER_MM = 10
 PLACEMENT_WIDTH_MM = PLACEMENT_HEIGHT_MM = 70
 PLACEMENTS = ((20.0, 30.0), (60.0, 90.0), (100.0, 150.0))
 
@@ -202,18 +220,20 @@ def _placed_svg(
 @pytest.fixture
 def placed_reference(tmp_path: Path) -> Path:
     """A 70x70 mm region at 10 px/mm showing the same X as the placed strokes."""
-    side_px = PLACEMENT_WIDTH_MM * PLACED_DPI
+    side_px = PLACEMENT_WIDTH_MM * PLACED_PX_PER_MM
     image = Image.new("RGB", (side_px, side_px), "white")
     draw = ImageDraw.Draw(image)
-    draw.line([(0, 0), (side_px - 1, side_px - 1)], fill="black", width=PLACED_DPI)
-    draw.line([(side_px - 1, 0), (0, side_px - 1)], fill="black", width=PLACED_DPI)
+    draw.line([(0, 0), (side_px - 1, side_px - 1)], fill="black", width=PLACED_PX_PER_MM)
+    draw.line([(side_px - 1, 0), (0, side_px - 1)], fill="black", width=PLACED_PX_PER_MM)
     path = tmp_path / "reference.png"
     image.save(path)
     return path
 
 
 def _render_preview(runner: CliRunner, source: Path, output: Path, *extra: str) -> Image.Image:
-    result = runner.invoke(main, ["preview", str(source), "-o", str(output), "--dpi", "5", *extra])
+    result = runner.invoke(
+        main, ["preview", str(source), "-o", str(output), "--px-per-mm", "5", *extra]
+    )
     assert result.exit_code == 0, result.output
     with Image.open(output) as image:
         return image.copy()
@@ -221,7 +241,8 @@ def _render_preview(runner: CliRunner, source: Path, output: Path, *extra: str) 
 
 def _placed_likeness(runner: CliRunner, reference: Path, svg_path: Path) -> float:
     result = runner.invoke(
-        main, ["evaluate", str(reference), str(svg_path), "--json", "--dpi", str(PLACED_DPI)]
+        main,
+        ["evaluate", str(reference), str(svg_path), "--json", "--px-per-mm", str(PLACED_PX_PER_MM)],
     )
     assert result.exit_code == 0, result.output
     return float(json.loads(result.stdout)["likeness"])
@@ -231,13 +252,13 @@ def _placed_crop_bytes(reference: Path, svg_path: Path) -> bytes:
     """The simulated ink cropped to the rectangle the metadata reports."""
     strokes = parse_svg_strokes(svg_path)
     width_mm, height_mm = get_svg_paper_size(svg_path) or (210.0, 297.0)
-    simulated = simulate_plot(strokes, width_mm, height_mm, dpi_px_per_mm=PLACED_DPI)
+    simulated = simulate_plot(strokes, width_mm, height_mm, dpi_px_per_mm=PLACED_PX_PER_MM)
     with Image.open(reference) as opened:
         placement = get_image_placement(svg_path, opened.size)
-    x_px = round(placement.x * PLACED_DPI)
-    y_px = round(placement.y * PLACED_DPI)
-    width_px = round(placement.width * PLACED_DPI)
-    height_px = round(placement.height * PLACED_DPI)
+    x_px = round(placement.x * PLACED_PX_PER_MM)
+    y_px = round(placement.y * PLACED_PX_PER_MM)
+    width_px = round(placement.width * PLACED_PX_PER_MM)
+    height_px = round(placement.height * PLACED_PX_PER_MM)
     crop = simulated.crop((x_px, y_px, x_px + width_px, y_px + height_px))
     return crop.tobytes()
 
@@ -247,7 +268,9 @@ class TestPreview:
         self, runner: CliRunner, drawing: Path, tmp_path: Path
     ) -> None:
         output = tmp_path / "preview.png"
-        result = runner.invoke(main, ["preview", str(drawing), "-o", str(output), "--dpi", "5"])
+        result = runner.invoke(
+            main, ["preview", str(drawing), "-o", str(output), "--px-per-mm", "5"]
+        )
 
         assert result.exit_code == 0, result.output
         assert output.exists()
@@ -255,13 +278,146 @@ class TestPreview:
             assert image.size == (500, 500)
             assert image.mode == "RGB"
 
+    def test_preview_default_is_four_px_per_mm(
+        self, runner: CliRunner, a5_drawing: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "default.png"
+        result = runner.invoke(main, ["preview", str(a5_drawing), "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        with Image.open(output) as image:
+            assert image.size == (592, 840)
+
+    def test_preview_dpi_means_real_dots_per_inch(
+        self, runner: CliRunner, a5_drawing: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "dpi.png"
+        result = runner.invoke(
+            main, ["preview", str(a5_drawing), "-o", str(output), "--dpi", "100"]
+        )
+
+        assert result.exit_code == 0, result.output
+        with Image.open(output) as image:
+            width, height = image.size
+            assert width == pytest.approx(583, abs=1)
+            assert height == pytest.approx(827, abs=1)
+
+    def test_preview_px_per_mm_uses_pixels_per_millimetre(
+        self, runner: CliRunner, a5_drawing: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "px-per-mm.png"
+        result = runner.invoke(
+            main, ["preview", str(a5_drawing), "-o", str(output), "--px-per-mm", "4"]
+        )
+
+        assert result.exit_code == 0, result.output
+        with Image.open(output) as image:
+            assert image.size == (592, 840)
+
+    def test_preview_rejects_both_resolution_flags(
+        self, runner: CliRunner, a5_drawing: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "both.png"
+        result = runner.invoke(
+            main,
+            [
+                "preview",
+                str(a5_drawing),
+                "-o",
+                str(output),
+                "--dpi",
+                "100",
+                "--px-per-mm",
+                "4",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--dpi" in result.stderr
+        assert "--px-per-mm" in result.stderr
+        assert not output.exists()
+
+    def test_preview_rejects_nonpositive_dpi(
+        self, runner: CliRunner, a5_drawing: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "bad.png"
+        result = runner.invoke(main, ["preview", str(a5_drawing), "-o", str(output), "--dpi", "0"])
+
+        assert result.exit_code == 2
+        assert "--dpi" in result.stderr
+        assert not output.exists()
+
+    def test_preview_force_does_not_bypass_value_checks(
+        self, runner: CliRunner, a5_drawing: Path, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "forced-bad.png"
+        result = runner.invoke(
+            main,
+            ["preview", str(a5_drawing), "-o", str(output), "--px-per-mm", "0", "--force"],
+        )
+
+        assert result.exit_code == 2
+        assert "--px-per-mm" in result.stderr
+        assert not output.exists()
+
+    def test_preview_refuses_over_budget_before_allocating(
+        self,
+        runner: CliRunner,
+        a5_drawing: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        simulate = Mock(side_effect=AssertionError("simulate_plot must not be called"))
+        monkeypatch.setattr(preview_module, "simulate_plot", simulate)
+        output = tmp_path / "huge.png"
+        result = runner.invoke(
+            main, ["preview", str(a5_drawing), "-o", str(output), "--px-per-mm", "1000"]
+        )
+
+        assert result.exit_code != 0
+        assert result.stdout == ""
+        for text in ("148000x210000 px", "31080.0 MP", "40 MP", "--force", "--px-per-mm"):
+            assert text in result.stderr
+        simulate.assert_not_called()
+        assert not output.exists()
+
+    def test_preview_force_reaches_simulate_plot(
+        self,
+        runner: CliRunner,
+        a5_drawing: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        simulate = Mock(return_value=Image.new("RGB", (8, 8), "white"))
+        monkeypatch.setattr(preview_module, "simulate_plot", simulate)
+        output = tmp_path / "forced.png"
+        result = runner.invoke(
+            main,
+            ["preview", str(a5_drawing), "-o", str(output), "--px-per-mm", "1000", "--force"],
+        )
+
+        assert result.exit_code == 0, result.stderr
+        assert simulate.call_count == 1
+        assert simulate.call_args.kwargs["dpi_px_per_mm"] == 1000
+        with Image.open(output) as image:
+            assert image.size == (8, 8)
+
     def test_preview_uses_paper_colour(
         self, runner: CliRunner, drawing: Path, tmp_path: Path
     ) -> None:
         output = tmp_path / "preview.png"
         result = runner.invoke(
             main,
-            ["preview", str(drawing), "-o", str(output), "--dpi", "2", "--paper-color", "#FFFF00"],
+            [
+                "preview",
+                str(drawing),
+                "-o",
+                str(output),
+                "--px-per-mm",
+                "2",
+                "--paper-color",
+                "#FFFF00",
+            ],
         )
 
         assert result.exit_code == 0, result.output
@@ -273,10 +429,19 @@ class TestPreview:
     ) -> None:
         all_px = tmp_path / "all.png"
         one_px = tmp_path / "one.png"
-        runner.invoke(main, ["preview", str(drawing), "-o", str(all_px), "--dpi", "5"])
+        runner.invoke(main, ["preview", str(drawing), "-o", str(all_px), "--px-per-mm", "5"])
         result = runner.invoke(
             main,
-            ["preview", str(drawing), "-o", str(one_px), "--dpi", "5", "--layer", "Pen: fine"],
+            [
+                "preview",
+                str(drawing),
+                "-o",
+                str(one_px),
+                "--px-per-mm",
+                "5",
+                "--layer",
+                "Pen: fine",
+            ],
         )
 
         assert result.exit_code == 0, result.output
@@ -292,9 +457,10 @@ class TestPreview:
         )
         assert result.exit_code != 0
 
-    def test_preview_rejects_nonpositive_dpi(self, runner: CliRunner, drawing: Path) -> None:
-        result = runner.invoke(main, ["preview", str(drawing), "-o", "p.png", "--dpi", "0"])
-        assert result.exit_code != 0
+    def test_preview_rejects_nonpositive_px_per_mm(self, runner: CliRunner, drawing: Path) -> None:
+        result = runner.invoke(main, ["preview", str(drawing), "-o", "p.png", "--px-per-mm", "0"])
+        assert result.exit_code == 2
+        assert "--px-per-mm" in result.stderr
 
     def test_preview_invalid_paper_colour_is_clean_error(
         self, runner: CliRunner, drawing: Path, tmp_path: Path
@@ -326,7 +492,7 @@ class TestPreview:
         """The closing edge of an unfilled polygon is drawn in the preview."""
         output = tmp_path / "polygon.png"
         result = runner.invoke(
-            main, ["preview", str(polygon_drawing), "-o", str(output), "--dpi", "5"]
+            main, ["preview", str(polygon_drawing), "-o", str(output), "--px-per-mm", "5"]
         )
 
         assert result.exit_code == 0, result.output
@@ -346,7 +512,7 @@ class TestPreview:
             encoding="utf-8",
         )
         output = tmp_path / "mixed.png"
-        result = runner.invoke(main, ["preview", str(svg), "-o", str(output), "--dpi", "5"])
+        result = runner.invoke(main, ["preview", str(svg), "-o", str(output), "--px-per-mm", "5"])
 
         assert result.exit_code == 0, result.output
         with Image.open(output) as image:
@@ -571,13 +737,114 @@ class TestEvaluate:
         result = runner.invoke(main, ["evaluate", str(bad), str(drawing), "--json"])
         assert result.exit_code != 0
 
+    def test_evaluate_dpi_is_real_dots_per_inch(
+        self,
+        runner: CliRunner,
+        drawing: Path,
+        reference: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        simulate = Mock(wraps=evaluate_module.simulate_plot)
+        monkeypatch.setattr(evaluate_module, "simulate_plot", simulate)
+        result = runner.invoke(
+            main, ["evaluate", str(reference), str(drawing), "--json", "--dpi", "100"]
+        )
+
+        assert result.exit_code == 0, result.stderr
+        assert simulate.call_args.kwargs["dpi_px_per_mm"] == pytest.approx(100 / 25.4)
+
+    def test_evaluate_rejects_both_resolution_flags(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main,
+            [
+                "evaluate",
+                str(reference),
+                str(drawing),
+                "--json",
+                "--dpi",
+                "100",
+                "--px-per-mm",
+                "4",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--dpi" in result.stderr
+        assert "--px-per-mm" in result.stderr
+
     def test_evaluate_rejects_nonpositive_dpi(
         self, runner: CliRunner, drawing: Path, reference: Path
     ) -> None:
         result = runner.invoke(
-            main, ["evaluate", str(reference), str(drawing), "--dpi", "-1", "--json"]
+            main, ["evaluate", str(reference), str(drawing), "--json", "--dpi", "0"]
         )
+
+        assert result.exit_code == 2
+        assert "--dpi" in result.stderr
+
+    def test_evaluate_refuses_over_budget_before_allocating(
+        self,
+        runner: CliRunner,
+        a5_drawing: Path,
+        reference: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        simulate = Mock(side_effect=AssertionError("simulate_plot must not be called"))
+        coverage = Mock(side_effect=AssertionError("compute_layer_coverage must not be called"))
+        monkeypatch.setattr(evaluate_module, "simulate_plot", simulate)
+        monkeypatch.setattr(evaluate_module, "compute_layer_coverage", coverage)
+        result = runner.invoke(
+            main,
+            ["evaluate", str(reference), str(a5_drawing), "--json", "--px-per-mm", "1000"],
+        )
+
         assert result.exit_code != 0
+        assert result.stdout == ""
+        for text in ("148000x210000 px", "31080.0 MP", "40 MP", "--force", "--px-per-mm"):
+            assert text in result.stderr
+        simulate.assert_not_called()
+        coverage.assert_not_called()
+
+    def test_evaluate_force_reaches_simulate_plot(
+        self,
+        runner: CliRunner,
+        a5_drawing: Path,
+        reference: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        simulate = Mock(return_value=Image.new("RGB", (8, 8), "white"))
+        coverage = Mock(return_value=CoverageResult({}, 0.0))
+        monkeypatch.setattr(evaluate_module, "simulate_plot", simulate)
+        monkeypatch.setattr(evaluate_module, "compute_layer_coverage", coverage)
+        result = runner.invoke(
+            main,
+            [
+                "evaluate",
+                str(reference),
+                str(a5_drawing),
+                "--json",
+                "--px-per-mm",
+                "1000",
+                "--force",
+            ],
+        )
+
+        assert result.exit_code == 0, result.stderr
+        assert simulate.call_count == 1
+        assert simulate.call_args.kwargs["dpi_px_per_mm"] == 1000
+        assert coverage.call_count == 1
+        json.loads(result.stdout)
+
+    def test_evaluate_rejects_nonpositive_px_per_mm(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(
+            main, ["evaluate", str(reference), str(drawing), "--px-per-mm", "-1", "--json"]
+        )
+        assert result.exit_code == 2
+        assert "--px-per-mm" in result.stderr
 
     def test_evaluate_invalid_paper_colour_is_clean_error(
         self, runner: CliRunner, drawing: Path, reference: Path
@@ -845,7 +1112,7 @@ class TestEvaluateCoverage:
     ) -> None:
         result = runner.invoke(
             main,
-            ["evaluate", str(reference), str(filled_drawing), "--json", "--dpi", "10"],
+            ["evaluate", str(reference), str(filled_drawing), "--json", "--px-per-mm", "10"],
         )
 
         assert result.exit_code == 0, result.output
@@ -922,7 +1189,7 @@ class TestEvaluateCoverage:
         self, runner: CliRunner, filled_drawing: Path, reference: Path
     ) -> None:
         result = runner.invoke(
-            main, ["evaluate", str(reference), str(filled_drawing), "--json", "--dpi", "10"]
+            main, ["evaluate", str(reference), str(filled_drawing), "--json", "--px-per-mm", "10"]
         )
 
         assert result.exit_code == 0, result.output
@@ -1002,6 +1269,10 @@ class TestCommandHelp:
         assert result.exit_code == 0
         assert "Usage:" in result.output
         assert "--dpi" in result.output
+        assert "dots per inch" in result.output
+        assert "--px-per-mm" in result.output
+        assert "pixels per millimetre" in result.output
+        assert "--force" in result.output
 
     def test_preview_help_describes_travel(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["preview", "--help"])

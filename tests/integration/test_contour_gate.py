@@ -122,7 +122,7 @@ def test_user_can_convert_santa_and_preview_a_plot(tmp_path: Path) -> None:
     )
     assert converted.exit_code == 0, converted.output
     previewed = runner.invoke(
-        cli_main, ["preview", str(svg_path), "-o", str(png_path), "--dpi", "4"]
+        cli_main, ["preview", str(svg_path), "-o", str(png_path), "--px-per-mm", "4"]
     )
     assert previewed.exit_code == 0, previewed.output
     with Image.open(png_path) as opened:
