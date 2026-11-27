@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from penpath.core.contact_sheet import ContactSheetEntry
 from penpath.core.drawing.pfm_contour import ContourSettings
 from penpath.core.drawing.pfm_hatch import HatchSettings
+from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
 from penpath.core.drawing.pfm_spiral import SpiralSettings
@@ -174,6 +175,13 @@ HATCH_PRESETS: dict[str, HatchSettings] = {
     ),
 }
 
+PATCH_HATCH_PRESETS: dict[str, PatchHatchSettings] = {
+    "default": PatchHatchSettings(),
+    "fine": PatchHatchSettings(spacing=0.5, patch_size=7.0, min_patch_size=3.0),
+    "bold": PatchHatchSettings(spacing=1.2, patch_size=14.0, min_patch_size=6.0),
+    "fast": PatchHatchSettings(join_lines=True),
+}
+
 DEFAULT_PFM = "default"
 
 PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
@@ -231,6 +239,9 @@ for _spiral_name, _spiral_settings in SPIRAL_PRESETS.items():
 
 for _hatch_name, _hatch_settings in HATCH_PRESETS.items():
     register_pfm_preset(f"hatch:{_hatch_name}", "hatch", _hatch_settings)
+
+for _patch_name, _patch_settings in PATCH_HATCH_PRESETS.items():
+    register_pfm_preset(f"patch_hatch:{_patch_name}", "patch_hatch", _patch_settings)
 
 PFM_PRESET_TYPES: dict[str, str] = {
     **{f"sketch_lines:{name}": "sketch_lines" for name in PFM_PRESETS},
@@ -378,6 +389,7 @@ def get_pfm_preset_by_id(preset_id: str) -> tuple[str, BaseModel]:
 __all__ = [
     "DEFAULT_PFM",
     "HATCH_PRESETS",
+    "PATCH_HATCH_PRESETS",
     "PFM_PRESETS",
     "PFM_PRESET_OWNERS",
     "PFM_PRESET_TYPES",

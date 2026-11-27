@@ -509,6 +509,64 @@ values or out-of-range numbers exit 2 naming the setting.
 
 **Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s ring_spacing=5 -s amplitude=0.8`
 
+#### PFM Settings (Patch Hatch)
+
+Select this PFM with `--pfm patch_hatch` (or a qualified `patch_hatch:PRESET`
+id). It imitates hand-drawn pen-and-ink cross-hatching: the image is cut into
+small irregular patches (a quadtree splits busy areas down to
+`min_patch_size`, and jittered cell centres become Voronoi cells), each patch
+gets its own line direction along the local edges (structure tensor, or a
+random angle where the image has no clear direction), and darker tones add
+crossing layers inside the patch. Unlike `--pfm hatch`, whose lines run
+across the whole page, every patch has its own direction.
+
+Lengths are in millimetres on paper, as for Hatch; the image scale and the pen
+width are supplied by `convert`. By default the darkness at which each layer
+turns on is worked out from the pen width and the spacing: one layer of lines
+`spacing` mm apart covers `f = pen_width / spacing` of the paper and `n`
+crossing layers cover `1 - (1 - f)^n`, so layer `n` starts halfway between
+the coverage of `n - 1` and `n` layers. A wider pen therefore turns layers on
+later and the plotted tone stays the same.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `spacing` | float | >0 mm | `0.8` | Distance between parallel lines inside a patch; never below the pen width. |
+| `patch_size` | float | >0 mm | `10.0` | Size of the largest patches (flat areas). |
+| `min_patch_size` | float | >0 mm, <= `patch_size` | `4.0` | Smallest patches; busy areas are split down to this size. |
+| `detail` | float | 0–1 | `0.08` | Darkness standard deviation above which a cell splits into four. Lower gives more, smaller patches. |
+| `thresholds` | tuple or `null` | (0, 1), strictly increasing | `null` | Darkness at which each layer turns on; same length as `layer_angles`. `null` derives them from pen width and spacing (above). |
+| `layer_angles` | tuple | −360–360° each | `0,60,120,90` | Angle of each layer relative to the patch's base direction. |
+| `follow_edges` | bool | — | `true` | Base direction along the local edges; off gives every patch a random angle. |
+| `angle_jitter` | float | 0–90° | `12.0` | Seeded random change of each patch's base direction. |
+| `overlap` | float | 0–1 | `0.0` | How much each patch grows past its cell, as a fraction of its size. |
+| `edge_jitter` | float | >=0 mm | `0.5` | Random shift of each line end, in or out, for rough hand-drawn patch edges. |
+| `min_length` | float | >=0 mm | `1.5` | Drop lines shorter than this. |
+| `min_gap` | float | >=0 mm | `0.4` | Bridge gaps shorter than this inside a line. |
+| `join_lines` | bool | — | `false` | Join the lines of each layer in a patch into zig-zag strokes everywhere. About 2x fewer pen lifts than the default, but the connectors trace the patch borders as a visible net in light areas. |
+| `join_in_dark` | bool | — | `true` | Join lines only where the connector is hidden under a crossing layer (the next layer, or the last layer for the last one). Light areas stay clean; dark areas save pen lifts. Ignored when `join_lines=true`. |
+| `seed` | int or `null` | any | `null` | Seed for patch layout and angles. Fix it with `-s seed=42` for reproducible output. |
+
+Patch Hatch presets:
+
+| Preset id | Character |
+|-----------|-----------|
+| `patch_hatch:default` | The algorithm defaults above. |
+| `patch_hatch:fine` | 0.5 mm spacing, 3–7 mm patches: finer lines and smaller patches. |
+| `patch_hatch:bold` | 1.2 mm spacing, 6–14 mm patches: open, graphic patches. |
+| `patch_hatch:fast` | The defaults with `join_lines=true`: about 2x fewer pen lifts, with visible patch borders. |
+
+**Examples**:
+
+```bash
+penpath convert photo.jpg --pfm patch_hatch -s seed=42 -o patches.svg
+penpath convert photo.jpg --pfm patch_hatch:fine -s seed=42 -o fine_patches.svg
+# Every patch at a random angle instead of along the edges
+penpath convert photo.jpg --pfm patch_hatch -s follow_edges=false -s seed=42 -o random.svg
+```
+
+With `--palette`, each successive pen's layer angles rotate by 30 degrees
+(`penpath.core.drawing.pfm_patch_hatch.with_layer_angle_offset`), as for Hatch.
+
 #### PFM Settings (Hatch)
 
 Select this PFM with `--pfm hatch` (or a qualified `hatch:PRESET` id). It draws
@@ -704,6 +762,9 @@ penpath convert photo.jpg -o spiral_fine.svg --pfm spiral_sawtooth:fine
 # Straight / cross-hatched lines are a PFM, not --style hatch (a Sketch Lines look)
 penpath convert photo.jpg -o hatch.svg --pfm hatch:default -s seed=42
 penpath convert photo.jpg -o crosshatch.svg --pfm hatch:crosshatch -s seed=42
+
+# Hand-drawn style cross-hatching in small patches
+penpath convert photo.jpg -o patches.svg --pfm patch_hatch -s seed=42
 
 # Using project file
 penpath convert --project my_project.yaml

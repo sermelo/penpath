@@ -2171,3 +2171,47 @@ by eye; none returned an image error. They are 444x630 px renders (`--px-per-mm
 | `photo.jpg` | `hatch:crosshatch` | [photo_hatch_crosshatch.png](../images/luc-167/photo_hatch_crosshatch.png) | The same landscape with a tighter horizontal/vertical grid: the sky stays open, the forest on the right is darker and fuller, and the lake reflection is busier; the ridge and shoreline still read, fine tree texture does not. |
 | `gradient.png` | `hatch:default` | [gradient_hatch_default.png](../images/luc-167/gradient_hatch_default.png) | The left half is a dense 45°/135° crosshatch and the right half thins to long, widely spaced 45° lines with white gaps, matching the source's black-left to white-right ramp. |
 | `sphere.png` | `hatch:default` | [sphere_hatch_default.png](../images/luc-167/sphere_hatch_default.png) | A round disc on empty paper with a large pale upper-left crescent where the source highlight is and denser crosshatch toward the lower-right rim; the silhouette and light direction still read, though joining opens the mid-tones into a hollow-looking crescent. |
+
+## Patch Hatch measurements (2026-11-27)
+
+Patch Hatch is accepted by looking at the previews
+([Santa](images/patch-hatch/patch_hatch_plot.png),
+[face](images/patch-hatch/face_patch_hatch.png),
+[face close-up](images/patch-hatch/face_patch_hatch_detail.png),
+[photo](images/patch-hatch/photo_patch_hatch.png)): the face reads with eyes,
+nose and helmet edge, light areas carry one layer of patch-oriented lines and
+dark areas build up crossing layers without patch outlines. The numbers below
+compare it with the other line PFMs; they are evidence, not a gate.
+
+Setup: A4, default `fine` pen (0.3 mm), seed 42, default export path (vpype),
+`penpath evaluate IMAGE SVG --json --px-per-mm 3`. "Lifts" is
+`machine_cost.total.num_lifts`; "ink m" is the pen-down length in metres;
+"time" is the whole `convert` on a 2-core laptop.
+
+| image | PFM | SSIM | ink-only SSIM | edge SSIM | lifts | ink m | ink % | time s |
+|-------|-----|------|---------------|-----------|-------|-------|-------|--------|
+| face | `hatch:default` | 0.459 | 0.360 | 0.339 | 452 | 71.8 | 24.3 | 4.8 |
+| face | `hatch:crosshatch` | 0.660 | 0.587 | 0.573 | 5,700 | 113.8 | 36.3 | 13.0 |
+| face | `sketch_lines` | 0.588 | 0.521 | 0.416 | 977 | 152.3 | 46.0 | 49.8 |
+| face | `patch_hatch` | 0.650 | 0.586 | 0.490 | 11,114 | 142.4 | 43.2 | 23.1 |
+| face | `patch_hatch:fast` | 0.635 | 0.571 | 0.463 | 5,994 | 147.4 | 43.9 | 12.1 |
+| photo | `hatch:default` | 0.532 | 0.378 | 0.266 | 152 | 38.3 | 13.2 | 3.6 |
+| photo | `hatch:crosshatch` | 0.736 | 0.642 | 0.430 | 2,474 | 57.4 | 18.6 | 6.9 |
+| photo | `sketch_lines` | 0.419 | 0.442 | 0.223 | 904 | 102.5 | 28.8 | 42.9 |
+| photo | `patch_hatch` | 0.676 | 0.660 | 0.288 | 6,753 | 71.2 | 23.6 | 12.0 |
+| photo | `patch_hatch:fast` | 0.620 | 0.626 | 0.251 | 3,163 | 74.7 | 24.1 | 6.0 |
+| gradient | `hatch:crosshatch` | 0.643 | 0.581 | 0.171 | 529 | 48.1 | 15.5 | 4.8 |
+| gradient | `patch_hatch` | 0.663 | 0.603 | 0.169 | 3,122 | 58.2 | 19.9 | 4.2 |
+| sphere | `hatch:crosshatch` | 0.870 | 0.697 | 0.709 | 665 | 30.0 | 9.7 | 5.0 |
+| sphere | `patch_hatch` | 0.867 | 0.686 | 0.707 | 2,566 | 36.7 | 12.1 | 3.9 |
+
+Reading: likeness is on par with `hatch:crosshatch` and above Sketch Lines on
+the photographs, at the cost of 2-5x more pen lifts than `hatch:crosshatch`:
+hand-style hatching is many short strokes by nature. `patch_hatch:fast` halves
+the lifts for a small likeness loss and visible patch borders. The unit tests
+in `tests/unit/core/drawing/test_pfm_patch_hatch.py` pin the behaviour: blank
+input draws nothing, darker tone gives more ink and more crossing layers,
+strokes stay inside the image, spacing never drops below the pen width, lines
+follow vertical edges on a striped image, and `join_in_dark` joins only where
+layers cross.
+
