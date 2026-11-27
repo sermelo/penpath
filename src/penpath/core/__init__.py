@@ -1,5 +1,10 @@
 """Core penpath functionality."""
 
+from penpath.core.contact_sheet import (
+    ContactSheetEntry,
+    ContactSheetResult,
+    render_contact_sheet,
+)
 from penpath.core.drawing import (
     PIXEL_SETTING_FIELDS,
     ContourSettings,
@@ -177,6 +182,8 @@ __all__ = [
     "STYLE_PRESETS",
     "BackgroundResult",
     "BedProfile",
+    "ContactSheetEntry",
+    "ContactSheetResult",
     "ContourSettings",
     "CoverageResult",
     "DitherMethod",
@@ -282,6 +289,7 @@ __all__ = [
     "posterize",
     "prepare_for_comparison",
     "remove_background",
+    "render_contact_sheet",
     "save_yaml",
     "scale_pixel_settings",
     "separate_palette",
