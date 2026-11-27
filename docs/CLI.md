@@ -443,11 +443,20 @@ The presets on the free Santa portrait are
 records measured edge alignment and plot cost; visual acceptance is by looking
 at the previews, not by SSIM alone.
 
+The three Square presets on the free Santa portrait are
+[`coarse`](images/luc-137/santa_coarse.png),
+[`fine`](images/luc-137/santa_fine.png) and
+[`crosshatch-grid`](images/luc-137/santa_crosshatch-grid.png). The
+[Sketch Squares gate](TESTING.md#sketch-squares-readability-and-plot-cost-gate-luc-149-2026-11-27)
+records measured readability, plot cost and the blank/random baselines; visual
+acceptance is by looking at the previews, not by SSIM alone.
+
 The three hatch presets and `squiggly` are style choices: they deliberately
 give up photo likeness for a particular look. Only `sketch_lines:default` is
-calibrated against the gate in
-[docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47). Running
-`--pfm sketch_squares` with no preset uses the algorithm defaults above.
+calibrated against the likeness gate in
+[docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47); Sketch Squares
+has its own gate linked above. Running `--pfm sketch_squares` with no preset
+uses the algorithm defaults above.
 
 #### Filters (Applied in Order)
 
@@ -604,6 +613,10 @@ penpath preview plot.svg -o preview.png --dpi 20 --paper-color "#F5F5DC"
 penpath preview plot.svg -o fine.png --layer fine
 # Show pen-up travel as thin light lines under the ink (default: ink only)
 penpath preview plot.svg -o travel.png --travel
+
+# Inspect a structured Sketch Squares preset before plotting (ink-only PNG)
+penpath convert santa.jpg -o santa_grid.svg --pfm sketch_squares:crosshatch-grid -s seed=42 --max-resolution 384 --no-vpype
+penpath preview santa_grid.svg -o santa_grid.png --dpi 4
 
 # Check the G-code against the reviewed SVG: the ink matches, and the PNG also
 # shows the bed and the page placed on it

@@ -1590,3 +1590,99 @@ no preview returned an image error.
 The Santa fixture is the free-to-use portrait supplied by sergio on 2026-11-26,
 498x646 px, committed at `tests/fixtures/images/reference/santa.jpg`. The old
 non-free 588x330 photo was neither used nor committed.
+
+---
+
+## Sketch Squares readability and plot-cost gate (LUC-149, 2026-11-27)
+
+The Sketch Squares PFM draws a structured, graphic page rather than a photo
+likeness. Acceptance is **visual**: open the committed previews and compare them
+with the original. SSIM, dark recall and the cost numbers are supporting checks;
+SSIM alone is not the gate and is not reported here.
+
+Reproduce the numbers and the passing gate with:
+
+```bash
+timeout 120 uv run pytest tests/integration/test_sketch_squares_gate.py \
+  tests/integration/test_sketch_squares_gate_measures.py -s
+timeout 120 env PYTHONPATH=tests/integration uv run python tests/integration/sketch_squares_gate.py
+```
+
+On Python 3.14.10 the first command reported `16 passed` in 34.88 s and the
+second printed the table below in 38.36 s, both inside the 120 s budget.
+
+The harness (`tests/integration/sketch_squares_gate.py`) invokes the real
+`penpath convert` CLI for each qualified preset (`sketch_squares:coarse`,
+`sketch_squares:fine`, `sketch_squares:crosshatch-grid`) on `face.jpg`,
+`photo.jpg` and `santa.jpg`: A4 paper, one 0.3 mm black pen, `-s seed=42`,
+`--dpi 96`, `--max-resolution 384`, `--no-vpype` and `--quiet`. It parses the SVG
+with the same reader as `penpath evaluate`, rejects invalid, off-page or
+zero-length strokes, and simulates the plot at 96/25.4 px/mm. For readability it
+resizes the source into the recorded placement crop, marks pixels darker than
+128 as dark, and dilates them by 3 simulator pixels (about 0.8 mm, a little over
+two 0.3 mm pen widths). **Dark recall** is the share of those supported dark
+pixels covered by simulated ink; **ink precision** is the share of simulated ink
+that lands in that neighbourhood. **Coverage** is the clipped stroke bounding
+box as a fraction of the placement. The blank and random SVGs are written by the
+same helpers as the Sketch Lines gate: no strokes at all, and as many seeded
+two-point random strokes as the real drawing had. Plot cost uses the Contour
+gate's helper: strokes, pen-down millimetres and segments shorter than 0.5 mm.
+
+### Measured values
+
+| image | preset | recall | precision | cov W | cov H | bbox | strokes | length mm | tiny | tiny share |
+|-------|--------|-------:|----------:|------:|------:|-----:|--------:|----------:|-----:|-----------:|
+| `face.jpg` | `coarse` | 0.213 | 0.998 | 0.997 | 0.997 | 0.994 | 21 | 34334.4 | 0 | 0.000 |
+| `face.jpg` | `fine` | 0.360 | 0.950 | 0.997 | 0.997 | 0.994 | 257 | 69816.8 | 0 | 0.000 |
+| `face.jpg` | `crosshatch-grid` | 0.308 | 0.982 | 0.997 | 0.997 | 0.994 | 105 | 54485.1 | 0 | 0.000 |
+| `photo.jpg` | `coarse` | 0.325 | 0.952 | 0.997 | 0.996 | 0.993 | 23 | 21784.1 | 2 | 0.001 |
+| `photo.jpg` | `fine` | 0.452 | 0.725 | 0.997 | 0.996 | 0.993 | 196 | 43774.1 | 11 | 0.001 |
+| `photo.jpg` | `crosshatch-grid` | 0.396 | 0.766 | 0.997 | 0.996 | 0.993 | 76 | 34507.3 | 5 | 0.001 |
+| `santa.jpg` | `coarse` | 0.223 | 0.999 | 0.997 | 0.997 | 0.994 | 22 | 41071.1 | 0 | 0.000 |
+| `santa.jpg` | `fine` | 0.372 | 0.942 | 0.997 | 0.997 | 0.994 | 286 | 83201.6 | 0 | 0.000 |
+| `santa.jpg` | `crosshatch-grid` | 0.321 | 0.975 | 0.997 | 0.997 | 0.994 | 102 | 65565.8 | 0 | 0.000 |
+
+Every blank page scores `0.000` for recall, precision and all three coverage
+measures, so no blank page can pass. The random baselines are:
+
+| image | preset | recall | precision | cov W | cov H | bbox |
+|-------|--------|-------:|----------:|------:|------:|-----:|
+| `face.jpg` | `coarse` | 0.011 | 0.745 | 0.963 | 0.967 | 0.931 |
+| `face.jpg` | `fine` | 0.125 | 0.707 | 1.000 | 0.994 | 0.994 |
+| `face.jpg` | `crosshatch-grid` | 0.058 | 0.721 | 0.999 | 0.990 | 0.988 |
+| `photo.jpg` | `coarse` | 0.014 | 0.420 | 0.971 | 0.967 | 0.939 |
+| `photo.jpg` | `fine` | 0.140 | 0.555 | 1.000 | 0.994 | 0.994 |
+| `photo.jpg` | `crosshatch-grid` | 0.061 | 0.563 | 0.999 | 0.990 | 0.988 |
+| `santa.jpg` | `coarse` | 0.012 | 0.810 | 0.971 | 0.967 | 0.939 |
+| `santa.jpg` | `fine` | 0.142 | 0.806 | 1.000 | 0.994 | 0.994 |
+| `santa.jpg` | `crosshatch-grid` | 0.057 | 0.814 | 0.999 | 0.990 | 0.988 |
+
+### Enforced floors and caps
+
+Each floor follows the existing rule
+`max(highest baseline + 0.05, lowest measurement - 0.05)`, rounded down, and no
+Sketch Lines floor is lowered. `test_sketch_squares_gate.py` asserts them for all
+nine combinations and separately asserts that the blank and random baselines
+fail.
+
+| Measure | Floor / cap | Why this number |
+|---------|------------:|-----------------|
+| Dark recall | >= 0.19 | Highest random recall 0.142 + 0.05 = 0.192; lowest measurement 0.213 - 0.05 = 0.163. Rounded down to 0.19, above every baseline and below every drawing. |
+| Ink precision | >= 0.67 | Lowest measurement 0.725 - 0.05 = 0.675, rounded down. A single precision floor cannot also sit above the highest random precision (0.814 on `santa.jpg`/`crosshatch-grid`) while staying below `photo.jpg`/`fine` (0.725), so dark recall carries the rejection of a random scribble, as in the LUC-86 per-pen gate. A blank page scores 0 here. |
+| Covered width / height | >= 0.94 / 0.94 | Lowest measurements 0.997 and 0.996 minus 0.05 give 0.947 and 0.946, rounded down. The Sketch Lines floors are 0.60 / 0.60 and stay verbatim. Random strokes span the page too, so recall rejects them; a blank page scores 0. |
+| Bounding-box area | >= 0.94 | Lowest measurement 0.993 - 0.05 = 0.943, rounded down; the Sketch Lines floor is 0.40 and stays verbatim. |
+| Strokes | <= 600 | About twice the largest measurement (286 on `santa.jpg`/`fine`, 572 doubled, rounded up). |
+| Drawing length | <= 170000 mm | About twice the largest measurement (83201.6 mm doubled, rounded up). These are dense grid-hatched pages, so the pen-down length is high; the shipped presets are unchanged here. |
+| Tiny segments (<0.5 mm) | <= 25 and share <= 0.01 | Twice the largest count (11, doubled to 22, rounded up); the largest measured share is 0.001, so 0.01 still rejects a flood without failing any drawing. |
+
+### Visual acceptance (required)
+
+Every committed preview was opened with the `read` tool and compared with
+`santa.jpg`; none returned an image error. The Santa portrait was chosen over
+`face.jpg` because its hat, glasses and beard give more structure to look for.
+
+| preview | What is visible |
+|---------|-----------------|
+| [santa_coarse.png](../images/luc-137/santa_coarse.png) | Sparse long diagonal strokes fill the dark background and coat while the face, brim and beard stay pale and empty. The hat and shoulder silhouettes read, but the glasses frames and individual beard locks are not resolved. |
+| [santa_fine.png](../images/luc-137/santa_fine.png) | A much denser bent grid crowds the background and red coat into near-solid tone; the face and beard remain a large light negative space with the nose and smiling mouth suggested by gaps. Even more than `coarse`, it trades facial detail for a structured, graphic texture. |
+| [santa_crosshatch-grid.png](../images/luc-137/santa_crosshatch-grid.png) | Near-horizontal and near-vertical strokes weave a tighter grid than `coarse`: the hat brim edge, face outline and beard mass still read as light shapes against the hatched coat and dark room, while glasses and small beard texture are lost in the weave. |
