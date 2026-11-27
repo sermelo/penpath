@@ -571,7 +571,8 @@ Every SVG penpath writes uses millimetres: for A4 the root is
 `width="210mm" height="297mm" viewBox="0 0 210 297"`, and each used pen gets one
 Inkscape layer with `id="layerN"` (N in pen order) and the pen name as
 `inkscape:label`. Strokes have `fill="none"`, a hex `stroke` and a millimetre
-`stroke-width`; the background is a plain `<rect>`, not a layer.
+`stroke-width`. No background shape is written: paper colour is a
+`preview`/`evaluate` option (`--paper-color`, default `#FFFFFF`), not ink.
 
 Do not feed a penpath SVG back to `vpype read`. vpype takes the layer number
 from the digits in `inkscape:label`, so `stabilo_88_red` and
