@@ -425,16 +425,17 @@ rule instead of counting lines per millimetre, and `min_length` and
 #### PFM Settings (Stipple)
 
 With `--pfm stipple` (or a Stipple preset), every field of `StippleSettings` is
-accepted by `-s KEY=VALUE`. Dots are short two-point strokes, so one dot costs
-one pen lift. Invalid keys, values or out-of-range numbers exit 2 naming the
-setting, as with Sketch Lines.
+accepted by `-s KEY=VALUE`. Each dot is one stroke — a `dash`, a closed `circle`
+or a zero-length `tap` — so one dot costs one pen lift. Invalid keys, values or
+out-of-range numbers exit 2 naming the setting, as with Sketch Lines.
 
 | Key | Type | Range | Default | Effect |
 |-----|------|-------|---------|--------|
 | `dot_density` | float | >0–10.0 | `1.0` | Multiplier on the target dot count: total darkness divided by the largest dot's area. Higher puts more dots on the page. |
 | `min_radius` | float | >0–100 px | `1.0` | Radius of the faintest dot in working-image pixels; dot length is twice the radius. Must be ≤ `max_radius`. |
 | `max_radius` | float | >0–100 px | `3.0` | Radius on a perfectly black pixel. It also sets the target count and the largest exclusion radius. Must be ≥ `min_radius`. |
-| `jitter` | float | 0–1 | `1.0` | Dot angle jitter in quarter turns: `0` draws every dot horizontally, `1` allows any orientation. |
+| `jitter` | float | 0–1 | `1.0` | Dot angle jitter in quarter turns: `0` draws every dot horizontally, `1` allows any orientation. No-op for `circle` and `tap`. |
+| `dot_shape` | `dash`, `circle`, `tap` | those three values | `dash` | `dash` is a two-point stroke of length `2 * min_radius..2 * max_radius` at a jittered angle; `circle` is one closed 12-point ring per dot; `tap` lowers and raises the pen in place with a zero-length stroke. |
 | `seed` | int or `null` | any | `null` | Fix the random seed for byte-identical reruns. |
 | `max_strokes` | int | ≥1 | `10000` | Hard cap on dots and therefore on pen lifts. |
 
@@ -445,7 +446,9 @@ setting, as with Sketch Lines.
 With `--pfm contour` (or a Contour preset), every field of `ContourSettings` is
 accepted by `-s KEY=VALUE`. Booleans use the same `true`/`false`, `1`/`0`,
 `yes`/`no` and `on`/`off` spellings as Sketch Lines; invalid keys, values or
-out-of-range numbers exit 2 with the setting named.
+out-of-range numbers exit 2 with the setting named. Contours that touch the
+image border are left open there instead of closing along it, so ink reaching
+an edge keeps only its inward-facing outline.
 
 | Key | Type | Range | Default | Effect |
 |-----|------|-------|---------|--------|

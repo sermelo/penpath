@@ -260,6 +260,14 @@ def test_gcode_to_strokes_ignores_the_ramp_lead_in_and_lead_out() -> None:
     assert strokes[0].polyline[-1] == points[-1]
 
 
+def test_gcode_to_strokes_does_not_crash_on_a_tap_only_drawing() -> None:
+    profile = _ramped_profile()
+    text = build_gcode([GcodeLayer("ink", [[(10.0, 10.0), (10.0, 10.0)]])], profile, (100.0, 100.0))
+
+    assert "G1 X" not in text
+    assert gcode_to_strokes(text, (100.0, 100.0), profile) == []
+
+
 def _two_separated_strokes_gcode(second_x: str = "50.000") -> str:
     return (
         HEADER
