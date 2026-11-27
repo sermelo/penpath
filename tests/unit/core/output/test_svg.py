@@ -64,8 +64,8 @@ class TestExportSvg:
         assert root.get("height") == "297mm"
         assert root.get("viewBox") == "0 0 210 297"
 
-    def test_export_svg_background_rect_is_direct_child(self, tmp_path: Path):
-        """The paper background is a rect on the root, with no Background layer."""
+    def test_export_svg_has_no_background_shape(self, tmp_path: Path):
+        """The paper colour is not written as a shape vpype could plot."""
         paper = Paper(
             name="A4",
             width_mm=210,
@@ -80,14 +80,13 @@ class TestExportSvg:
         export_svg(lines, paper, [pen], output_path)
 
         root = ET.parse(output_path).getroot()
-        rects = root.findall(SVG_NS + "rect")
-        assert len(rects) == 1
-        assert rects[0].get("fill") == "#FF0000"
-        assert rects[0].get("width") == "210.0"
-        assert rects[0].get("height") == "297.0"
-        assert all(
-            group.get(INKSCAPE_NS + "label") != "Background" for group in _layer_groups(root)
+        assert list(root.iter(SVG_NS + "rect")) == []
+        assert not any(
+            child.tag.rsplit("}", 1)[-1] in {"rect", "circle", "ellipse", "polygon"}
+            for child in root
         )
+        assert "#FF0000" not in output_path.read_text()
+        assert [group.get(INKSCAPE_NS + "label") for group in _layer_groups(root)] == ["fine"]
 
     def test_export_svg_pen_layer(self, tmp_path: Path):
         """The used pen gets a numbered layer labelled with its name."""

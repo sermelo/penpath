@@ -105,7 +105,7 @@ def test_convert_writes_one_layer_per_used_pen_in_drawing_order(converted_svg: P
     assert [layer.strokes for layer in layers] == [{"#FF0000"}, {"#0000FF"}]
     assert all(layer.points for layer in layers)
     root = ET.parse(converted_svg).getroot()
-    assert len(root.findall(SVG_NS + "rect")) == 1  # the background is not a layer
+    assert root.findall(SVG_NS + "rect") == []  # no plottable background shape
 
 
 def test_each_layer_covers_only_its_own_colour_region(converted_svg: Path) -> None:

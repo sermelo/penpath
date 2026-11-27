@@ -406,7 +406,8 @@ def write_penpath_svg(
     first, and the vpype path reads the optimised geometry back in millimetres.
     The page uses millimetres throughout; every used pen gets one Inkscape
     layer named ``layerN`` and labelled with the pen name, in drawing order.
-    The background is a plain rect, not a layer.
+    No background shape is written: paper colour belongs to preview and
+    evaluate, and vpype reads only the pen's strokes as paths.
 
     Parameters
     ----------
@@ -455,13 +456,6 @@ def write_penpath_svg(
     )
     dwg.attribs["xmlns:inkscape"] = "http://www.inkscape.org/namespaces/inkscape"
 
-    dwg.add(
-        dwg.rect(
-            insert=(0, 0),
-            size=(paper.width_mm, paper.height_mm),
-            fill=paper.background_color,
-        )
-    )
     if image_placement is not None:
         dwg.set_metadata(
             _placement_metadata_element(_as_placement(image_placement), resolution, mode, clip)
@@ -579,7 +573,7 @@ def export_svg(
     """Export geometries to a penpath SVG in millimetres.
 
     Creates an SVG with the paper size as width/height and viewBox in
-    millimetres, a background rect, and one Inkscape layer per used pen.
+    millimetres and one Inkscape layer per used pen, with no background rect.
     All geometries go to the first pen; use :func:`export_pen_layers` to put
     each pen's geometry in its own layer.
 
