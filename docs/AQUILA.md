@@ -52,10 +52,19 @@ are provenance, not a second implementation and not part of this package.
    penpath gcode card.svg --profile aquila -o card.gcode
    ```
 
-    The stderr summary reports layers, drawing length, pen-up travel, pen lifts
-    and an estimated time. A point outside the usable area is an error naming its
-    coordinates and the usable limits; no partial G-code is written. With
-    `--dry-run` the G-code goes to stdout and every message goes to stderr.
+     The stderr summary reports layers, drawing length, pen-up travel, pen lifts
+     and an estimated time. A point outside the usable area is an error naming its
+     coordinates and the usable limits; no partial G-code is written. With
+     `--dry-run` the G-code goes to stdout and every message goes to stderr.
+
+     To check the sheet before the real plot, add `--frame --frame-pause`. The
+     frame is a closed rectangle 2 mm outside the page, drawn with the first
+     layer's pen before the drawing; leave room for it in the usable area (a
+     160 × 160 mm page with `--place center` fits):
+
+     ```sh
+     penpath gcode card.svg --profile aquila --place center --frame --frame-pause -o card.gcode
+     ```
 
 4. **Review the G-code as a plot.** This uses penpath's G-code interpreter, which
    reads `G0`/`G1`, applies the same page origin and pen offset as the emitter,
@@ -65,10 +74,12 @@ are provenance, not a second implementation and not part of this package.
    penpath preview card.gcode -o card.gcode.png
    ```
 
-   `card.gcode.png` should match `card.svg.png` (the 170 mm example differs in
-   about 0.01% of pixels, at stroke ends). Check the start warning, one `M0` pause per
-   pen layer, and the end block with `grep -nE 'M0|M117|M2|G28'` before copying
-   the file to the SD card.
+    `card.gcode.png` should match `card.svg.png` (the 170 mm example differs in
+    about 0.01% of pixels, at stroke ends). With `--frame` the PNG also shows the
+    frame as ink just outside the page outline, before the drawing. Check the
+    start warning, one `M0` pause per pen layer (plus the frame pause), and the
+    end block with `grep -nE 'M0|M117|M2|G28'` before copying the file to the SD
+    card.
 
 5. **Plot.** Put the `.gcode` on the SD card, insert it and start the print from
    the printer menu. Follow the checklist below at each pause. The file ends
@@ -96,7 +107,13 @@ Taken from `reference/aquila_gcode/README.md` and `aquila_plot.py`
       **The spot sits inside the 10 mm safety margin on purpose**: paper and
       magnets must not cover it. It is not a drawing point and is not checked
       against the usable area.
-- [ ] **Never use `M25` on this firmware**; the pen-change pauses are `M0`.
+- [ ] With `--frame`, the first pen-down stroke is the rectangle around the
+      page. If `--frame-pause` is on, it stops with
+      `M0 Frame drawn: check paper position, press knob to plot`: check that all
+      four sides sit where you want the paper, then press the knob to plot the
+      card. The summary's length, travel and time include the frame; its layer
+      count does not.
+- [ ] **Never use `M25` on this firmware**; the pen-change and frame pauses are `M0`.
 - [ ] The end sequence has **no `M2`**: Z 80 → X0 Y220 → two beeps → `M84 S120`,
       `M84` → `M117 Plot done`. The head parks at **X0 Y220 Z80**, left of the
       paper with the bed forward, so the sheet is free to take out.
@@ -258,7 +275,8 @@ validation run.
 - The page is always parked at the front-right corner, with no way to centre
   it: LUC-117.
 - There is no margin, so the plot came 0.8 mm from the front bed edge: LUC-119.
-- There is no frame to preview the plotted size: LUC-118.
+- There was no frame to preview the plotted size: LUC-118 added the optional
+  `--frame` and `--frame-pause` described above after this run.
 - Travel and Z moves were emitted as bare `G0` with no feedrate, so they ran at
   the last draw speed F1500: LUC-97 (fixed on `main` after this run).
 - Dark, high-contrast photos became a solid scribble with an unreadable face:

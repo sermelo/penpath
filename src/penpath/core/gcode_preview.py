@@ -17,6 +17,7 @@ type PenStyle = tuple[str, float]
 HEADER_RE: Final = re.compile(r"penpath\s+gcode\s*(.*)", re.IGNORECASE)
 FIELD_RE: Final = re.compile(r"([a-z_]+)=(\S+)", re.IGNORECASE)
 LAYER_RE: Final = re.compile(r"\blayer\b.*\bpen=(.+)$", re.IGNORECASE)
+FRAME_RE: Final = re.compile(r"\bframe\b.*\bpen=(.+)$", re.IGNORECASE)
 COORDINATE_RE: Final = re.compile(r"^([XYZ])([-+]?(?:\d*\.\d+|\d+\.?))", re.IGNORECASE)
 PAGE_RE: Final = re.compile(
     r"^([-+]?(?:\d*\.\d+|\d+\.?))\s*x\s*([-+]?(?:\d*\.\d+|\d+\.?))$", re.IGNORECASE
@@ -120,6 +121,10 @@ def _moves(text: str) -> list[_Move]:
         if layer is not None:
             moves.append(_Move(pen=layer.group(1).strip()))
             continue
+        frame = FRAME_RE.search(raw_line)
+        if frame is not None:
+            moves.append(_Move(pen=frame.group(1).strip()))
+            continue
         line = raw_line.split(";", 1)[0].strip()
         if not line:
             continue
@@ -172,9 +177,10 @@ def gcode_to_strokes(
     overrides ``paper_size_mm`` so an SVG page that differs from the bed inverts
     around the same height the emitter used, and the header's ``page_origin``
     overrides the profile's placement so a one-run margin override previews
-    correctly. ``pen_styles`` maps pen names to ``(color, width_mm)``; unknown
-    pens render black at 0.3 mm. Arcs and malformed coordinates raise
-    :class:`GcodePreviewError`.
+    correctly.     ``pen_styles`` maps pen names to ``(color, width_mm)``; unknown
+    pens render black at 0.3 mm. A ``; frame pen=NAME`` comment switches the pen
+    for a plotted frame, so ``pen_filter`` can select it. Arcs and malformed
+    coordinates raise :class:`GcodePreviewError`.
 
     When ``include_pen_up`` is true, straight two-point travel strokes are
     inserted between consecutive strokes whose endpoints are more than 0.01 mm

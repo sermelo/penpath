@@ -578,7 +578,10 @@ without a usable profile stays A4/page-sized with no bed outline.
 
 Layers use the width and colour of their pen from the built-in presets
 (`stabilo_88_*`, `red_fine`, ...); an unknown pen renders black at 0.3 mm because
-G-code carries no colours.
+G-code carries no colours. A frame written by `penpath gcode --frame` is ink in
+the file, so the G-code preview shows it too. It has its own `; frame pen=NAME`
+comment, which `--layer NAME` uses to select the frame even when its pen differs
+from the drawing's; the reviewed SVG and its preview are unchanged.
 
 #### Showing pen-up travel
 
@@ -639,6 +642,10 @@ penpath gcode DRAWING_SVG --profile NAME [OPTIONS]
 | `--at X,Y` | — | — | Put the page lower-left at pen-space bed millimetres, e.g. `20,10`; mutually exclusive with `--place` |
 | `--dry-run` | — | `false` | Write G-code to stdout; send every message to stderr |
 | `--fit/--no-fit` | — | `--fit` | Fit a page or drawing past the usable area into it (default), with a warning on stderr; `--no-fit` keeps the strict error |
+| `--frame` | — | `false` | Plot one closed rectangle around the page before the drawing |
+| `--frame-margin MM` | — | `2` | Distance in mm from the page edge to the frame; `0` is the page edge. Needs `--frame` |
+| `--frame-pen NAME` | — | first layer's pen | Pen name for the frame. Needs `--frame` |
+| `--frame-pause` | — | `false` | Pause with `M0` after the frame to check the paper. Needs `--frame` |
 
 Each Inkscape pen layer (`<g inkscape:groupmode="layer">`) becomes a G-code
 layer in document order, which is the drawing order of the pens. Strokes inside
@@ -745,6 +752,42 @@ coordinates, the per-axis overshoot and the fix:
 Error: point (x=187.431, y=170.000) mm is outside the usable area X 10.000..187.300, Y 10.000..181.400 mm (drawable area minus a 10.000 mm margin); overshoot x=0.131 mm, y=0.000 mm Pass --fit (the default) or use a smaller --paper.
 ```
 
+#### Drawing a frame first
+
+`--frame` is off by default. When on, it plots one closed rectangle before any
+drawing stroke so the paper size and position can be checked before the real
+plot. The library helper `penpath.core.frame_polyline(page_size_mm, margin_mm)`
+returns the polyline in SVG page millimetres: the page bounding box expanded by
+`--frame-margin` on all four sides, from `(-m, -m)` to `(W + m, H + m)`. With
+`--frame-margin 0` the frame lies exactly on the page edge. The rectangle starts
+2 mm along its closing edge and returns to that corner, so the last 2 mm of the
+edge is inked twice; the overlap is clamped to the shorter frame side.
+
+The emission order is the header/start block, the first layer's pen-change block
+when the profile needs one (`mode: each`), the frame stroke using the same
+ramped landing and Z heights as a normal stroke, then
+`M0 Frame drawn: check paper position, press knob to plot` if `--frame-pause`
+was given, followed by the first real layer's strokes and the other layers. The
+frame is the first pen-down move after the first touch/ramp, and no `M25` is
+emitted.
+
+By default the frame uses the first used layer's pen: there is no extra pen
+change and the frame is drawn once before layer 1. `--frame-pen NAME` picks
+another pen; if it differs, the profile's `pen_change.mode` decides the changes:
+`each` emits one change before the frame (with `pen_index=0`) and another before
+layer 1, while `between` and `none` emit none and the operator mounts that pen.
+No profile field is added. The stderr summary counts the frame's drawing length,
+pen-up travel, pen lifts and estimated time, but **Layers** stays the number of
+real SVG layers.
+
+The frame is part of the reachable-area check: the page plus the frame margin
+plus the ramp lead-in must fit the usable area. With `--fit` (the default) the
+frame and drawing shift or scale together under one warning that starts
+`Warning: drawing and frame are ...`; with `--no-fit` a frame point past the
+usable area is an exit-3 error naming the point and the fix. The frame is ink in
+the G-code, so `penpath preview card.gcode` shows it and `--layer <frame pen>`
+filters to it. `convert` and the reviewed SVG preview do not draw a frame.
+
 #### Ramped landing
 
 When a profile sets `pen.ramp_mm` together with `z_touch` and `z_hover`, each
@@ -763,10 +806,12 @@ exactly the same G-code as before. `pen.z_touch` must be above `pen.z_down` and
 `pen.z_hover` must not be below `pen.z_touch` when ramping.
 
 Exit codes: **2** for a missing or unknown `--profile` (the message lists the
-available profiles), giving both `--place` and `--at`, or an invalid `--at`
-value; **3** for an unreadable or invalid profile file, a page or drawing that
-cannot be fitted, or (with `--no-fit`) a page origin or point outside the usable
-area; and 1 for other file errors.
+available profiles), giving both `--place` and `--at`, an invalid `--at` value,
+a negative `--frame-margin`, or a `--frame-margin`, `--frame-pen` or
+`--frame-pause` without `--frame` (the message names `--frame`); **3** for an
+unreadable or invalid profile file, a page or drawing that cannot be fitted, or
+(with `--no-fit`) a page origin or point outside the usable area; and 1 for
+other file errors.
 
 #### Examples
 
@@ -790,6 +835,14 @@ penpath gcode card.svg --profile aquila --no-fit
 # Choose where the page sits: a named spot or an exact lower-left corner
 penpath gcode card.svg --profile aquila --place center -o centred.gcode
 penpath gcode card.svg --profile aquila --at 20,20 -o corner.gcode
+
+# See the plot size first: a 2 mm frame and a pause to check the paper.
+# A 160x160 page centred on the Aquila's usable area leaves room for the frame.
+penpath gcode card.svg --profile aquila --place center --frame --frame-pause -o card.gcode
+penpath preview card.gcode -o framed.png
+# The frame can use another pen and can sit on the page edge
+penpath gcode card.svg --profile aquila --place center --frame --frame-pen stabilo_88_red \
+  --frame-margin 0 -o red_frame.gcode
 ```
 
 The complete operator workflow and checklist for the Aquila, with the

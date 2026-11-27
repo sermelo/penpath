@@ -268,6 +268,60 @@ def test_preview_travel_changes_gcode_png_and_keeps_ink(runner: CliRunner, tmp_p
     assert any(pixel == (200, 200, 200) for pixel in travel.getdata())
 
 
+def _framed_gcode(tmp_path: Path, runner: CliRunner, *extra: str) -> Path:
+    """Write G-code for a 160 mm centred card with a frame."""
+    drawing = tmp_path / "framed.svg"
+    drawing.write_text(
+        f"""<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  width="160mm" height="160mm" viewBox="0 0 160 160">
+<g inkscape:groupmode="layer" inkscape:label="stabilo_88_black" id="layer1"
+  fill="none" stroke="{COLORS["stabilo_88_black"]}" stroke-width="0.3">
+<polyline points="20,20 140,20 140,140 20,140 20,20"/></g></svg>""",
+        encoding="utf-8",
+    )
+    gcode = drawing.with_suffix(".gcode")
+    result = runner.invoke(
+        main,
+        [
+            "gcode",
+            str(drawing),
+            "--profile",
+            "aquila",
+            "--place",
+            "center",
+            "--frame",
+            *extra,
+            "-o",
+            str(gcode),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    return gcode
+
+
+def test_gcode_preview_shows_the_frame_as_ink(runner: CliRunner, tmp_path: Path) -> None:
+    """The frame is plotted ink, outside the page outline, not another grey guide."""
+    gcode = _framed_gcode(tmp_path, runner)
+    image = _preview(runner, gcode, tmp_path / "frame.png")
+
+    assert image.size == (round(220 * DPI), round(220 * DPI))
+    assert image.getpixel((83, 500)) == (0, 0, 0)
+    assert image.getpixel((95, 500)) == (255, 255, 255)
+    assert image.getpixel((round(18.65 * DPI), 500)) == OUTLINE_RGB
+
+
+def test_gcode_preview_layer_can_show_only_the_frame(runner: CliRunner, tmp_path: Path) -> None:
+    """A frame pen is its own layer for `--layer` even when it differs from the ink."""
+    gcode = _framed_gcode(tmp_path, runner, "--frame-pen", "stabilo_88_red")
+    image = _preview(runner, gcode, tmp_path / "frame-layer.png", "--layer", "stabilo_88_red")
+    colors = set(image.getdata())
+
+    assert ImageColor.getrgb(COLORS["stabilo_88_red"]) in colors
+    assert (0, 0, 0) not in colors
+    assert OUTLINE_RGB in colors
+
+
 def test_preview_help_says_arcs_are_unsupported(runner: CliRunner) -> None:
     result = runner.invoke(main, ["preview", "--help"])
 
