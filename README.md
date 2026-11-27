@@ -77,7 +77,7 @@ writes the final SVG: vpype contributes geometry only.
 
 | Concept | Description |
 |---------|-------------|
-| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, and `contour` (scikit-image + Shapely outlines). |
+| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, `contour` (scikit-image + Shapely outlines), and `stipple` (weighted Poisson-disk dots). |
 | **Palette** | An ordered set of pens. Each pixel is drawn by its nearest palette colour; each used pen becomes one SVG layer. |
 | **Filters** | Image preprocessing: grayscale, threshold, blur, contrast, etc. Applied in order before PFM. |
 | **Geometry optimization** | Simplify (RDP), merge (collinear join), sort (greedy NN + 2-opt) — runs automatically. |
@@ -437,28 +437,37 @@ penpath convert photo.jpg --pen "0.4,#FF6600"
 penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 ```
 
-### PFMs and Contour presets
+### PFM presets (Contour, Stipple)
 
-`--pfm` selects `sketch_lines` (the default hatching algorithm) or `contour`,
-which traces clean outlines with scikit-image and Shapely. Each PFM accepts its
-own `-s KEY=VALUE` settings; `penpath info pfms` lists every PFM, its defaults
-and its presets.
+`--pfm` selects `sketch_lines` (the default hatching algorithm), `contour`
+(scikit-image + Shapely outlines), `sketch_squares` (grid hatching) or `stipple`
+(weighted Poisson-disk dots). Each PFM accepts its own `-s KEY=VALUE` settings;
+`penpath info pfms` lists every PFM, its defaults and its presets.
 
 | Preset | PFM | Character |
 |--------|-----|-----------|
 | `contour_portrait` | `contour` | Four threshold levels for internal detail; tuned on a face. |
 | `contour_silhouette` | `contour` | One threshold and a larger minimum speck size for a few bold outlines. |
+| `stipple_default` | `stipple` | 1–3 px dots: balanced tone and cost; the gate preset. |
+| `stipple_fine` | `stipple` | 0.5–1.5 px dots: finer, denser texture. |
+| `stipple_bold` | `stipple` | 1.5–5 px dots: fewer, longer marks with a coarser grain. |
 
 Simulated plot previews on the free Santa portrait:
 [contour_portrait](docs/images/luc-139/contour_portrait.png) ·
-[contour_silhouette](docs/images/luc-139/contour_silhouette.png). The
+[contour_silhouette](docs/images/luc-139/contour_silhouette.png) ·
+[stipple_default](docs/images/luc-140/stipple_default.png) ·
+[stipple_fine](docs/images/luc-140/stipple_fine.png) ·
+[stipple_bold](docs/images/luc-140/stipple_bold.png). The
 [Contour gate](docs/TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27)
-records the measured readability and plot cost; acceptance is by looking at the
+and the [Stipple gate](docs/TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27)
+record the measured readability and plot cost; acceptance is by looking at the
 previews, not by SSIM alone.
 
 ```bash
 penpath convert photo.jpg --pfm contour -o outlines.svg
 penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg
+penpath convert photo.jpg --pfm stipple_fine --no-vpype -s seed=42 -o dots.svg
+penpath preview dots.svg -o dots.png --dpi 4
 ```
 
 ### Palettes: one SVG layer per pen

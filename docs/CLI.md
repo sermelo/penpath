@@ -29,7 +29,7 @@
 ### `penpath convert` — Photo → SVG (Main Command)
 
 Convert a raster image to a plottable SVG using a Pen Follower Module (PFM):
-`sketch_lines` (the default), `sketch_squares` or `contour`.
+`sketch_lines` (the default), `sketch_squares`, `contour` or `stipple`.
 
 ```bash
 penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
@@ -107,7 +107,7 @@ with `--palette`: a single pen ignores them rather than failing.
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--pfm NAME` | — | `sketch_lines` | Registered PFM (`sketch_lines`, `sketch_squares` or `contour`), legacy preset or qualified `PFM:PRESET` id (see **PFM Presets** below) |
+| `--pfm NAME` | — | `sketch_lines` | Registered PFM (`sketch_lines`, `sketch_squares`, `contour` or `stipple`), legacy preset or qualified `PFM:PRESET` id (see **PFM Presets** below) |
 | `--pfm-setting KEY=VALUE` | `-s` | — | Setting of the selected PFM (repeatable). See **PFM Settings** below. |
 | `--style [sketch\|hatch\|outline]` | — | — | Saved look: chooses the Sketch Lines settings, and the outline pass for `outline`. See **Saved Looks** below. |
 | `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
@@ -356,6 +356,24 @@ To draw the image's full tonal range, including near-solid black, opt into
 rule instead of counting lines per millimetre, and `min_length` and
 `max_length` are image pixels rather than millimetres.
 
+#### PFM Settings (Stipple)
+
+With `--pfm stipple` (or a Stipple preset), every field of `StippleSettings` is
+accepted by `-s KEY=VALUE`. Dots are short two-point strokes, so one dot costs
+one pen lift. Invalid keys, values or out-of-range numbers exit 2 naming the
+setting, as with Sketch Lines.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `dot_density` | float | >0–10.0 | `1.0` | Multiplier on the target dot count: total darkness divided by the largest dot's area. Higher puts more dots on the page. |
+| `min_radius` | float | >0–100 px | `1.0` | Radius of the faintest dot in working-image pixels; dot length is twice the radius. Must be ≤ `max_radius`. |
+| `max_radius` | float | >0–100 px | `3.0` | Radius on a perfectly black pixel. It also sets the target count and the largest exclusion radius. Must be ≥ `min_radius`. |
+| `jitter` | float | 0–1 | `1.0` | Dot angle jitter in quarter turns: `0` draws every dot horizontally, `1` allows any orientation. |
+| `seed` | int or `null` | any | `null` | Fix the random seed for byte-identical reruns. |
+| `max_strokes` | int | ≥1 | `10000` | Hard cap on dots and therefore on pen lifts. |
+
+**Example**: `penpath convert photo.jpg --pfm stipple_fine -s seed=42 --no-vpype`
+
 #### PFM Settings (Contour)
 
 With `--pfm contour` (or a Contour preset), every field of `ContourSettings` is
@@ -399,13 +417,14 @@ setting, as with Sketch Lines):
 
 #### PFM Presets (`--pfm NAME`)
 
-`--pfm` accepts a registered algorithm name (`sketch_lines`, `sketch_squares`
-or `contour`), a legacy bare preset name, or a qualified `PFM:PRESET` id. A
+`--pfm` accepts a registered algorithm name (`sketch_lines`, `sketch_squares`,
+`contour` or `stipple`), a legacy bare preset name, or a qualified `PFM:PRESET` id. A
 preset supplies a bundle of the selected PFM's settings and any `-s` override
 is applied on top with that PFM's field types. The qualified ids are
-unambiguous; bare names are the legacy Sketch Lines (and Contour) preset
-names, so a bare `fine` still means `sketch_lines:fine`. A bare name that only
-exists for another PFM is rejected with the qualified id in the message. Run
+unambiguous; bare names are the legacy Sketch Lines, Contour and Stipple preset
+names, so a bare `fine` still means
+`sketch_lines:fine`. A bare name that only exists for another PFM is rejected
+with the qualified id in the message. Run
 `penpath info pfms` to list every PFM, its defaults and presets.
 
 Legacy Sketch Lines preset ids (`sketch_lines:NAME`, bare `NAME` also works):
@@ -436,12 +455,24 @@ Sketch Squares presets (use the qualified id; a bare name is rejected):
 | `sketch_squares:fine` | Short, detailed strokes (density 0.9, segments 2–30 px). |
 | `sketch_squares:crosshatch-grid` | Near-horizontal/vertical woven grid (`grid_angle=0`, segments 4–60 px). |
 
+Stipple presets (bare names work; the algorithm defaults are `--pfm stipple`):
+
+| Preset | Character |
+|--------|-----------|
+| `stipple_default` | 1–3 px dots: balanced tone and cost; the gate preset. |
+| `stipple_fine` | 0.5–1.5 px dots: finer, denser texture. |
+| `stipple_bold` | 1.5–5 px dots: fewer, longer marks with a coarser grain. |
+
 The presets on the free Santa portrait are
-[`contour_portrait`](images/luc-139/contour_portrait.png) and
-[`contour_silhouette`](images/luc-139/contour_silhouette.png). The
+[`contour_portrait`](images/luc-139/contour_portrait.png),
+[`contour_silhouette`](images/luc-139/contour_silhouette.png),
+[`stipple_default`](images/luc-140/stipple_default.png),
+[`stipple_fine`](images/luc-140/stipple_fine.png) and
+[`stipple_bold`](images/luc-140/stipple_bold.png). The
 [Contour gate](TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27)
-records measured edge alignment and plot cost; visual acceptance is by looking
-at the previews, not by SSIM alone.
+and the [Stipple gate](TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27)
+record measured readability and plot cost; visual acceptance is by looking at
+the previews, not by SSIM alone.
 
 The three Square presets on the free Santa portrait are
 [`coarse`](images/luc-137/santa_coarse.png),
@@ -452,11 +483,12 @@ records measured readability, plot cost and the blank/random baselines; visual
 acceptance is by looking at the previews, not by SSIM alone.
 
 The three hatch presets and `squiggly` are style choices: they deliberately
-give up photo likeness for a particular look. Only `sketch_lines:default` is
-calibrated against the likeness gate in
-[docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47); Sketch Squares
-has its own gate linked above. Running `--pfm sketch_squares` with no preset
-uses the algorithm defaults above.
+give up photo likeness for a particular look. `sketch_lines:default` is
+calibrated against the [Sketch Lines gate](TESTING.md#sketch-lines-likeness-gate-luc-47)
+and `stipple_default` against the
+[Stipple gate](TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27);
+Sketch Squares has its own gate linked above. Running `--pfm sketch_squares` or
+`--pfm stipple` with no preset uses the algorithm defaults above.
 
 #### Filters (Applied in Order)
 
@@ -1014,7 +1046,7 @@ shows a `Margin (mm)` column with the same value, printing `10` or `10/5/10/5`.
 
 `penpath info pfms` lists every registered PFM with its `name`,
 `settings_model`, `default_settings`, its `presets` (legacy bare names for
-`sketch_lines` and `contour`, qualified ids for `sketch_squares`) and qualified
+`sketch_lines`, `contour` and `stipple`, qualified ids for `sketch_squares`) and qualified
 `preset_ids` such as `sketch_squares:crosshatch-grid`; `--format json` and
 `--format yaml` print the same fields for scripts.
 

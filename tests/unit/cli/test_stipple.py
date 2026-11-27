@@ -41,6 +41,12 @@ def test_info_pfms_lists_stipple_and_its_presets() -> None:
         assert name in data["presets"]
 
 
+def test_convert_help_lists_stipple() -> None:
+    result = CliRunner().invoke(main, ["convert", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "stipple" in result.output
+
+
 def test_convert_with_stipple_and_seed_writes_an_svg(tmp_path: Path) -> None:
     image = _portrait(tmp_path / "portrait.png")
     output = tmp_path / "stipple.svg"

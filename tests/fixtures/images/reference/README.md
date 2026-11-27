@@ -1,10 +1,11 @@
 # Reference images
 
 This directory holds the fixed image set used by the Sketch Lines likeness gate
-(LUC-47) and the Contour readability gate (LUC-146). The images are small,
-free-licence, and committed so that every run of
-`tests/integration/test_sketch_lines_gate.py` and
-`tests/integration/test_contour_gate.py` measures the same drawing problem.
+(LUC-47), the Contour readability gate (LUC-146) and the Stipple likeness and
+plot-cost gate (LUC-154). The images are small, free-licence, and committed so
+that every run of `tests/integration/test_sketch_lines_gate.py`,
+`tests/integration/test_contour_gate.py` and
+`tests/integration/test_stipple_gate.py` measures the same drawing problem.
 All files are at most 500 KB.
 
 | File | What it is | Size (px) | Source | Licence | Author |
