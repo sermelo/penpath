@@ -146,6 +146,17 @@ def mostly_white_source(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def cream_source(tmp_path: Path) -> Path:
+    """A cream page with the same thin dark square; its paper is far from white."""
+    image = Image.new("RGB", (200, 200), (255, 253, 208))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([80, 80, 119, 119], outline=(20, 20, 20), width=2)
+    path = tmp_path / "cream.png"
+    image.save(path)
+    return path
+
+
+@pytest.fixture
 def near_blank_plot(tmp_path: Path) -> Path:
     """One tiny stroke in the middle of the dark square."""
     path = tmp_path / "near_blank.svg"
@@ -692,6 +703,22 @@ class TestEvaluateMaskedLikeness:
         assert data["likeness"] == pytest.approx(0.9605, abs=0.001)
         assert data["masked_likeness"] == pytest.approx(0.0260, abs=0.001)
         assert data["likeness"] > 0.9
+        assert data["masked_likeness"] < data["likeness"] - 0.5
+
+    def test_mask_uses_detected_source_paper_not_paper_color(
+        self, runner: CliRunner, cream_source: Path, near_blank_plot: Path
+    ) -> None:
+        result = runner.invoke(
+            main, ["evaluate", str(cream_source), str(near_blank_plot), "--json"]
+        )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        # Cream (#FFFDD0) is over 10 Delta-E from the default white plot paper.
+        # If --paper-color leaked into the source mask, every cream pixel would
+        # be ink and this would score near the whole-page value instead.
+        assert data["likeness"] > 0.9
+        assert data["masked_likeness"] < 0.15
         assert data["masked_likeness"] < data["likeness"] - 0.5
 
     def test_matching_plot_scores_clearly_higher_on_ink(
