@@ -1323,6 +1323,8 @@ paper:
   # or inline:
   # size_mm: [210, 297]
   # margin_mm: 10
+  # or four per-side margins in [top, right, bottom, left] order:
+  # margin_mm: [10, 20, 10, 20]
 
 output:
   path: "plot.svg"
@@ -1629,6 +1631,10 @@ with its coordinates instead of writing G-code the machine cannot follow.
 | `square_300` | 300 × 300 | 10 all sides |
 
 **Inline Format**: `WIDTHxHEIGHT[,MARGIN]` — e.g., `210x297,10` or `300x200,15`
+
+**Project files** accept a scalar `paper.margin_mm` for all four sides or a
+four-item list `[top, right, bottom, left]`; both round-trip through `save_yaml`.
+The drawable area insets each side by its own margin and starts at `(left, top)`.
 
 ---
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, Field, SerializeAsAny, field_validator, model_validator
 
@@ -15,6 +15,11 @@ from penpath.core.styles import StyleName
 
 if TYPE_CHECKING:
     from penpath.core.image.pipeline import FilterPipeline
+
+_MmNonNegative = Annotated[float, Field(ge=0.0)]
+_MarginValue = (
+    _MmNonNegative | tuple[_MmNonNegative, _MmNonNegative, _MmNonNegative, _MmNonNegative]
+)
 
 
 class Pen(BaseModel):
@@ -90,8 +95,10 @@ class Paper(BaseModel):
         Paper width in millimetres.
     height_mm : float
         Paper height in millimetres.
-    margin_mm : float
-        Margin around the drawable area in millimetres.
+    margin_mm : float | tuple[float, float, float, float]
+        Margin around the drawable area in millimetres. One non-negative number
+        is used on all four sides; four numbers set top, right, bottom, left.
+        The raw value is kept; use ``margins_mm`` for the normalized tuple.
     background_color : str
         Paper background color as hex string or named CSS color.
     dpi : int
@@ -101,7 +108,10 @@ class Paper(BaseModel):
     name: str = Field(..., min_length=1)
     width_mm: float = Field(..., gt=0.0, le=2000.0)
     height_mm: float = Field(..., gt=0.0, le=2000.0)
-    margin_mm: float = Field(default=10.0, ge=0.0, le=100.0)
+    margin_mm: _MarginValue = 10.0
+    """Single non-negative number for all four sides, or four non-negative
+    numbers in ``[top, right, bottom, left]`` order. Lists are normalized to a
+    tuple by pydantic, so the raw value is either a float or a four-tuple."""
     background_color: str = Field(default="#FFFFFF")
     dpi: int = Field(default=300, ge=72, le=2400)
 
@@ -120,14 +130,29 @@ class Paper(BaseModel):
         return v
 
     @property
+    def margins_mm(self) -> tuple[float, float, float, float]:
+        """Return the four margins in ``(top, right, bottom, left)`` order."""
+        if isinstance(self.margin_mm, tuple):
+            return self.margin_mm
+        return (self.margin_mm, self.margin_mm, self.margin_mm, self.margin_mm)
+
+    @property
+    def drawable_origin_mm(self) -> tuple[float, float]:
+        """Return the drawable area's top-left corner as (left, top) in paper millimetres."""
+        top, _, _, left = self.margins_mm
+        return (left, top)
+
+    @property
     def drawable_width_mm(self) -> float:
         """Width of the drawable area in millimetres."""
-        return self.width_mm - 2 * self.margin_mm
+        _, right, _, left = self.margins_mm
+        return self.width_mm - left - right
 
     @property
     def drawable_height_mm(self) -> float:
         """Height of the drawable area in millimetres."""
-        return self.height_mm - 2 * self.margin_mm
+        top, _, bottom, _ = self.margins_mm
+        return self.height_mm - top - bottom
 
     def to_vpype_page_size(self) -> str:
         """Generate vpype page size string (e.g., '210x297mm')."""
