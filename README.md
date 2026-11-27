@@ -77,7 +77,7 @@ writes the final SVG: vpype contributes geometry only.
 
 | Concept | Description |
 |---------|-------------|
-| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, `contour` (scikit-image + Shapely outlines), and `stipple` (weighted Poisson-disk dots). |
+| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, `contour` (scikit-image + Shapely outlines), `stipple` (weighted Poisson-disk dots) and `spiral_sawtooth` (continuous-line sawtooth spiral, ported from DrawingBotV3). Run `penpath info pfms` for the full list. |
 | **Palette** | An ordered set of pens. Each pixel is drawn by its nearest palette colour; each used pen becomes one SVG layer. |
 | **Filters** | Image preprocessing: grayscale, threshold, blur, contrast, etc. Applied in order before PFM. |
 | **Geometry optimization** | Simplify (RDP), merge (collinear join), sort (greedy NN + 2-opt) — runs automatically. |
@@ -144,6 +144,9 @@ penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
 # Grid hatching bends short strokes into a structured, graphic page; presets set the look
 penpath convert photo.jpg --pfm sketch_squares -s seed=42
 penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -s seed=42
+
+# Spiral Sawtooth draws one continuous line; -s tunes ring spacing and teeth
+penpath convert photo.jpg --pfm spiral_sawtooth:fine -s ring_spacing=4 -o spiral.svg
 
 # Opt into the full tonal range (solid black areas included)
 penpath convert photo.jpg -s max_fill=100 -o full-range.svg

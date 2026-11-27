@@ -28,8 +28,9 @@
 
 ### `penpath convert` — Photo → SVG (Main Command)
 
-Convert a raster image to a plottable SVG using a Pen Follower Module (PFM):
-`sketch_lines` (the default), `sketch_squares`, `contour` or `stipple`.
+Convert a raster image to a plottable SVG using a Pen Follower Module (PFM).
+`sketch_lines` is the default; run `penpath info pfms` to list every registered
+PFM, its settings and its presets.
 
 ```bash
 penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
@@ -107,7 +108,7 @@ with `--palette`: a single pen ignores them rather than failing.
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--pfm NAME` | — | `sketch_lines` | Registered PFM (`sketch_lines`, `sketch_squares`, `contour` or `stipple`), legacy preset or qualified `PFM:PRESET` id (see **PFM Presets** below) |
+| `--pfm NAME` | — | `sketch_lines` | Registered PFM, legacy preset or qualified `PFM:PRESET` id (see **PFM Presets** below). Run `penpath info pfms` to list them. |
 | `--pfm-setting KEY=VALUE` | `-s` | — | Setting of the selected PFM (repeatable). See **PFM Settings** below. |
 | `--style [sketch\|hatch\|outline]` | — | — | Saved look: chooses the Sketch Lines settings, and the outline pass for `outline`. See **Saved Looks** below. |
 | `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
@@ -415,16 +416,43 @@ setting, as with Sketch Lines):
 
 **Example**: `penpath convert photo.jpg --pfm sketch_squares -s grid_angle=0 -s seed=42`
 
+#### PFM Settings (Spiral Sawtooth)
+
+Select this PFM with `--pfm spiral_sawtooth`. It walks outwards from a centre
+point and draws a radial sawtooth at every step: dark samples make longer teeth
+and slow the angular step, so the spiral follows the image's tones in one
+continuous stroke. Every field of `SpiralSettings` is accepted by `-s
+KEY=VALUE` with the same boolean spellings as Sketch Lines; invalid keys,
+values or out-of-range numbers exit 2 naming the setting.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `spiral_type` | str | `archimedean`, `parabolic` | `archimedean` | One spiral in one pass, or two opposed branches in two passes. Parabolic also divides ring spacing and velocity by 10 and amplitude by 1.5. |
+| `centre_x` | float | 0–1 | `0.5` | Centre X as a fraction of image width; `0.5` is the middle. |
+| `centre_y` | float | 0–1 | `0.5` | Centre Y as a fraction of image height; `0.5` is the middle. |
+| `spiral_size` | float | 0.05–1 | `1.0` | Fraction of the largest spiral that fits from the centre, measured against the nearest page edge on each axis with the tooth reach reserved. |
+| `ring_spacing` | float | >0–1000 px | `7.0` | Distance between turns in working-image pixels; smaller resolves more detail. |
+| `amplitude` | float | 0–10 | `1.0` | Tooth multiplier; a tooth reaches at most `ring_spacing/2 * amplitude` pixels either side of the spiral. |
+| `variable_velocity` | bool | — | `true` | Ease the angular step by luminance; off uses `min_velocity` for every step. |
+| `min_velocity` | float | 1–3600 | `50.0` | Slowest angular step; lower draws more teeth. Must be ≤ `max_velocity`. |
+| `max_velocity` | float | 1–3600 | `150.0` | Fastest angular step. Must be ≥ `min_velocity`. |
+| `connected_lines` | bool | — | `true` | Join consecutive teeth into one stroke per pass; off emits one two-point stroke per tooth. |
+| `ignore_white` | bool | — | `false` | Skip teeth on near-white samples (luminance ≥ 240), breaking a stroke over paper or palette layers. |
+| `seed` | int or `null` | any | `null` | Accepted for API symmetry; the algorithm is deterministic, so a seed is a documented no-op. |
+| `max_strokes` | int or `null` | ≥1 | `null` | Optional cap on emitted strokes, mainly for disconnected output. |
+
+**Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s ring_spacing=5 -s amplitude=0.8`
+
 #### PFM Presets (`--pfm NAME`)
 
-`--pfm` accepts a registered algorithm name (`sketch_lines`, `sketch_squares`,
-`contour` or `stipple`), a legacy bare preset name, or a qualified `PFM:PRESET` id. A
-preset supplies a bundle of the selected PFM's settings and any `-s` override
-is applied on top with that PFM's field types. The qualified ids are
-unambiguous; bare names are the legacy Sketch Lines, Contour and Stipple preset
-names, so a bare `fine` still means
-`sketch_lines:fine`. A bare name that only exists for another PFM is rejected
-with the qualified id in the message. Run
+`--pfm` accepts a registered algorithm name such as `sketch_lines`,
+`sketch_squares`, `contour`, `stipple` or `spiral_sawtooth`, a legacy bare
+preset name, or a qualified `PFM:PRESET` id. A preset supplies a bundle of the
+selected PFM's settings and any `-s` override is applied on top with that
+PFM's field types. The qualified ids are unambiguous; bare names are the
+legacy Sketch Lines, Contour and Stipple preset names, so a bare `fine` still
+means `sketch_lines:fine`. A bare name that only exists for another PFM is
+rejected with the qualified id in the message. Run
 `penpath info pfms` to list every PFM, its defaults and presets.
 
 Legacy Sketch Lines preset ids (`sketch_lines:NAME`, bare `NAME` also works):
@@ -462,6 +490,20 @@ Stipple presets (bare names work; the algorithm defaults are `--pfm stipple`):
 | `stipple_default` | 1–3 px dots: balanced tone and cost; the gate preset. |
 | `stipple_fine` | 0.5–1.5 px dots: finer, denser texture. |
 | `stipple_bold` | 1.5–5 px dots: fewer, longer marks with a coarser grain. |
+
+Spiral Sawtooth presets (use the qualified id; bare `fine` and `bold` keep
+their Sketch Lines meaning):
+
+| Preset id | Character |
+|-----------|-----------|
+| `spiral_sawtooth:fine` | Tight rings and short teeth for finer detail (spacing 5 px, amplitude 0.8, velocity 40–100). |
+| `spiral_sawtooth:bold` | Wider rings and larger teeth for a graphic look (spacing 12 px, amplitude 2, velocity 60–200). |
+| `spiral_sawtooth:parabolic` | Two opposed parabolic branches (`spiral_type=parabolic`). |
+
+The `-s KEY=VALUE` rule applies to every preset: `-s` wins over the preset's
+value, and an invalid key or value exits 2 naming the setting. The bare legacy
+names (`default`, `fine`, `bold`, and the Contour names) keep their old meaning
+or are rejected, never silently reassigned to a new PFM.
 
 The presets on the free Santa portrait are
 [`contour_portrait`](images/luc-139/contour_portrait.png),
@@ -521,6 +563,10 @@ penpath convert photo.jpg -o plot.svg -f grayscale -f "posterize:levels=4" -s li
 # Grid-hatched drawing with Sketch Squares (algorithm defaults or a qualified preset)
 penpath convert photo.jpg -o squares.svg --pfm sketch_squares -s seed=42
 penpath convert photo.jpg -o grid.svg --pfm sketch_squares:crosshatch-grid -s seed=42
+
+# Continuous-line Spiral Sawtooth (algorithm defaults, a preset, or -s overrides)
+penpath convert photo.jpg -o spiral.svg --pfm spiral_sawtooth
+penpath convert photo.jpg -o spiral_fine.svg --pfm spiral_sawtooth:fine
 
 # Using project file
 penpath convert --project my_project.yaml
@@ -1046,9 +1092,15 @@ shows a `Margin (mm)` column with the same value, printing `10` or `10/5/10/5`.
 
 `penpath info pfms` lists every registered PFM with its `name`,
 `settings_model`, `default_settings`, its `presets` (legacy bare names for
-`sketch_lines`, `contour` and `stipple`, qualified ids for `sketch_squares`) and qualified
-`preset_ids` such as `sketch_squares:crosshatch-grid`; `--format json` and
-`--format yaml` print the same fields for scripts.
+`sketch_lines`, `contour` and `stipple`, qualified ids for `sketch_squares` and
+`spiral_sawtooth`) and qualified `preset_ids` such as
+`sketch_squares:crosshatch-grid` and `spiral_sawtooth:fine`; `--format json` and
+`--format yaml` print the same fields for scripts. It is the source of truth
+for the `--pfm` choices:
+
+```bash
+penpath info pfms --format json | python -c 'import json,sys; print([p["name"] for p in json.load(sys.stdin)["available_pfms"]])'
+```
 
 #### `penpath info palette-match`
 

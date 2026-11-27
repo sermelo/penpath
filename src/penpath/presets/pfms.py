@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from penpath.core.drawing.pfm_contour import ContourSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
+from penpath.core.drawing.pfm_spiral import SpiralSettings
 from penpath.core.drawing.pfm_stipple import StippleSettings
 from penpath.core.drawing.registry import get_pfm, list_pfms
 
@@ -143,6 +144,22 @@ SKETCH_SQUARES_PRESETS: dict[str, SketchSquaresSettings] = {
     ),
 }
 
+SPIRAL_PRESETS: dict[str, SpiralSettings] = {
+    "fine": SpiralSettings(
+        ring_spacing=5.0,
+        amplitude=0.8,
+        min_velocity=40.0,
+        max_velocity=100.0,
+    ),
+    "bold": SpiralSettings(
+        ring_spacing=12.0,
+        amplitude=2.0,
+        min_velocity=60.0,
+        max_velocity=200.0,
+    ),
+    "parabolic": SpiralSettings(spiral_type="parabolic"),
+}
+
 DEFAULT_PFM = "default"
 
 PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
@@ -194,6 +211,9 @@ register_pfm_preset("stipple_bold", "stipple", StippleSettings(min_radius=1.5, m
 
 for _preset_name, _preset_settings in SKETCH_SQUARES_PRESETS.items():
     register_pfm_preset(f"sketch_squares:{_preset_name}", "sketch_squares", _preset_settings)
+
+for _spiral_name, _spiral_settings in SPIRAL_PRESETS.items():
+    register_pfm_preset(f"spiral_sawtooth:{_spiral_name}", "spiral_sawtooth", _spiral_settings)
 
 PFM_PRESET_TYPES: dict[str, str] = {
     **{f"sketch_lines:{name}": "sketch_lines" for name in PFM_PRESETS},
@@ -320,6 +340,7 @@ __all__ = [
     "PFM_PRESET_OWNERS",
     "PFM_PRESET_TYPES",
     "SKETCH_SQUARES_PRESETS",
+    "SPIRAL_PRESETS",
     "get_pfm_for_preset",
     "get_pfm_preset",
     "get_pfm_preset_by_id",
