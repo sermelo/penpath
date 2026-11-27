@@ -454,10 +454,10 @@ class TestInfoCommand:
         assert [row["order"] for row in rows] == list(range(1, 13))
         assert [row["name"] for row in rows][:3] == [
             "stabilo_88_yellow",
-            "stabilo_88_cyan",
             "stabilo_88_light_blue",
+            "stabilo_88_light_green",
         ]
-        assert [row["name"] for row in rows][-1] == "stabilo_88_green"
+        assert [row["name"] for row in rows][-1] == "stabilo_88_black"
         assert all(row["width_mm"] == 0.4 for row in rows)
 
     def test_info_palettes_table(self, runner: CliRunner) -> None:
@@ -476,8 +476,8 @@ class TestInfoCommand:
         assert [p["name"] for p in data["builtin_palettes"]] == ["stabilo_88"]
         assert [row["name"] for row in data["palette_pens"]][:3] == [
             "stabilo_88_yellow",
-            "stabilo_88_cyan",
             "stabilo_88_light_blue",
+            "stabilo_88_light_green",
         ]
 
     def test_info_pfms(self, runner: CliRunner) -> None:
