@@ -56,3 +56,19 @@ def test_contour_runs_once_per_pen_with_a_small_palette(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert list_svg_layers(output) == [("layer1", "red"), ("layer2", "blue")]
     assert len(parse_svg_strokes(output)) > 0
+
+
+def test_contour_help_and_bad_input_are_clear(tmp_path: Path) -> None:
+    runner = CliRunner()
+    help_result = runner.invoke(main, ["convert", "--help"])
+    assert help_result.exit_code == 0
+    assert "contour" in help_result.output
+
+    bad_pfm = _convert(_FACE, tmp_path / "bad.svg", "--pfm nope")
+    assert bad_pfm.exit_code == 2
+    assert "Unknown PFM or preset" in bad_pfm.output
+    assert "contour" in bad_pfm.output
+
+    bad_key = _convert(_FACE, tmp_path / "bad.svg", "--pfm contour -s line_density=1")
+    assert bad_key.exit_code == 2
+    assert "Unknown PFM setting" in bad_key.output
