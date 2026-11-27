@@ -1686,3 +1686,96 @@ Every committed preview was opened with the `read` tool and compared with
 | [santa_coarse.png](../images/luc-137/santa_coarse.png) | Sparse long diagonal strokes fill the dark background and coat while the face, brim and beard stay pale and empty. The hat and shoulder silhouettes read, but the glasses frames and individual beard locks are not resolved. |
 | [santa_fine.png](../images/luc-137/santa_fine.png) | A much denser bent grid crowds the background and red coat into near-solid tone; the face and beard remain a large light negative space with the nose and smiling mouth suggested by gaps. Even more than `coarse`, it trades facial detail for a structured, graphic texture. |
 | [santa_crosshatch-grid.png](../images/luc-137/santa_crosshatch-grid.png) | Near-horizontal and near-vertical strokes weave a tighter grid than `coarse`: the hat brim edge, face outline and beard mass still read as light shapes against the hatched coat and dark room, while glasses and small beard texture are lost in the weave. |
+
+## Stipple likeness and plot cost gate (LUC-154, 2026-11-27)
+
+The Stipple PFM is accepted by **looking at the previews**. SSIM is printed as
+evidence but never used as a floor: on a smooth gradient or a dark portrait a
+blank page often scores higher than a plotted dot pattern because SSIM rewards
+large flat areas. The gate instead asks each drawing to cover the placed image,
+spread ink across all 4x4 cells and follow the source tone, while a blank page and
+a seeded random scribble fail at least one enforced floor.
+
+Reproduce the numbers with:
+
+```bash
+uv run pytest tests/integration/test_stipple_gate.py -s
+uv run python tests/integration/stipple_gate.py
+```
+
+The harness (`tests/integration/stipple_gate.py`) runs the real `penpath convert`
+CLI on all six committed references with the `stipple_default` preset, seed 42,
+a 190x190 mm page with a 10 mm margin, a 0.4 mm pen, `--dpi 96`,
+`--max-resolution 512` and `--no-vpype`. It reuses the Sketch Lines gate's
+`simulate_plot`, `measure_plot` and `compute_likeness` helpers without changing
+that gate. Machine cost comes from `compute_machine_cost` on the parsed SVG.
+The random baseline uses the same number of seeded two-point strokes as the
+drawing; the blank baseline keeps the same page and placement metadata.
+
+### Measured values
+
+Measured on Python 3.14.10 with the command above. SSIM is shown as
+algorithm / blank / random; the other columns are the algorithm's values.
+
+| image | SSIM a/b/r | cov W | cov H | bbox | ink min | tone | strokes | length mm | travel mm | lifts |
+|-------|------------|------:|------:|-----:|--------:|-----:|--------:|----------:|----------:|------:|
+| `circle.png` | 0.5190 / 0.4848 / 0.3592 | 0.758 | 0.756 | 0.573 | 0.0005 | 246.22 | 2500 | 6375.0 | 3782.3 | 2499 |
+| `gradient.png` | 0.3742 / 0.6508 / 0.0515 | 0.886 | 0.997 | 0.883 | 0.0016 | 66.49 | 3099 | 5126.1 | 4910.3 | 3097 |
+| `sphere.png` | 0.7134 / 0.7405 / 0.1008 | 0.753 | 0.753 | 0.567 | 0.0007 | 474.38 | 1169 | 2455.8 | 2553.4 | 1168 |
+| `face.jpg` | 0.3115 / 0.2618 / 0.0355 | 0.998 | 0.998 | 0.996 | 0.0148 | 21.59 | 4715 | 8539.0 | 6688.1 | 4714 |
+| `photo.jpg` | 0.3062 / 0.4993 / 0.0407 | 0.998 | 0.997 | 0.995 | 0.0092 | 10.65 | 3626 | 6136.8 | 5676.6 | 3625 |
+| `santa.jpg` | 0.1984 / 0.1599 / 0.0952 | 0.997 | 0.998 | 0.995 | 0.0119 | 8.51 | 5535 | 10358.7 | 7566.7 | 5534 |
+
+The blank page scores 0 covered width, height and bbox and a tone ratio of 1.00
+on every image. The random scribble spans 1.000 of both axes and about 0.999 of
+the area, puts at least 0.0435 of its ink in every cell and reaches a tone ratio
+of at most 1.78 (`sphere.png`). The ideal tone map scores 0.9898–0.9998 SSIM and
+is evidence only, as in the Sketch Lines gate.
+
+### Enforced floors and caps
+
+| Measure | Floor / cap | Derivation |
+|---------|------------:|------------|
+| Covered width | >= 0.70 | Weakest drawing 0.753 (`sphere.png`); `measured - 0.05 = 0.703`, rounded down. |
+| Covered height | >= 0.70 | Weakest drawing 0.753 (`sphere.png`); same margin. |
+| Bounding-box area | >= 0.51 | Weakest drawing 0.567 (`sphere.png`); `0.567 - 0.05 = 0.517`, rounded down. |
+| Ink per 4x4 cell | >= 0.0004 | Weakest drawing 0.0005 (`circle.png`); 5% margin `0.000475`, rounded down. |
+| Dark/light tone ratio | >= 8.0 | Weakest drawing 8.51 (`santa.jpg`); 5% margin `8.08`, rounded down. The random scribble reaches only 1.78, so this floor rejects it for every image. |
+| Strokes | <= `max_strokes` (10000) | Hard cap in `StippleSettings`; worst measurement is 5535 (`santa.jpg`). |
+| Drawing length | <= 20000 mm | About twice the worst measurement (10358.7 mm), rounded down to a round number, as in the basic-shapes gate. |
+| Pen-up travel | <= 14000 mm | Same rule on the worst measurement (7566.7 mm). |
+| Pen lifts | <= 10000 | Same rule on the worst measurement (5534 lifts); also the stroke cap. |
+| Tiny segments (<0.5 mm) | 0 and share 0 | Every dot is 1–10 px long; measured 0 on all six images. |
+
+The floors follow the project rule from the Sketch Lines gate: `max(blank,
+random) + margin`, never below `measured - margin`. The four spread measures
+are the documented fallback case — a random scribble with as many full-page
+two-point strokes as the drawing trivially spans the whole placement, so a
+floor above it would demand more than full coverage. Those floors are therefore
+derived from `measured - margin` and are quality floors; the blank page fails
+all five of them and the tone floor rejects the random scribble on every
+reference. SSIM is never used as a floor: it is below the blank page on
+`gradient.png`, `sphere.png` and `photo.jpg`.
+
+`test_stipple_plot_cost_is_bounded` also checks that every stroke is valid,
+inside the page and free of zero-length segments, and that the reported stroke
+count matches the machine-cost count. `test_two_pen_palette_runs_once_per_pen`
+checks that a synthetic red/blue two-pen image runs the PFM once per pen: the
+SVG has exactly `red` and `blue` layers, each 0.4 mm, with at least 90% of its
+dots in its own half of the page and no cross-pen colour mixing.
+
+### Visual acceptance (required)
+
+All three preset previews were opened with the `read` tool and compared with
+`santa.jpg` by eye; none returned an image error. They are 570x570 px renders of
+the real CLI output (`--paper 190x190,10 --pen 0.4 -s seed=42 --no-vpype`,
+`preview --dpi 3`, each step under `timeout 120`).
+
+| preset | preview | What is visible |
+|--------|---------|-----------------|
+| `stipple_default` | [stipple_default.png](../images/luc-140/stipple_default.png) | Santa is readable: the dark hat, background and red coat are dense short dashes, the white beard and hat brim stay mostly empty paper, and the glasses and eyes read as a darker cluster inside the face. |
+| `stipple_fine` | [stipple_fine.png](../images/luc-140/stipple_fine.png) | The same portrait with smaller, more numerous marks: smoother tone in the dark coat and hat, finer speckle in the beard and clearer stippled eyebrows and glasses, but a denser page overall. |
+| `stipple_bold` | [stipple_bold.png](../images/luc-140/stipple_bold.png) | Coarser, longer dashes: the dark hat, background and red coat keep their masses, the face simplifies to a few marks around the glasses, and the beard reads as broad white gaps between visibly individual strokes. |
+
+No shipped default was changed by this gate: `StippleSettings()` and its three
+presets already pass every floor and cap above.
