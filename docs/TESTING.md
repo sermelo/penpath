@@ -261,6 +261,54 @@ G-code; the faint grey lines connect the four separated shapes.
 - **Rationale**: SSIM correlates well with human perception of structural similarity. The downscale to 256×256 makes scoring fast and resolution-independent. Blur sigma of 1.5 (at 256px) smooths pen stroke texture while preserving overall form, so a well-hatched drawing scores high even if individual strokes don't perfectly match pixel positions.
 - **Acceptance**: Matching drawing (hatched square vs square image) scores >0.7; empty drawing scores <0.3; different shape scores clearly lower. Ordering of scores is tested, not exact values.
 
+### Edge-aware likeness (LUC-135)
+
+`penpath.core.likeness.compute_edge_likeness` reuses the same placement crop
+and greyscale preparation, takes `skimage.filters.sobel` of both prepared
+images, divides **both** edge maps by one shared maximum, runs SSIM with
+`data_range=1.0` and `win_size=7`, and clips to [0, 1]. Two uniform images have
+zero edge maps and score 1.0. `penpath evaluate` reports this as
+`edge_likeness` in `--json` and as `Edge SSIM` in the human table. It is a
+diagnostic only: no LUC-47, LUC-78 or LUC-86 floor changes.
+
+The reported blind spot is committed as the synthetic pencil-on-pale-grey
+image and the `pencil_palette_before_background.svg` drawing (a light-blue
+scribble covering the page). Measured with the shipped defaults and
+96/25.4 px/mm, reproduced by
+`uv run pytest tests/integration/test_preview_evaluate.py -q`:
+
+| case | greyscale `likeness` | `edge_likeness` |
+|------|---------------------:|----------------:|
+| near-blank page + page-covering light-blue scribble | 0.7820 | **0.2154** |
+| same figure drawn without the pale-area scribble | 0.9574 | **0.8756** |
+| faint full-page grey lines vs blank page (unit) | 0.7839 | 0.0000 |
+| square outline vs solid square (unit) | 0.7428 | 0.9167 |
+| hatched square vs solid square (unit) | 0.7343 | 0.7215 |
+| identical images | 1.0000 | 1.0000 |
+| two uniform images (both edge maps zero) | 1.0000 | 1.0000 |
+
+Simulated previews of the two drawings, rendered at 3 px/mm from the committed
+SVGs:
+
+| case | preview |
+|------|---------|
+| near-blank page + light-blue scribble | [scribble](../images/luc-135/blank_page_light_blue_scribble.png) |
+| same figure without the scribble | [matching figure](../images/luc-135/matching_figure_no_scribble.png) |
+
+The first is a pale blue zig-zag scribble covering almost the whole page with
+the dark pencilled circle and diagonal hatching still in the middle; the
+original has only that figure on a pale near-blank page. The second keeps the
+circle and hatching and leaves the surrounding page empty, matching the
+original's structure.
+
+The regression asserts `edge_likeness < 0.40` for the blind spot. That ceiling
+is derived, not guessed: it is the midpoint between the measured blind spot
+0.2154 and the lowest matching-edge drawing 0.7215 (the hatched square),
+rounded down to one decimal. The matching-edge drawing floor of 0.70 is that
+case's 0.7215 rounded down to one decimal; the single-pen drawing's measured
+0.8756 clears it too. The blind spot's `edge_likeness` is more than 0.5 below
+its greyscore, which is the property greyscale SSIM misses.
+
 ## Sketch Lines likeness gate (LUC-47)
 
 This is the likeness gate for the Sketch Lines PFM. Parts 1 and 2 defined and

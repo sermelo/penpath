@@ -624,12 +624,17 @@ reference-versus-penpath equivalence check, are in
 ### `penpath evaluate` — Score likeness and machine cost
 
 Simulate the SVG at the chosen resolution, crop it to the recorded image
-placement, and compare it with the original using SSIM. Also reports machine
-cost (drawing length, pen-up travel, pen lifts, short segments and stroke
-count) plus ink coverage and the pen name per pen layer and in total. Coverage
-is the share of the whole page inked by a layer's pen-down strokes at the
-chosen `--dpi`; per-layer shares may overlap, so they need not add up to the
-total.
+placement, and compare it with the original using two SSIM scores. `likeness`
+compares **greyscale** images: pale ink on a near-blank page looks almost
+neutral there, so this score alone can accept a page-covering light-blue
+scribble. `edge_likeness` compares the Sobel gradient magnitudes of the same
+two prepared images, so spurious structure the original does not have is
+penalised. Both use the same crop, 256x256 size and blur sigma 1.5. Also
+reports machine cost (drawing length, pen-up travel, pen lifts, short segments
+and stroke count) plus ink coverage and the pen name per pen layer and in
+total. Coverage is the share of the whole page inked by a layer's pen-down
+strokes at the chosen `--dpi`; per-layer shares may overlap, so they need not
+add up to the total.
 
 ```bash
 penpath evaluate IMAGE DRAWING_SVG [OPTIONS]
@@ -670,6 +675,7 @@ With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 ```json
 {
   "likeness": 0.82,
+  "edge_likeness": 0.74,
   "machine_cost": {
     "per_layer": {
       "#8CCFE8": {
@@ -688,6 +694,12 @@ With `--json`, stdout contains only a single object (safe to pipe to `jq`):
 }
 ```
 
+The human Likeness table shows both scores as `SSIM` and `Edge SSIM`. Edge
+SSIM divides both edge maps by one shared maximum before comparing them, so a
+blank page is not normalised into false edges; when both maps are zero it is
+1.0. Neither score changes the calibrated LUC-47/LUC-78/LUC-86 gates:
+`edge_likeness` is a diagnostic, not a new pass/fail gate.
+
 Every per-layer entry keeps its existing numeric keys and gains `pen`; `total`
 is unchanged. The name comes from
 `penpath.core.svg_parse.get_layer_pen_names(svg_path)`, which maps each
@@ -699,6 +711,7 @@ colour with no layer falls back to its hex.
 ```bash
 penpath evaluate photo.jpg plot.svg
 penpath evaluate photo.jpg plot.svg --json | jq '.likeness'
+penpath evaluate photo.jpg plot.svg --json | jq '.edge_likeness'
 penpath evaluate photo.jpg plot.svg --dpi 5 --layer fine
 penpath evaluate photo.jpg plot.svg --coverage-warn 75
 penpath evaluate photo.jpg plot.svg --coverage-warn 0
