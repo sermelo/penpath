@@ -377,6 +377,19 @@ image's ink pixels, using the paper colour detected from that source. It stays
 low for a near-blank plot on a mostly-white page where whole-page SSIM stays
 high; ink the plot adds outside the source mask is reported by coverage instead.
 
+## Examples
+
+Every image below comes from a committed, free-licence fixture and can be
+rebuilt with [`examples/gallery/generate.sh`](examples/gallery/generate.sh).
+Each algorithm row reads **original → simulated SVG plot → simulated G-code**:
+the plot is `penpath preview` of the SVG and the G-code view is `penpath preview`
+of the output of `penpath gcode --profile generic`. The G-code preview draws a
+thin bed/page outline around the same ink. All examples use A4 paper, the
+default 0.3 mm black `fine` pen, `-s seed=42` and a smaller working resolution
+(`--max-resolution 800`) to keep the run short; each preview is 601×849 px
+(`--dpi 2.86`) and well under 200 KB. Run the script from a checkout with
+`penpath` on your PATH to regenerate the whole gallery.
+
 ### Worked Example: Photo → SVG → Preview
 
 The shipped defaults are calibrated against five reference images. Here is the
@@ -402,6 +415,166 @@ Before the LUC-53 algorithm fix the same photo produced a much smaller, sparser
 plot (SSIM 0.4917, only 41% of the placement width covered). Compare the
 [before preview](docs/images/luc-47/photo_before.png) and the full
 [before/after measurements](docs/TESTING.md#final-shipped-defaults-measurement-luc-54-2026-11-25).
+
+### One example per algorithm
+
+All five use the free [Santa portrait](tests/fixtures/images/reference/santa.jpg)
+as the source. Presets were picked after opening the rendered previews: the
+hatching and contour read as a face, stipple keeps the beard as paper, and
+`spiral_sawtooth:fine` is the cleanest of that PFM's three presets (an abstract
+continuous-line reading rather than a portrait).
+
+#### `sketch_lines` (the default)
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![sketch_lines SVG plot](docs/images/luc-88/sketch_lines_plot.png) | ![sketch_lines G-code preview](docs/images/luc-88/sketch_lines_gcode.png) |
+| Santa's red hat, white beard and glasses on a dark background. | Dense free-angle hatching: hat and coat read dark, beard stays mostly paper. | The same strokes inside the A4 page outline from the generic profile. |
+
+```bash
+penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/sketch_lines.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm sketch_lines
+penpath preview build/gallery/sketch_lines.svg -o docs/images/luc-88/sketch_lines_plot.png --dpi 2.86
+penpath gcode build/gallery/sketch_lines.svg --profile generic -o build/gallery/sketch_lines.gcode
+penpath preview build/gallery/sketch_lines.gcode -o docs/images/luc-88/sketch_lines_gcode.png --dpi 2.86
+```
+
+#### `sketch_squares:fine`
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![sketch_squares SVG plot](docs/images/luc-88/sketch_squares_plot.png) | ![sketch_squares G-code preview](docs/images/luc-88/sketch_squares_gcode.png) |
+| Santa's red hat, white beard and glasses on a dark background. | Short grid-aligned strokes bend around the face; dark hat and coat, open beard. | The grid strokes placed on the A4 page, with travel hidden. |
+
+```bash
+penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/sketch_squares.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm sketch_squares:fine
+penpath preview build/gallery/sketch_squares.svg -o docs/images/luc-88/sketch_squares_plot.png --dpi 2.86
+penpath gcode build/gallery/sketch_squares.svg --profile generic -o build/gallery/sketch_squares.gcode
+penpath preview build/gallery/sketch_squares.gcode -o docs/images/luc-88/sketch_squares_gcode.png --dpi 2.86
+```
+
+#### `contour_portrait`
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![contour SVG plot](docs/images/luc-88/contour_plot.png) | ![contour G-code preview](docs/images/luc-88/contour_gcode.png) |
+| Santa's red hat, white beard and glasses on a dark background. | Clean four-level outlines: hat brim, glasses, nose and coat edges on open paper. | The outlines inside the page outline, drawn with pen-up travel hidden. |
+
+```bash
+penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/contour.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm contour_portrait
+penpath preview build/gallery/contour.svg -o docs/images/luc-88/contour_plot.png --dpi 2.86
+penpath gcode build/gallery/contour.svg --profile generic -o build/gallery/contour.gcode
+penpath preview build/gallery/contour.gcode -o docs/images/luc-88/contour_gcode.png --dpi 2.86
+```
+
+#### `stipple_default`
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![stipple SVG plot](docs/images/luc-88/stipple_plot.png) | ![stipple G-code preview](docs/images/luc-88/stipple_gcode.png) |
+| Santa's red hat, white beard and glasses on a dark background. | Short dashes cluster in hat, background and coat; the beard stays clear paper. | The same stipple marks placed on the page, with pen-up travel hidden. |
+
+```bash
+penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/stipple.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm stipple_default
+penpath preview build/gallery/stipple.svg -o docs/images/luc-88/stipple_plot.png --dpi 2.86
+penpath gcode build/gallery/stipple.svg --profile generic -o build/gallery/stipple.gcode
+penpath preview build/gallery/stipple.gcode -o docs/images/luc-88/stipple_gcode.png --dpi 2.86
+```
+
+#### `spiral_sawtooth:fine`
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![spiral_sawtooth SVG plot](docs/images/luc-88/spiral_sawtooth_plot.png) | ![spiral_sawtooth G-code preview](docs/images/luc-88/spiral_sawtooth_gcode.png) |
+| Santa's red hat, white beard and glasses on a dark background. | One continuous sawtooth spiral: tight teeth in dark areas, open rings over the light beard. | The same spiral on the bed, with the plotted page outlined. |
+
+```bash
+penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/spiral_sawtooth.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm spiral_sawtooth:fine
+penpath preview build/gallery/spiral_sawtooth.svg -o docs/images/luc-88/spiral_sawtooth_plot.png --dpi 2.86
+penpath gcode build/gallery/spiral_sawtooth.svg --profile generic -o build/gallery/spiral_sawtooth.gcode
+penpath preview build/gallery/spiral_sawtooth.gcode -o docs/images/luc-88/spiral_sawtooth_gcode.png --dpi 2.86
+```
+
+### Pen width and colour
+
+On the free [lake photo](tests/fixtures/images/reference/photo.jpg), only the
+pen changes between the first three plots: `fine` is 0.3 mm, `medium` 0.5 mm and
+`bold` 0.8 mm. A wider pen also lowers the working resolution, so the bold plot
+trades fine texture for broad, nearly solid dark areas.
+
+| `fine` (0.3 mm) | `medium` (0.5 mm) | `bold` (0.8 mm) |
+|:---------------:|:-----------------:|:---------------:|
+| ![0.3 mm pen plot](docs/images/luc-88/pen_fine_plot.png) | ![0.5 mm pen plot](docs/images/luc-88/pen_medium_plot.png) | ![0.8 mm pen plot](docs/images/luc-88/pen_bold_plot.png) |
+| Thin hatching keeps the shoreline and mountain texture separate. | The same strokes overlap more; the dark hillside begins to fill in. | Broad marks merge into solid black over the hill and water. |
+
+The bold plot also goes through the generic profile; its G-code preview shows
+the page and the same solid areas the pen will lay down:
+
+![Simulated G-code of the 0.8 mm pen plot](docs/images/luc-88/pen_bold_gcode.png)
+
+*The 0.8 mm plot inside the A4 page outline, with a single pen and no pen lift drawn.*
+
+```bash
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_fine.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen fine
+penpath preview build/gallery/pen_fine.svg -o docs/images/luc-88/pen_fine_plot.png --dpi 2.86
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_medium.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen medium
+penpath preview build/gallery/pen_medium.svg -o docs/images/luc-88/pen_medium_plot.png --dpi 2.86
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_bold.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen bold
+penpath preview build/gallery/pen_bold.svg -o docs/images/luc-88/pen_bold_plot.png --dpi 2.86
+penpath gcode build/gallery/pen_bold.svg --profile generic -o build/gallery/pen_bold.gcode
+penpath preview build/gallery/pen_bold.gcode -o docs/images/luc-88/pen_bold_gcode.png --dpi 2.86
+```
+
+A pen can also carry its own colour inline. Here the geometry is unchanged and
+only the stroke colour becomes red:
+
+| Original | Single-colour plot |
+|:--------:|:------------------:|
+| ![Free lake photo](tests/fixtures/images/reference/photo.jpg) | ![red pen plot](docs/images/luc-88/pen_colour_plot.png) |
+| Blue lake, mountains and a bright strip of sky. | The same hatching drawn in `#E4002B`; light sky stays paper. |
+
+```bash
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/pen_colour.svg --paper a4 --max-resolution 800 -s seed=42 -q --pen "0.4,#E4002B"
+penpath preview build/gallery/pen_colour.svg -o docs/images/luc-88/pen_colour_plot.png --dpi 2.86
+```
+
+### Multi-pen palette
+
+`--palette stabilo_88` splits the free
+[Christmas tree photo](tests/fixtures/images/colour/christmas_tree.jpg) into one
+layer per used pen (11 here), drawn in palette order. The G-code preview keeps
+the colours so you can check which pen goes where before plotting.
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Christmas tree photo](tests/fixtures/images/colour/christmas_tree.jpg) | ![multi-pen SVG plot](docs/images/luc-88/palette_plot.png) | ![multi-pen G-code preview](docs/images/luc-88/palette_gcode.png) |
+| Green tree with red baubles, gold decorations and a dark wall. | Blue, red, yellow, green and brown pens separate the foliage and decorations. | The same 11 pen layers on the page, one pen-change block per layer. |
+
+```bash
+penpath convert tests/fixtures/images/colour/christmas_tree.jpg -o build/gallery/palette.svg --paper a4 --max-resolution 800 -s seed=42 -q --palette stabilo_88
+penpath preview build/gallery/palette.svg -o docs/images/luc-88/palette_plot.png --dpi 2.86
+penpath gcode build/gallery/palette.svg --profile generic -o build/gallery/palette.gcode
+penpath preview build/gallery/palette.gcode -o docs/images/luc-88/palette_gcode.png --dpi 2.86
+```
+
+### Saved looks (styles)
+
+`--style` changes the drawing settings before the PFM runs: `sketch` is the
+shipped default, `hatch` narrows the ray band and `outline` adds an edge pass.
+SVG plots on the same lake photo are enough to compare them.
+
+| `--style sketch` | `--style hatch` | `--style outline` |
+|:----------------:|:---------------:|:-----------------:|
+| ![sketch style plot](docs/images/luc-88/style_sketch_plot.png) | ![hatch style plot](docs/images/luc-88/style_hatch_plot.png) | ![outline style plot](docs/images/luc-88/style_outline_plot.png) |
+| Dense free-angle hatching with solid dark hillside. | Narrower directional strokes follow the slope of the hill. | Open paper with edge lines tracing the shoreline and ridge. |
+
+```bash
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/style_sketch.svg --paper a4 --max-resolution 800 -s seed=42 -q --style sketch
+penpath preview build/gallery/style_sketch.svg -o docs/images/luc-88/style_sketch_plot.png --dpi 2.86
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/style_hatch.svg --paper a4 --max-resolution 800 -s seed=42 -q --style hatch
+penpath preview build/gallery/style_hatch.svg -o docs/images/luc-88/style_hatch_plot.png --dpi 2.86
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/style_outline.svg --paper a4 --max-resolution 800 -s seed=42 -q --style outline
+penpath preview build/gallery/style_outline.svg -o docs/images/luc-88/style_outline_plot.png --dpi 2.86
+```
 
 ### Reproducible Results
 
@@ -440,37 +613,46 @@ penpath convert photo.jpg --pen "0.4,#FF6600"
 penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 ```
 
-### PFM presets (Contour, Stipple)
+### PFM presets
 
-`--pfm` selects `sketch_lines` (the default hatching algorithm), `contour`
-(scikit-image + Shapely outlines), `sketch_squares` (grid hatching) or `stipple`
-(weighted Poisson-disk dots). Each PFM accepts its own `-s KEY=VALUE` settings;
-`penpath info pfms` lists every PFM, its defaults and its presets.
+`--pfm` selects one of five registered algorithms: `sketch_lines` (the default
+hatching), `sketch_squares` (grid hatching), `contour` (scikit-image + Shapely
+outlines), `stipple` (weighted Poisson-disk dots) or `spiral_sawtooth` (one
+continuous sawtooth line). Each PFM accepts its own `-s KEY=VALUE` settings.
+Use a qualified `PFM:PRESET` id below; bare names are the legacy Sketch Lines,
+Contour and Stipple preset names. `penpath info pfms` is the source of truth: it
+lists every PFM, its defaults and its presets.
 
-| Preset | PFM | Character |
-|--------|-----|-----------|
-| `contour_portrait` | `contour` | Four threshold levels for internal detail; tuned on a face. |
-| `contour_silhouette` | `contour` | One threshold and a larger minimum speck size for a few bold outlines. |
-| `stipple_default` | `stipple` | 1–3 px dots: balanced tone and cost; the gate preset. |
-| `stipple_fine` | `stipple` | 0.5–1.5 px dots: finer, denser texture. |
-| `stipple_bold` | `stipple` | 1.5–5 px dots: fewer, longer marks with a coarser grain. |
+| PFM | Preset ids | Character |
+|-----|------------|-----------|
+| `sketch_lines` | `sketch_lines:default`, `sketch_lines:fine`, `sketch_lines:bold`, `sketch_lines:shaded`, `sketch_lines:squiggly`, `sketch_lines:crosshatch`, `sketch_lines:hatch_horizontal`, `sketch_lines:hatch_vertical` | Free-angle hatching. The shipped `default` is calibrated for likeness; `fine` and `bold` change stroke length and density, the rest are directional or shaded looks. |
+| `sketch_squares` | `sketch_squares:coarse`, `sketch_squares:fine`, `sketch_squares:crosshatch-grid` | Short grid-aligned strokes: open, dense, or a rotated crosshatch grid. |
+| `contour` | `contour_portrait`, `contour_silhouette` | Four threshold levels for internal detail on a face; one level and a larger minimum speck size for a few bold outlines. |
+| `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. |
+| `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
 
 Simulated plot previews on the free Santa portrait:
+[sketch_squares:fine](docs/images/luc-88/sketch_squares_plot.png) ·
 [contour_portrait](docs/images/luc-139/contour_portrait.png) ·
 [contour_silhouette](docs/images/luc-139/contour_silhouette.png) ·
 [stipple_default](docs/images/luc-140/stipple_default.png) ·
 [stipple_fine](docs/images/luc-140/stipple_fine.png) ·
-[stipple_bold](docs/images/luc-140/stipple_bold.png). The
+[stipple_bold](docs/images/luc-140/stipple_bold.png) ·
+[spiral_sawtooth:fine](docs/images/luc-88/spiral_sawtooth_plot.png). The
+[Sketch Squares gate](docs/TESTING.md#sketch-squares-readability-and-plot-cost-gate-luc-149-2026-11-27),
 [Contour gate](docs/TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27)
 and the [Stipple gate](docs/TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27)
 record the measured readability and plot cost; acceptance is by looking at the
 previews, not by SSIM alone.
 
 ```bash
+penpath convert photo.jpg --pfm sketch_lines:fine -o fine.svg
+penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -o grid.svg
 penpath convert photo.jpg --pfm contour -o outlines.svg
 penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg
 penpath convert photo.jpg --pfm stipple_fine --no-vpype -s seed=42 -o dots.svg
 penpath preview dots.svg -o dots.png --dpi 4
+penpath convert photo.jpg --pfm spiral_sawtooth:bold -s seed=42 -o spiral.svg
 ```
 
 ### Palettes: one SVG layer per pen
