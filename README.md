@@ -133,7 +133,12 @@ penpath convert photo.jpg --palette stabilo_88 --background-method global --back
 penpath convert photo.jpg --palette stabilo_88 --palette-adapt
 penpath convert photo.jpg --palette stabilo_88 --saturation 2.0
 
-# Adjust PFM (Sketch Lines) settings
+# Saved looks: sketch (the default), directional hatch, or clean outlines
+penpath convert photo.jpg --style sketch -o sketch.svg
+penpath convert photo.jpg --style hatch -o hatch.svg
+penpath convert photo.jpg --style outline -o outline.svg
+
+# Adjust PFM (Sketch Lines) settings; -s wins over a look's value
 penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
 
 # Draw with the grid-hatched Sketch Squares PFM, or one of its presets

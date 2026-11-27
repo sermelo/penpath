@@ -71,9 +71,10 @@ image = load_image("photo.jpg")
 strokes = outline_strokes(image, OutlineSettings())
 ```
 
-This is a library capability only. It is not wired into `convert`, project
-files or `--style`, and the Sketch Lines defaults are unchanged; part 3 adds
-the user-facing style flag.
+`penpath convert --style outline` now runs this pass before a light Sketch Lines
+tone pass. `penpath.core.get_style` and `draw_styled_lines` expose the same
+saved looks to library callers; `--style sketch` and no style at all keep the
+Sketch Lines defaults unchanged.
 
 ---
 

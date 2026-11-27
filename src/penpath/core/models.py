@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, SerializeAsAny, field_validator, model_va
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
+from penpath.core.styles import StyleName
 
 if TYPE_CHECKING:
     from penpath.core.image.pipeline import FilterPipeline
@@ -309,7 +310,11 @@ class Project(BaseModel):
         Name of the built-in palette ``pens`` came from, when there is one.
         Excluded from dumps; the project file writes it as ``palette:``.
     pfm : PFMSettingsUnion
-        Pen Follower Module settings (discriminated union).
+        Pen Follower Module settings (discriminated union). The saved look's
+        values are resolved into these settings; explicit CLI overrides win.
+    style : StyleName | None
+        Saved look that selected the settings, if any. ``outline`` also runs
+        the edge pass; ``None`` keeps the default path.
     output_path : Path
         Output SVG file path.
     """
@@ -320,6 +325,7 @@ class Project(BaseModel):
     pens: list[Pen] = Field(default_factory=list)
     palette_name: str | None = Field(default=None, exclude=True)
     pfm: PFMSettingsUnion
+    style: StyleName | None = None
     output_path: Path
 
     @field_validator("output_path")
