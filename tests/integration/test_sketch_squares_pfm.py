@@ -122,6 +122,38 @@ class TestSketchSquaresCLI:
         assert "sketch_squares:coarse" in result.output
         assert not output.exists()
 
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("bogus", "1"),
+            ("grid_angle", "999"),
+            ("seed", "not-an-int"),
+            ("min_length", "200"),
+        ],
+    )
+    def test_invalid_setting_is_a_usage_error_naming_the_setting(
+        self, runner: CliRunner, tmp_path: Path, key: str, value: str
+    ) -> None:
+        output = tmp_path / "invalid.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(FACE),
+                "-o",
+                str(output),
+                "--pfm",
+                "sketch_squares",
+                "-s",
+                f"{key}={value}",
+                "--no-vpype",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "PFM setting" in result.output
+        assert key in result.output
+        assert not output.exists()
+
     def test_palette_mode_writes_one_stroked_layer_per_used_pen(
         self, runner: CliRunner, two_pen_image: Path, tmp_path: Path
     ) -> None:
