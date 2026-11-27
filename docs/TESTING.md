@@ -766,7 +766,12 @@ resolution requested for this task it rises 0.441838 → 0.471291; both are
 reported so the trade-off is visible. The older 0.47/0.49 reference floors
 predate the measured 3 px/mm baselines, as recorded for LUC-193 above. Every
 other LUC-47, readability, basic-shape, multi-pen and Sketch Squares floor is
-unchanged and still passes.
+unchanged and still passes. The hatch cost gate keeps its five-times floor,
+but measures its Sketch Lines baseline with `-s max_tone_ink=1.0`: that gate
+was calibrated against uncapped Sketch Lines, and the cap deliberately stops
+the dark tone early, so the capped stroke count is not the right baseline for
+an unrelated hatch cost comparison. Opting out gives 284 pen lifts on
+`photo.jpg` (48 for hatch), so the five-times ratio still holds.
 
 The 3 px/mm convert/preview renders used for the visual check are committed
 under [`docs/images/luc-194/`](../images/luc-194/):
