@@ -23,6 +23,65 @@ type LayerMetrics = dict[str, float | int]
 type MachineCostResult = dict[str, dict[str, LayerMetrics] | LayerMetrics]
 
 CONTIGUITY_EPSILON_MM = 0.01
+MAX_RENDER_MEGAPIXELS = 40.0
+
+
+def render_size_px(
+    paper_width_mm: float,
+    paper_height_mm: float,
+    px_per_mm: float,
+) -> tuple[int, int]:
+    """Return the raster size used by the simulator and the coverage rasteriser.
+
+    Parameters
+    ----------
+    paper_width_mm : float
+        Paper width in millimetres.
+    paper_height_mm : float
+        Paper height in millimetres.
+    px_per_mm : float
+        Rasterisation resolution in pixels per millimetre.
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(width_px, height_px)``, each dimension rounded to the nearest pixel
+        and never smaller than one pixel.
+    """
+    width_px = max(1, round(paper_width_mm * px_per_mm))
+    height_px = max(1, round(paper_height_mm * px_per_mm))
+    return width_px, height_px
+
+
+def check_render_budget(
+    width_px: int,
+    height_px: int,
+    max_megapixels: float = MAX_RENDER_MEGAPIXELS,
+) -> None:
+    """Reject an oversized raster before anything allocates an image.
+
+    Parameters
+    ----------
+    width_px : int
+        Planned raster width in pixels.
+    height_px : int
+        Planned raster height in pixels.
+    max_megapixels : float, optional
+        Allowed pixel budget in megapixels. Default is 40 MP.
+
+    Raises
+    ------
+    ValueError
+        If the raster exceeds the budget, naming its size, megapixels and the
+        limit. This function only does arithmetic and allocates no image.
+    """
+    pixels = width_px * height_px
+    limit_pixels = max_megapixels * 1_000_000
+    if pixels > limit_pixels:
+        raise ValueError(
+            f"renders {width_px}x{height_px} px ({pixels / 1_000_000:.1f} MP), "
+            f"above the {max_megapixels:g} MP limit"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,8 +290,7 @@ def compute_layer_coverage(
     not the image placement. Per-layer percentages may overlap, so they do not
     add up to the total; pen-up travel moves never add ink.
     """
-    width_px = max(1, round(paper_width_mm * dpi_px_per_mm))
-    height_px = max(1, round(paper_height_mm * dpi_px_per_mm))
+    width_px, height_px = render_size_px(paper_width_mm, paper_height_mm, dpi_px_per_mm)
     area_px = width_px * height_px
 
     by_layer: dict[str, list[PenStroke]] = {}
@@ -299,8 +357,7 @@ def simulate_plot(
     - Stroke width is converted from mm to pixels using dpi_px_per_mm.
     - Coordinates are in mm with (0, 0) at top-left of paper.
     """
-    width_px = max(1, round(paper_width_mm * dpi_px_per_mm))
-    height_px = max(1, round(paper_height_mm * dpi_px_per_mm))
+    width_px, height_px = render_size_px(paper_width_mm, paper_height_mm, dpi_px_per_mm)
 
     # Create image with paper background
     img = Image.new("RGB", (width_px, height_px), paper_color)
@@ -339,10 +396,13 @@ def simulate_plot(
 
 
 __all__ = [
+    "MAX_RENDER_MEGAPIXELS",
     "CoverageResult",
     "PenStroke",
+    "check_render_budget",
     "compute_layer_coverage",
     "compute_machine_cost",
     "insert_pen_up_moves",
+    "render_size_px",
     "simulate_plot",
 ]

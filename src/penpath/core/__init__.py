@@ -136,10 +136,13 @@ from penpath.core.project import (
     save_yaml,
 )
 from penpath.core.simulation import (
+    MAX_RENDER_MEGAPIXELS,
     CoverageResult,
     PenStroke,
+    check_render_budget,
     compute_layer_coverage,
     compute_machine_cost,
+    render_size_px,
     simulate_plot,
 )
 from penpath.core.styles import (
@@ -173,6 +176,7 @@ __all__ = [
     "FIT_TOLERANCE_MM",
     "FRAME_OVERLAP_MM",
     "FRAME_PAUSE_MESSAGE",
+    "MAX_RENDER_MEGAPIXELS",
     "MAX_WORKING_LONGEST_PX",
     "MIN_WORKING_LONGEST_PX",
     "PIXEL_SETTING_FIELDS",
@@ -242,6 +246,7 @@ __all__ = [
     "box_blur",
     "brightness",
     "build_gcode",
+    "check_render_budget",
     "compute_edge_likeness",
     "compute_layer_coverage",
     "compute_likeness",
@@ -290,6 +295,7 @@ __all__ = [
     "prepare_for_comparison",
     "remove_background",
     "render_contact_sheet",
+    "render_size_px",
     "save_yaml",
     "scale_pixel_settings",
     "separate_palette",

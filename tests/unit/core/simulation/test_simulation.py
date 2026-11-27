@@ -8,10 +8,13 @@ import pytest
 from PIL import Image
 
 from penpath.core.simulation import (
+    MAX_RENDER_MEGAPIXELS,
     PenStroke,
+    check_render_budget,
     compute_layer_coverage,
     compute_machine_cost,
     insert_pen_up_moves,
+    render_size_px,
     simulate_plot,
 )
 
@@ -280,6 +283,42 @@ class TestComputeMachineCost:
         assert math.isclose(result["total"]["drawing_length_mm"], 7.0, rel_tol=1e-9)
 
 
+class TestRenderBudget:
+    """Tests for the shared raster size and the pure pixel budget check."""
+
+    def test_render_size_px_a5_at_100_px_per_inch(self):
+        """A5 at 100/25.4 px/mm rounds to 583x827 pixels."""
+        assert render_size_px(148.0, 210.0, 100 / 25.4) == (583, 827)
+
+    def test_render_size_px_rounds_each_dimension_and_clamps_to_one(self):
+        """Each dimension rounds independently, with a one-pixel floor."""
+        assert render_size_px(10.6, 0.01, 1.0) == (11, 1)
+
+    def test_check_render_budget_accepts_exact_limit(self):
+        """A raster of exactly 40 MP is allowed."""
+        assert MAX_RENDER_MEGAPIXELS == 40.0
+        check_render_budget(1000, 40000)
+
+    def test_check_render_budget_rejects_one_pixel_over_limit(self):
+        """A single pixel over the default budget is refused."""
+        with pytest.raises(ValueError, match="above the 40 MP limit"):
+            check_render_budget(1001, 40000)
+
+    def test_check_render_budget_custom_limit(self):
+        """A caller may set its own budget."""
+        check_render_budget(100, 100, max_megapixels=0.01)
+        with pytest.raises(ValueError, match=r"above the 0\.5 MP limit"):
+            check_render_budget(1000, 1000, max_megapixels=0.5)
+
+    def test_check_render_budget_over_limit_message_names_size_and_megapixels(self):
+        """The error gives the planned size, megapixels and limit."""
+        with pytest.raises(
+            ValueError,
+            match=r"renders 7400x10500 px \(77\.7 MP\), above the 40 MP limit",
+        ):
+            check_render_budget(7400, 10500)
+
+
 class TestSimulatePlot:
     """Tests for simulate_plot function."""
 
@@ -431,6 +470,12 @@ class TestSimulatePlot:
         thin_non_white = sum(1 for p in img_thin.getdata() if p != (255, 255, 255))
         thick_non_white = sum(1 for p in img_thick.getdata() if p != (255, 255, 255))
         assert thick_non_white > thin_non_white
+
+    def test_simulate_plot_size_matches_shared_render_size_px(self):
+        """The simulator uses the same rounding as the shared size helper."""
+        expected = render_size_px(100.0, 60.0, 3.3)
+        img = simulate_plot([], 100.0, 60.0, dpi_px_per_mm=3.3)
+        assert img.size == expected
 
     def test_simulate_plot_custom_dpi(self):
         """Custom DPI should change output image size."""

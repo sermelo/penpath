@@ -13,6 +13,7 @@ and the whole guard fits inside the existing CI budget.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shlex
 import shutil
@@ -200,7 +201,11 @@ def _seed_workspace(work: Path) -> None:
         shutil.copyfile(source, work / name)
     reference = work / "tests" / "fixtures" / "images" / "reference"
     reference.mkdir(parents=True)
-    shutil.copyfile(source, reference / "photo.jpg")
+    for name in ("photo.jpg", "santa.jpg"):
+        shutil.copyfile(source, reference / name)
+    colour = work / "tests" / "fixtures" / "images" / "colour"
+    colour.mkdir(parents=True)
+    shutil.copyfile(source, colour / "christmas_tree.jpg")
     source.unlink()
 
     for name, output in (
@@ -275,6 +280,21 @@ def test_readme_commands_run(workspace: Path) -> None:
             assert (workspace / output).is_file(), f"README command wrote no {output}: {command}"
         executed += 1
     assert executed > 40
+
+
+def test_pen_width_previews_are_distinct() -> None:
+    """The fine, medium and bold previews must render as three different rasters.
+
+    At low preview DPI 0.3 mm and 0.5 mm strokes both round to one pixel, so
+    fine and medium look identical even though the SVGs differ. The gallery
+    renders these three at 3.2 DPI to keep the widths visible.
+    """
+    gallery = _README.parent / "docs" / "images" / "luc-88"
+    digests = {
+        hashlib.sha256((gallery / f"pen_{width}_plot.png").read_bytes()).digest()
+        for width in ("fine", "medium", "bold")
+    }
+    assert len(digests) == 3, "pen width previews collapsed; regenerate at --dpi 3.2"
 
 
 class TestReadmeCommandParsing:
