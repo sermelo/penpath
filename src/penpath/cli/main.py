@@ -3,6 +3,7 @@
 import click
 
 from penpath import __version__
+from penpath.cli.commands.compare import compare_cmd
 from penpath.cli.commands.config_cmd import config_group
 from penpath.cli.commands.convert import convert_cmd
 from penpath.cli.commands.evaluate import evaluate_cmd
@@ -23,6 +24,7 @@ def main(ctx: click.Context) -> None:
         click.echo(ctx.get_help())
 
 
+main.add_command(compare_cmd)
 main.add_command(config_group)
 main.add_command(convert_cmd)
 main.add_command(evaluate_cmd)
