@@ -77,7 +77,7 @@ writes the final SVG: vpype contributes geometry only.
 
 | Concept | Description |
 |---------|-------------|
-| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines: `sketch_lines` (ported from DrawingBotV3) or `contour` (scikit-image + Shapely outlines). |
+| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, and `contour` (scikit-image + Shapely outlines). |
 | **Palette** | An ordered set of pens. Each pixel is drawn by its nearest palette colour; each used pen becomes one SVG layer. |
 | **Filters** | Image preprocessing: grayscale, threshold, blur, contrast, etc. Applied in order before PFM. |
 | **Geometry optimization** | Simplify (RDP), merge (collinear join), sort (greedy NN + 2-opt) — runs automatically. |
@@ -135,6 +135,10 @@ penpath convert photo.jpg --palette stabilo_88 --saturation 2.0
 
 # Adjust PFM (Sketch Lines) settings
 penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
+
+# Draw with the grid-hatched Sketch Squares PFM, or one of its presets
+penpath convert photo.jpg --pfm sketch_squares -s seed=42
+penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -s seed=42
 
 # Opt into the full tonal range (solid black areas included)
 penpath convert photo.jpg -s max_fill=100 -o full-range.svg
@@ -596,8 +600,8 @@ Input Image
     │
     ▼
 ┌─────────────────────────────────────┐
-│  PFM: Sketch Lines (DrawingBotV3)   │
-│  • Random-angle line search         │
+│  PFM: Sketch Lines / Squares (DBV3) │
+│  • Random-angle or grid-angle search│
 │  • Darkest-pixel sampling           │
 │  • Tonal shading branch             │
 │  • Squiggle/erase variation         │

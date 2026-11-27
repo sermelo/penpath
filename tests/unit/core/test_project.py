@@ -10,7 +10,7 @@ import yaml
 
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
 from penpath.core.image.pipeline import FilterPipeline
-from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM
+from penpath.core.models import ImageRef, Paper, Pen, Project, SketchLinesPFM, SketchSquaresPFM
 from penpath.core.project import (
     PROJECT_FILE_VERSION,
     ProjectLoadError,
@@ -766,6 +766,50 @@ class TestSaturationProjectFiles:
         data["image"]["saturation"] = 3.5
         with pytest.raises(ProjectLoadError, match="validation failed"):
             load_yaml(_write_yaml(tmp_path, data))
+
+
+class TestSketchSquaresPFMProjectFiles:
+    """Sketch Squares survives a project-file round trip and selects its model."""
+
+    def test_handwritten_yaml_loads_as_sketch_squares(self, tmp_path: Path) -> None:
+        data = _yaml_data(tmp_path)
+        data["pen"] = {"name": "fine", "width_mm": 0.3}
+        data["pfm"] = {
+            "pfm_type": "sketch_squares",
+            "settings": {"grid_angle": 12.5, "line_density": 0.5, "seed": 42},
+        }
+        project = load_yaml(_write_yaml(tmp_path, data))
+
+        assert isinstance(project.pfm, SketchSquaresPFM)
+        assert project.pfm.settings.grid_angle == 12.5
+        assert project.pfm.settings.line_density == 0.5
+        assert project.pfm.settings.seed == 42
+        assert project.pfm.to_typed_settings() == project.pfm.settings
+
+    def test_save_and_load_round_trip(self, tmp_path: Path) -> None:
+        from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
+
+        img_path = tmp_path / "input.png"
+        img_path.write_bytes(b"fake png")
+        original = Project(
+            image=ImageRef(path=img_path, filters=FilterPipeline(), dpi=300),
+            paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
+            pen=Pen(name="fine", width_mm=0.3),
+            pfm=SketchSquaresPFM(
+                settings=SketchSquaresSettings(
+                    grid_angle=0.0, line_density=1.1, max_length=75.0, seed=42
+                )
+            ),
+            output_path=tmp_path / "output.svg",
+        )
+        path = tmp_path / "squares.yaml"
+        save_yaml(original, path)
+
+        assert "pfm_type: sketch_squares" in path.read_text()
+        loaded = load_yaml(path)
+        assert isinstance(loaded.pfm, SketchSquaresPFM)
+        assert loaded.pfm.settings == original.pfm.settings
+        assert loaded.pfm.to_typed_settings() == original.pfm.settings
 
 
 if __name__ == "__main__":

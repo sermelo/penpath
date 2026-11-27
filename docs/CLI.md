@@ -28,8 +28,8 @@
 
 ### `penpath convert` — Photo → SVG (Main Command)
 
-Convert a raster image to a plottable SVG with the selected PFM (Sketch Lines
-or Contour).
+Convert a raster image to a plottable SVG using a Pen Follower Module (PFM):
+`sketch_lines` (the default), `sketch_squares` or `contour`.
 
 ```bash
 penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
@@ -107,7 +107,7 @@ with `--palette`: a single pen ignores them rather than failing.
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--pfm NAME` | — | `sketch_lines` | Registered PFM (`sketch_lines` or `contour`) or any built-in preset name (see **PFM Presets** below) |
+| `--pfm NAME` | — | `sketch_lines` | Registered PFM (`sketch_lines`, `sketch_squares` or `contour`), legacy preset or qualified `PFM:PRESET` id (see **PFM Presets** below) |
 | `--pfm-setting KEY=VALUE` | `-s` | — | Setting of the selected PFM (repeatable). See **PFM Settings** below. |
 | `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
@@ -346,12 +346,38 @@ out-of-range numbers exit 2 with the setting named.
 
 **Example**: `--pfm contour -s levels=4 -s threshold=110 -s turd_size=30`
 
+#### PFM Settings (Sketch Squares)
+
+Select this PFM with `--pfm sketch_squares`. Its strokes follow the
+position-dependent angle field of DrawingBotV3's `PFMSketchSquaresBasic`
+instead of a random angle, so they form a slowly bending grid. It accepts
+these `-s KEY=VALUE` fields (invalid keys, values or ranges exit 2 naming the
+setting, as with Sketch Lines):
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `grid_angle` | float | −360–360° | `45.0` | Angle added to the position-dependent field; `0` gives a near-horizontal/vertical grid, `45` a diagonal one. |
+| `line_density` | float | 0.01–10.0 | `0.75` | Ink-density multiplier in the luminance-progress stop rule; higher draws more ink. |
+| `min_length` | float | 1–1000 px | `2.0` | Shortest segment the ray search may end at (working-image pixels). Must be ≤ `max_length`. |
+| `max_length` | float | 1–5000 px | `40.0` | Longest segment the ray search may take (working-image pixels). Must be ≥ `min_length`. |
+| `max_fill` | float | 1–100 % | `80.0` | Maximum ink coverage; tones darker than `255 * (1 - max_fill / 100)` are treated as black. |
+| `seed` | int or `null` | any | `null` | Fix the random seed for byte-identical reruns. |
+| `max_strokes` | int or `null` | ≥1 | `null` | Hard stroke cap; derived from image size and density when unset. |
+
+**Example**: `penpath convert photo.jpg --pfm sketch_squares -s grid_angle=0 -s seed=42`
+
 #### PFM Presets (`--pfm NAME`)
 
-`--pfm` accepts a registered PFM name (`sketch_lines` or `contour`) and any
-built-in preset name. A preset supplies a bundle of settings for its own PFM;
-any `-s` override is applied on top of it with that PFM's field types. Run
-`penpath info pfms` to list each PFM with only its own presets.
+`--pfm` accepts a registered algorithm name (`sketch_lines`, `sketch_squares`
+or `contour`), a legacy bare preset name, or a qualified `PFM:PRESET` id. A
+preset supplies a bundle of the selected PFM's settings and any `-s` override
+is applied on top with that PFM's field types. The qualified ids are
+unambiguous; bare names are the legacy Sketch Lines (and Contour) preset
+names, so a bare `fine` still means `sketch_lines:fine`. A bare name that only
+exists for another PFM is rejected with the qualified id in the message. Run
+`penpath info pfms` to list every PFM, its defaults and presets.
+
+Legacy Sketch Lines preset ids (`sketch_lines:NAME`, bare `NAME` also works):
 
 | Preset | Character |
 |--------|-----------|
@@ -364,14 +390,26 @@ any `-s` override is applied on top of it with that PFM's field types. Run
 | `hatch_horizontal` | Angles near 85–95°, giving near-horizontal hatching. |
 | `hatch_vertical` | Angles near 0–10°, giving near-vertical hatching. |
 
+Contour preset names (bare names work for backwards compatibility):
+
 | Preset | PFM | Character |
 |--------|-----|-----------|
 | `contour_portrait` | `contour` | Four threshold levels with a 30 px² speck limit: interior detail, tuned on `face.jpg`. |
 | `contour_silhouette` | `contour` | One threshold at 140 with a 100 px² speck limit: fewer, bolder outlines. |
 
+Sketch Squares presets (use the qualified id; a bare name is rejected):
+
+| Preset id | Character |
+|-----------|-----------|
+| `sketch_squares:coarse` | Long, sparse diagonal strokes (density 0.45, segments 8–120 px). |
+| `sketch_squares:fine` | Short, detailed strokes (density 0.9, segments 2–30 px). |
+| `sketch_squares:crosshatch-grid` | Near-horizontal/vertical woven grid (`grid_angle=0`, segments 4–60 px). |
+
 The three hatch presets and `squiggly` are style choices: they deliberately
-give up photo likeness for a particular look. Only `default` is calibrated
-against the gate in [docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47).
+give up photo likeness for a particular look. Only `sketch_lines:default` is
+calibrated against the gate in
+[docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47). Running
+`--pfm sketch_squares` with no preset uses the algorithm defaults above.
 
 #### Filters (Applied in Order)
 
@@ -400,6 +438,10 @@ penpath convert photo.jpg plot.svg
 
 # With custom settings
 penpath convert photo.jpg -o plot.svg -f grayscale -f "posterize:levels=4" -s line_density=0.5 -s seed=42
+
+# Grid-hatched drawing with Sketch Squares (algorithm defaults or a qualified preset)
+penpath convert photo.jpg -o squares.svg --pfm sketch_squares -s seed=42
+penpath convert photo.jpg -o grid.svg --pfm sketch_squares:crosshatch-grid -s seed=42
 
 # Using project file
 penpath convert --project my_project.yaml
@@ -824,7 +866,7 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `pens` | List built-in pen presets |
 | `palettes` | List built-in palettes and their pens in drawing order |
 | `papers` | List built-in paper presets |
-| `pfms` | List registered PFMs with their settings and only their own presets |
+| `pfms` | List registered PFMs, their settings, defaults and own presets (with qualified ids) |
 | `profiles` | List built-in and user machine profiles (source, description, bed size, feeds) |
 | `filters` | List available filters with parameters |
 | `image PATH` | Show image info (size, mode, EXIF, DPI, planned working resolution) |
@@ -847,6 +889,12 @@ one object with a `profiles` array, whose rows have `name`, `source`,
 profile omits it). `margin_mm` is the profile's raw value: a scalar for a
 uniform margin or `[top, right, bottom, left]` for a per-side margin. The table
 shows a `Margin (mm)` column with the same value, printing `10` or `10/5/10/5`.
+
+`penpath info pfms` lists every registered PFM with its `name`,
+`settings_model`, `default_settings`, its `presets` (legacy bare names for
+`sketch_lines` and `contour`, qualified ids for `sketch_squares`) and qualified
+`preset_ids` such as `sketch_squares:crosshatch-grid`; `--format json` and
+`--format yaml` print the same fields for scripts.
 
 #### `penpath info palette-match`
 
@@ -883,6 +931,7 @@ penpath info palettes
 penpath info palettes --format json
 penpath info papers --format yaml
 penpath info pfms
+penpath info pfms --format json
 penpath info profiles
 penpath info profiles --format json
 penpath info filters
@@ -1033,6 +1082,18 @@ the image and the palette. Old files without the keys load as `1.0` and
 `false`, so their output is unchanged. `--saturation` on the command line
 overrides the file and disables `palette_adapt`; `--palette-adapt` overrides the
 file's manual factor. As at the CLI, both keys are no-ops for a single pen.
+
+The `pfm` block selects the algorithm by `pfm_type`; the `settings` shape is
+that algorithm's settings model. Sketch Squares round-trips as:
+
+```yaml
+pfm:
+  pfm_type: sketch_squares
+  settings:
+    grid_angle: 0.0
+    line_density: 0.75
+    seed: 42
+```
 
 **Minimal Example**:
 ```yaml

@@ -22,7 +22,7 @@ from penpath.core.models import Paper
 from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper, list_papers
 from penpath.presets.pens import get_pen, list_pens
-from penpath.presets.pfms import list_pfm_presets, list_presets_for_pfm
+from penpath.presets.pfms import list_pfm_preset_ids, list_pfm_presets, list_presets_for_pfm
 
 if TYPE_CHECKING:
     pass
@@ -256,11 +256,11 @@ def info_pfms(fmt: str) -> None:
     """List available PFMs (Pen Follower Modules)."""
     registered = list_pfms()
     presets = list_pfm_presets()
+    preset_ids = list_pfm_preset_ids()
 
     pfm_data = []
     for name in registered:
         _, settings_model = get_pfm(name)
-        # Get default settings
         default_settings = settings_model()
         pfm_data.append(
             {
@@ -268,10 +268,11 @@ def info_pfms(fmt: str) -> None:
                 "settings_model": settings_model.__name__,
                 "default_settings": default_settings.model_dump(mode="json"),
                 "presets": list_presets_for_pfm(name),
+                "preset_ids": [pid for pid in preset_ids if pid.startswith(f"{name}:")],
             }
         )
 
-    data = {"available_pfms": pfm_data, "presets": presets}
+    data = {"available_pfms": pfm_data, "presets": presets, "preset_ids": preset_ids}
     _output_format(data, fmt)
 
 
