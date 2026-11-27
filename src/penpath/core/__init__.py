@@ -4,10 +4,12 @@ from penpath.core.drawing import (
     PIXEL_SETTING_FIELDS,
     ContourSettings,
     OutlineSettings,
+    SpiralSettings,
     StippleSettings,
     contour_strokes,
     outline_strokes,
     scale_pixel_settings,
+    spiral_strokes,
     stipple,
 )
 from penpath.core.gcode_preview import (
@@ -218,6 +220,7 @@ __all__ = [
     "ProjectSaveError",
     "RegisteredPFM",
     "SketchLinesPFM",
+    "SpiralSettings",
     "StippleSettings",
     "StyleName",
     "StylePreset",
@@ -285,6 +288,7 @@ __all__ = [
     "simplify",
     "simplify_line",
     "simulate_plot",
+    "spiral_strokes",
     "stipple",
     "threshold",
     "usable_area",
