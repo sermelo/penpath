@@ -32,23 +32,24 @@
 | 17 | Stippling / pointillism | Dot-based shading | Dot density, min/max radius, jitter, seed, stroke cap | New | M | NumPy, Poisson disk | **MVP** — shipped in LUC-140; registered `stipple` PFM with three presets and `-s` settings (LUC-153/154). Previews: [default](images/luc-140/stipple_default.png), [fine](images/luc-140/stipple_fine.png), [bold](images/luc-140/stipple_bold.png); [likeness and cost gate](TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27) |
 | 18 | Multi-pen / colour separation | CMYK, RGB, or custom palette splits | Separation mode (CMYK, RGB, threshold layers), per-layer PFM | `drawing/ColorSeparationHandler.java` (Default only in free) | L | — | **MVP** — sergio approved on 2026-11-24; the Christmas card needs it and the default path stays simple: one pen gives one layer, exactly as before |
 | **Pens & Colour** |||||||
-| 19 | Pen library (width, colour, type) | Match physical pens | Width (mm), colour (hex/CMYK), type (ballpoint, fountain, brush, marker), opacity | `files/json/presets/PresetDrawingPen*.java` | S | — | **MVP** |
-| 20 | Pen pressure / width variation | Expressive strokes | Min/max width, pressure curve | New (DrawingBotV3 has easing) | M | — | **later** |
-| 21 | Virtual paper (size, margins, colour) | Preview composition | Paper size (A4, A3, custom), margins, background colour | `plotting/canvas/*.java` | S | — | **MVP** |
+| 19 | Hatch / cross-hatch (PFM) | Engraving-style straight and woven lines | Spacing (mm), band angles and darkness thresholds, min length/gap, variable spacing, serpentine, jitter, seed | New | M | NumPy, Shapely | **implemented** — LUC-167 part 1 ported the algorithm with explicit millimetre scale arguments, part 2 registered `hatch` with four presets and `-s` settings; previews [face default](images/luc-167/face_hatch_default.png) / [face crosshatch](images/luc-167/face_hatch_crosshatch.png) / [photo default](images/luc-167/photo_hatch_default.png) / [photo crosshatch](images/luc-167/photo_hatch_crosshatch.png) / [gradient](images/luc-167/gradient_hatch_default.png) / [sphere](images/luc-167/sphere_hatch_default.png) and the [acceptance gate](TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27); one pen-lift acceptance line is unmet and recorded there |
+| 20 | Pen library (width, colour, type) | Match physical pens | Width (mm), colour (hex/CMYK), type (ballpoint, fountain, brush, marker), opacity | `files/json/presets/PresetDrawingPen*.java` | S | — | **MVP** |
+| 21 | Pen pressure / width variation | Expressive strokes | Min/max width, pressure curve | New (DrawingBotV3 has easing) | M | — | **later** |
+| 22 | Virtual paper (size, margins, colour) | Preview composition | Paper size (A4, A3, custom), margins, background colour | `plotting/canvas/*.java` | S | — | **MVP** |
 | **Line Optimisation** |||||||
-| 22 | Line simplification (RDP) | Reduce points, keep shape | Tolerance (mm) | `geom/operation/GeometryOperationSimplify.java` | S | shapely / custom | **MVP** |
-| 23 | Line sorting (TSP / nearest-neighbour) | Minimize pen-up travel | Algorithm (greedy, 2-opt, OR-Tools), start point | `geom/spatial/TSPSequencer*.java`, `STRTreeSequencer*.java` | M | OR-Tools / custom | **MVP** |
-| 24 | Line merging / join collinear | Reduce segments | Angle tolerance, distance tolerance | `geom/operation/GeometryOperationOptimize.java` | S | shapely | **MVP** |
-| 25 | vpype pipeline integration | Industry-standard optimization & export | vpype commands (linemerge, linesimplify, reloop, linesort, write) | `integrations/vpype/*.java` | M | vpype (Python) | **MVP** — use vpype CLI as backend |
+| 23 | Line simplification (RDP) | Reduce points, keep shape | Tolerance (mm) | `geom/operation/GeometryOperationSimplify.java` | S | shapely / custom | **MVP** |
+| 24 | Line sorting (TSP / nearest-neighbour) | Minimize pen-up travel | Algorithm (greedy, 2-opt, OR-Tools), start point | `geom/spatial/TSPSequencer*.java`, `STRTreeSequencer*.java` | M | OR-Tools / custom | **MVP** |
+| 25 | Line merging / join collinear | Reduce segments | Angle tolerance, distance tolerance | `geom/operation/GeometryOperationOptimize.java` | S | shapely | **MVP** |
+| 26 | vpype pipeline integration | Industry-standard optimization & export | vpype commands (linemerge, linesimplify, reloop, linesort, write) | `integrations/vpype/*.java` | M | vpype (Python) | **MVP** — use vpype CLI as backend |
 | **Output** |||||||
-| 26 | SVG export (layers per pen) | Standard vector format for plotters | Paper size, DPI, layer naming, inkscape:groupmode, background layer | `files/exporters/SVGExporter.java` | S | svgwrite / lxml | **MVP** |
-| 27 | GCode export | Direct machine control | Pen up/down commands, feed rates, units, header/footer | `files/exporters/GCodeExporter.java` | M | — | **planned** — LUC-51 Phase 7 (machine profiles); built and merged |
-| 28 | HPGL / DXF export | Legacy cutter support | — | New | M | — | **out** |
-| 29 | PNG/PDF preview | Quick visual check | DPI, antialiasing, show pen-up moves | `files/exporters/ImageExporter.java`, `PDFExporter.java` | S | Cairo / reportlab | **later** |
+| 27 | SVG export (layers per pen) | Standard vector format for plotters | Paper size, DPI, layer naming, inkscape:groupmode, background layer | `files/exporters/SVGExporter.java` | S | svgwrite / lxml | **MVP** |
+| 28 | GCode export | Direct machine control | Pen up/down commands, feed rates, units, header/footer | `files/exporters/GCodeExporter.java` | M | — | **planned** — LUC-51 Phase 7 (machine profiles); built and merged |
+| 29 | HPGL / DXF export | Legacy cutter support | — | New | M | — | **out** |
+| 30 | PNG/PDF preview | Quick visual check | DPI, antialiasing, show pen-up moves | `files/exporters/ImageExporter.java`, `PDFExporter.java` | S | Cairo / reportlab | **later** |
 | **Presets & Config** |||||||
-| 30 | Project file (JSON/YAML) | Save/load full pipeline | All settings above | `files/json/projects/*.java` | M | pyyaml | **MVP** |
-| 31 | Preset system (filters, PFM, pens, paper) | Reuse/share configurations | Name, description, tags | `files/json/presets/*.java` | M | — | **later** |
-| 32 | CLI config file (TOML) | Persistent defaults | Default paper, pen, PFM, vpype path | New | XS | toml | **MVP** |
+| 31 | Project file (JSON/YAML) | Save/load full pipeline | All settings above | `files/json/projects/*.java` | M | pyyaml | **MVP** |
+| 32 | Preset system (filters, PFM, pens, paper) | Reuse/share configurations | Name, description, tags | `files/json/presets/*.java` | M | — | **later** |
+| 33 | CLI config file (TOML) | Persistent defaults | Default paper, pen, PFM, vpype path | New | XS | toml | **MVP** |
 
 ---
 
