@@ -75,6 +75,7 @@ class TestDrawStyledLines:
 
     def test_outline_adds_edge_strokes_before_tone(self) -> None:
         preset = get_style("outline")
+        assert preset.outline is not None
         image = _edge_image()
         edges = outline_strokes(image, preset.outline)
         assert edges, "the fixture must have a detectable edge"
@@ -94,3 +95,16 @@ class TestDrawStyledLines:
         settings = get_style("hatch").sketch_lines
         draw_styled_lines(_edge_image(), capture, settings, "hatch")
         assert seen == [settings]
+
+    def test_extra_kwargs_reach_only_the_pfm(self) -> None:
+        seen: list[dict[str, object]] = []
+
+        def capture(image: object, settings: BaseModel, **kwargs: object) -> list[LineString]:
+            seen.append(kwargs)
+            return _tone_pfm(image, settings)
+
+        kwargs = {"pixels_per_mm": 10.0, "pen_width_mm": 0.3}
+        lines = draw_styled_lines(_edge_image(), capture, SketchLinesSettings(), "outline", kwargs)
+
+        assert seen == [kwargs]
+        assert lines[-1] == _TONE_LINE

@@ -7,7 +7,7 @@ caller can resolve and draw a look without going through the CLI.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
@@ -115,6 +115,7 @@ def draw_styled_lines(
     pfm_fn: Callable[..., list[LineString]],
     pfm_settings: BaseModel,
     style: str | None = None,
+    pfm_kwargs: Mapping[str, object] | None = None,
 ) -> list[LineString]:
     """Draw one pen image, running the style's edge pass before the tone pass.
 
@@ -122,17 +123,23 @@ def draw_styled_lines(
     the default path is unchanged. ``outline`` first appends the deterministic
     contour strokes from the image and then the light tone strokes from the PFM;
     both are returned in one list for the geometry optimizer and SVG writer.
+    ``pfm_kwargs`` is forwarded only to the PFM call, so extra arguments such as
+    the physical scale needed by Hatch never reach the outline pass.
 
     Parameters
     ----------
     image : PIL.Image.Image
         Working image for this pen, in pixels.
     pfm_fn : Callable
-        Registered PFM function taking ``(image, settings)``.
+        Registered PFM function taking ``(image, settings)`` and, for PFMs that
+        need it, extra keyword arguments.
     pfm_settings : BaseModel
         Validated PFM settings, after any ``-s`` overrides.
     style : str | None
         Saved look name, or ``None`` for the default path.
+    pfm_kwargs : Mapping[str, object] | None
+        Extra keyword arguments for the PFM. Defaults to none, which calls the
+        PFM exactly as ``pfm_fn(image, settings)``.
 
     Returns
     -------
@@ -143,7 +150,7 @@ def draw_styled_lines(
     lines: list[LineString] = []
     if preset is not None and preset.outline is not None:
         lines.extend(outline_strokes(image, preset.outline))
-    lines.extend(pfm_fn(image, pfm_settings))
+    lines.extend(pfm_fn(image, pfm_settings, **(pfm_kwargs or {})))
     return lines
 
 
