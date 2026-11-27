@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from penpath.core.contact_sheet import ContactSheetEntry
 from penpath.core.drawing.pfm_contour import ContourSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings
@@ -269,6 +270,30 @@ def list_presets_for_pfm(pfm_type: str) -> list[str]:
     return sorted(builtin + extra)
 
 
+def list_sheet_entries() -> list[ContactSheetEntry]:
+    """Build the default entry and every preset entry for each registered PFM.
+
+    A preset named exactly ``default`` is skipped: the PFM's own default entry
+    already covers the legacy sketch_lines alias. Each entry gets fresh
+    settings so callers can change one without affecting another.
+
+    Returns
+    -------
+    list[ContactSheetEntry]
+        Entries in PFM order, defaults before that PFM's sorted presets.
+    """
+    entries: list[ContactSheetEntry] = []
+    for pfm in list_pfms():
+        _, model = get_pfm(pfm)
+        entries.append(ContactSheetEntry(pfm=pfm, preset=None, settings=model()))
+        for preset in list_presets_for_pfm(pfm):
+            if preset == "default":
+                continue
+            settings = get_pfm_preset_settings(preset).model_copy(deep=True)
+            entries.append(ContactSheetEntry(pfm=pfm, preset=preset, settings=settings))
+    return entries
+
+
 def list_pfm_presets() -> list[str]:
     """List all available PFM preset names.
 
@@ -348,5 +373,6 @@ __all__ = [
     "list_pfm_preset_ids",
     "list_pfm_presets",
     "list_presets_for_pfm",
+    "list_sheet_entries",
     "register_pfm_preset",
 ]

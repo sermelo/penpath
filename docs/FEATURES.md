@@ -52,6 +52,16 @@
 
 ---
 
+## PFM comparison contact sheet (LUC-141/160)
+
+`penpath compare IMAGE -o sheet.png` draws one labelled tile per registered PFM
+and preset on the same image, using the library functions
+`penpath.core.render_contact_sheet()` and `penpath.presets.list_sheet_entries()`.
+It is a PNG for choosing a look before plotting, not a step in the SVG → G-code
+path. The [committed sheet](images/luc-141/contact_sheet.png) and the
+[readability check](TESTING.md#contact-sheet-readability-luc-141-2026-11-27)
+show every look on the Santa portrait.
+
 ## Library-only outline pass (LUC-129, part 2 of 3)
 
 `penpath.core.outline_strokes(image, OutlineSettings)` extracts contour strokes
