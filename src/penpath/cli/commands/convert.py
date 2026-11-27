@@ -201,8 +201,52 @@ def _apply_palette(project: Project, palette: Palette) -> None:
     project.palette_name = palette.name if palette.name in list_palettes() else None
 
 
+_MARGIN_FORMAT = "one margin in mm or four in top,right,bottom,left order"
+
+
+def _parse_margin_parts(
+    parts: list[str], param_hint: str
+) -> float | tuple[float, float, float, float]:
+    """Parse one or four comma-separated, non-negative millimetre margins."""
+    try:
+        values = [float(part.strip()) for part in parts]
+    except ValueError as e:
+        raise click.BadParameter(
+            f"margins must be numbers in millimetres; expected {_MARGIN_FORMAT}",
+            param_hint=param_hint,
+        ) from e
+
+    if len(values) == 1:
+        margin: float | tuple[float, float, float, float] = values[0]
+    elif len(values) == 4:
+        margin = (values[0], values[1], values[2], values[3])
+    else:
+        raise click.BadParameter(
+            f"expected {_MARGIN_FORMAT}, got {len(values)} values", param_hint=param_hint
+        )
+
+    for value in (margin,) if isinstance(margin, float) else margin:
+        if not math.isfinite(value) or value < 0:
+            raise click.BadParameter(
+                "margins must be finite and non-negative in millimetres", param_hint=param_hint
+            )
+    return margin
+
+
+def _check_drawable_area(paper: Paper, param_hint: str) -> None:
+    """Reject margins that leave no room to draw on the resolved paper."""
+    if paper.drawable_width_mm <= 0 or paper.drawable_height_mm <= 0:
+        sides = "/".join(f"{value:g}" for value in paper.margins_mm)
+        raise click.BadParameter(
+            f"margins {sides} (top/right/bottom/left) leave no drawable area on "
+            f"{paper.width_mm:g}x{paper.height_mm:g} mm paper; "
+            "reduce the margin or use a larger paper",
+            param_hint=param_hint,
+        )
+
+
 def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
-    """Resolve paper from spec (preset name or inline 'WIDTHxHEIGHT[,margins]')."""
+    """Resolve paper from a preset or inline 'WIDTHxHEIGHT[,MARGINS]'."""
     if paper_spec is None:
         paper_spec = config.default_paper
 
@@ -230,35 +274,36 @@ def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
 
     # Parse inline format: WIDTHxHEIGHT[,MARGINS]
     if "x" in paper_spec:
+        parts = [part.strip() for part in paper_spec.split(",")]
         try:
-            size_part, *margin_parts = paper_spec.split(",")
-            width_str, height_str = size_part.split("x")
+            width_str, height_str = parts[0].split("x", 1)
             width_mm = float(width_str)
             height_mm = float(height_str)
-
-            if margin_parts:
-                margins = [float(m) for m in margin_parts[0].split(",")]
-                if len(margins) == 1:
-                    margin_mm = margins[0]
-                elif len(margins) == 4:
-                    margin_mm = sum(margins) / 4  # Average for uniform margin
-                else:
-                    margin_mm = margins[0]
-            else:
-                margin_mm = 10.0
-
+        except ValueError:
+            pass
+        else:
+            if not (
+                math.isfinite(width_mm)
+                and math.isfinite(height_mm)
+                and width_mm > 0
+                and height_mm > 0
+            ):
+                raise click.BadParameter(
+                    "inline size must be two positive numbers in millimetres", param_hint="--paper"
+                )
+            margin_mm: float | tuple[float, float, float, float] = (
+                10.0 if len(parts) == 1 else _parse_margin_parts(parts[1:], "--paper")
+            )
             return Paper(
                 name=f"inline-{width_mm}x{height_mm}",
                 width_mm=width_mm,
                 height_mm=height_mm,
                 margin_mm=margin_mm,
             )
-        except (ValueError, IndexError):  # fmt: skip
-            pass
 
     raise click.BadParameter(
         f"Unknown paper: '{paper_spec}'. Use a preset name or inline format "
-        "'WIDTHxHEIGHT[,margins]'"
+        "'WIDTHxHEIGHT[,MARGINS]'"
     )
 
 
@@ -734,7 +779,29 @@ def _run_convert_pipeline(
         "split by colour, one layer per used pen"
     ),
 )
-@click.option("--paper", "paper_spec", help="Paper preset or inline 'WIDTHxHEIGHT[,margins]'")
+@click.option(
+    "--paper",
+    "paper_spec",
+    help="Paper preset or inline 'WIDTHxHEIGHT[,MARGINS]' (one margin or top,right,bottom,left)",
+)
+@click.option(
+    "--margin",
+    "margin_spec",
+    help=(
+        "Override the paper margin in mm for this run: one value for all sides or four "
+        "in top,right,bottom,left order (e.g. 10 or 20,5,20,5)"
+    ),
+)
+@click.option(
+    "--fit",
+    "fit_mode",
+    type=click.Choice(["fit", "fill", "none"]),
+    default=None,
+    help=(
+        "Image placement: fit (default, contain in the drawable area), fill (cover and crop), "
+        "or none (use the --dpi pixel size). --dpi sets the drawn size only with --fit none"
+    ),
+)
 @click.option("--no-vpype", is_flag=True, help="Skip vpype optimization (use direct SVG export)")
 @click.option("--vpype-path", default="vpype", help="Path to vpype executable")
 @click.option(
@@ -742,7 +809,15 @@ def _run_convert_pipeline(
     default=True,
     help="SVG layer structure (default: layer-per-pen)",
 )
-@click.option("--dpi", type=int, default=300, help="Image DPI for coordinate scaling")
+@click.option(
+    "--dpi",
+    type=int,
+    default=300,
+    help=(
+        "Image DPI; sets the drawn size only with --fit none, because fit and fill "
+        "scale the image to the paper"
+    ),
+)
 @click.option(
     "--max-resolution",
     "max_resolution_px",
@@ -785,6 +860,8 @@ def convert_cmd(
     pen_spec: str | None,
     palette_spec: str | None,
     paper_spec: str | None,
+    margin_spec: str | None,
+    fit_mode: Literal["fit", "fill", "none"] | None,
     no_vpype: bool,
     vpype_path: str,
     layer_per_pen: bool,
@@ -822,6 +899,10 @@ def convert_cmd(
         raise click.UsageError(
             "Options --pen and --palette are mutually exclusive: use one or the other."
         )
+
+    margins = (
+        _parse_margin_parts(margin_spec.split(","), "--margin") if margin_spec is not None else None
+    )
 
     resolved_output = _resolve_output_path(input_path, output_path, output_option)
 
@@ -932,6 +1013,13 @@ def convert_cmd(
             style=style_name,
             output_path=output,
         )
+
+    if margins is not None:
+        project.paper.margin_mm = margins
+    if fit_mode is not None:
+        project.paper.fit = fit_mode
+    margin_hint = "--margin" if margins is not None else "--paper" if paper_spec else "paper"
+    _check_drawable_area(project.paper, margin_hint)
 
     # Report to stderr so stdout stays clean for pipelines and agents. The
     # console is created here so its terminal detection sees the current stderr.

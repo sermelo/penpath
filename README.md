@@ -155,6 +155,15 @@ penpath convert photo.jpg -s max_fill=100 -o full-range.svg
 # Choose pen and paper
 penpath convert photo.jpg --pen fine --paper a4
 
+# Paper fit: contain (the default), cover and crop, or use the --dpi pixel size
+penpath convert photo.jpg -o fit.svg --paper 190x190 --fit fit
+penpath convert photo.jpg -o fill.svg --paper 190x190 --fit fill
+penpath convert photo.jpg -o none.svg --paper 190x190 --fit none --dpi 300
+
+# Override margins for one run: one value or top,right,bottom,left
+penpath convert photo.jpg -o margin.svg --paper 190x190 --margin 5
+penpath convert photo.jpg -o sides.svg --paper 190x190 --margin 20,5,20,5
+
 # Skip vpype (faster, less optimized)
 penpath convert photo.jpg --no-vpype
 
@@ -303,9 +312,13 @@ pen:
 paper:
   name: a4
   # or inline:
-  # size_mm: [210, 297]
-  # margins_mm: [10, 10, 10, 10]
-  # background: "#FFFFFF"
+  # width_mm: 210
+  # height_mm: 297
+  # margin_mm: 10
+  # or four per-side margins in [top, right, bottom, left] order:
+  # margin_mm: [10, 20, 10, 20]
+  # fit: fit   # fit, fill or none (default fit)
+  # background_color: "#FFFFFF"
 
 output:
   path: "plot.svg"
@@ -579,7 +592,18 @@ G-code step does this.
 | `square_200` | 200 × 200 | 10 all sides |
 | `postcard` | 148 × 105 | 5 all sides |
 
-**Inline format:** `WIDTHxHEIGHT[,MARGINS]` — e.g., `210x297,10` or `300x200,15,10,15,10` (T,R,B,L)
+**Inline format:** `WIDTHxHEIGHT[,MARGINS]` — one margin for all sides
+(`210x297,10`) or four in **top,right,bottom,left** order
+(`300x200,15,10,15,10`).
+
+By default (`--fit fit`) the image is contained in the drawable area — the
+paper minus its margins — keeping its aspect ratio. `--fit fill` covers that
+area and crops the overflow; `--fit none` draws at the image's pixel size at
+`--dpi` (default 300). `--dpi` changes the drawn size **only** with
+`--fit none`: fit and fill scale the image to the paper. `--margin MM` overrides
+the paper margins for one run (one value or four in top,right,bottom,left order),
+including for a paper from `--project`; a margin that leaves no drawable area is
+rejected. On `190x190` the default 10 mm margin leaves a 170 × 170 mm drawing.
 
 ### Filters (applied in order)
 

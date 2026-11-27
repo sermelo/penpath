@@ -24,7 +24,7 @@ G1 X212.700 Y40.600 F6000
 G1 Z10.000 F600
 M300 S1000 P300
 M117 Pen 1: stabilo_88_black, touch, knob
-M0 Pen 1: stabilo_88_black. Touch paper, tighten, press knob
+M0 Pen 1: stabilo_88_black. Fit pen, touch paper, tighten clamp, press knob
 M300 S1500 P200
 M117 Plotting stabilo_88_black
 G1 Z12.500 F600
