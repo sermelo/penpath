@@ -103,9 +103,10 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
     the radial tooth length (dark = long) and the ease-in-sine step velocity.
     Parabolic runs the reference's two passes with ring spacing and velocity
     divided by 10 and amplitude divided by 1.5. Coordinates are in image
-    pixels (origin top-left), always inside ``[0, width-1] x [0, height-1]``;
-    skipped teeth close a stroke instead of bridging white paper or off-page
-    space, and duplicate consecutive points are dropped.
+    pixels (origin top-left), always inside ``[0, width-1] x [0, height-1]``:
+    teeth reaching the page edge are clamped to it so a connected pass stays
+    one stroke, while teeth skipped over white paper (``ignore_white``) close
+    a stroke, and duplicate consecutive points are dropped.
 
     Parameters
     ----------
@@ -159,9 +160,9 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
         if not current or current[-1] != point:
             current.append(point)
 
-    def on_page(point: _PathPoint) -> bool:
+    def clamp_to_page(point: _PathPoint) -> _PathPoint:
         x, y = point
-        return 0.0 <= x <= width - 1 and 0.0 <= y <= height - 1
+        return min(max(x, 0.0), width - 1), min(max(y, 0.0), height - 1)
 
     def position(radius: float, alpha: float, pass_index: int) -> _PathPoint:
         theta = math.radians(alpha)
@@ -206,11 +207,12 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
             alpha, radius = advance(radius, alpha, velocity)
             tooth_end = position(radius - tooth, alpha, pass_index)
 
-            off_page = not (on_page(tooth_start) and on_page(tooth_end))
-            if off_page or (settings.ignore_white and tone >= _WHITE_MASK):
+            if settings.ignore_white and tone >= _WHITE_MASK:
                 flush()
                 continue
 
+            tooth_start = clamp_to_page(tooth_start)
+            tooth_end = clamp_to_page(tooth_end)
             if settings.connected_lines:
                 append(tooth_start)
                 append(tooth_end)

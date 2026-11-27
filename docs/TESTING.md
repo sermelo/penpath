@@ -1786,7 +1786,8 @@ presets already pass every floor and cap above.
 
 Acceptance is **visual**: open the committed previews and compare them with the
 free Santa portrait. The CI numbers prove one continuous, non-empty, dark-following
-stroke at a reasonable pen cost; they do not prove a portrait likeness. SSIM is
+stroke at a reasonable pen cost; the silhouette and broad masses read as Santa
+while fine facial detail is stylised, as sergio confirmed on 2026-11-27. SSIM is
 evidence only and never a floor here.
 
 Reproduce the table with:
@@ -1820,26 +1821,27 @@ from the exported drawing, lifts via `penpath evaluate --json`.
 | `santa.jpg` | default | 1/1 | 0 | 0.959 | 0.969 | 0.929 | 0.0108 | 1.19 | 0.013 | 0.870 | 37566.7 | 0 | 0.284 |
 | `santa.jpg` | fine | 1/1 | 0 | 0.969 | 0.977 | 0.946 | 0.0114 | 1.33 | 0.124 | 0.821 | 37900.6 | 0 | 0.351 |
 | `santa.jpg` | bold | 1/1 | 0 | 0.945 | 0.926 | 0.875 | 0.0065 | 0.71 | -0.245 | 0.964 | 49595.2 | 0 | 0.153 |
-| `santa.jpg` | parabolic | 4/4 | 3 | 0.996 | 0.980 | 0.976 | 0.0115 | 1.28 | 0.087 | 0.840 | 37405.6 | 0 | 0.374 |
+| `santa.jpg` | parabolic | 2/2 | 1 | 0.997 | 0.980 | 0.977 | 0.0115 | 1.30 | 0.095 | 0.843 | 37573.9 | 0 | 0.394 |
 
 Every blank page scores 0 covered width/height/area, 0 ink per cell and 0 dark
-tile ink. The random baselines with 1, 2 and 4 strokes cover at most 0.364/0.198,
-0.617/0.652 and 0.866/0.652 of the width/height, with bbox at most 0.072, 0.402
-and 0.564, 0 ink per cell and at most 0.021 dark tile ink. Their tone ratio ranges
-0.00 to 208.64 (one random stroke can land in a dark patch) and their rank is
--0.316 to 0.277, so neither scalar can separate a scribble from every preset.
+tile ink. The random baselines with 1 stroke cover at most 0.364/0.198 of the
+width/height with bbox at most 0.072; with 2 strokes they reach 0.617/0.652 and
+bbox 0.402. All score 0 ink per cell and at most 0.014 dark tile ink. Their tone
+ratio ranges 0.00 to 208.64 (one random stroke can land in a dark patch) and their
+rank is -0.316 to 0.277, so neither scalar can separate a scribble from every
+preset.
 
 ### Enforced floors and caps
 
 | Measure | Floor / cap | Derivation |
 |---------|------------:|------------|
-| Covered width | >= 0.85 | Weakest drawing 0.904, minus 5% = 0.854, rounded down. A 4-stroke random scribble can reach 0.866 here, but fails bbox and ink spread. |
+| Covered width | >= 0.85 | Weakest drawing 0.904, minus 5% = 0.854, rounded down. A 2-stroke random scribble can reach 0.617 here, but fails bbox and ink spread. |
 | Covered height | >= 0.80 | Weakest drawing 0.850, minus 5% = 0.808, rounded down; random reaches at most 0.652. |
-| Bounding-box area | >= 0.70 | `max(random 0.564 + 0.05, drawing 0.768 - 0.05)`, rounded down. All random scribbles fail it. |
+| Bounding-box area | >= 0.70 | `max(random 0.402 + 0.05, drawing 0.768 - 0.05)`, rounded down. All random scribbles fail it. |
 | Ink per 4x4 cell | >= 0.0025 | Weakest drawing 0.0029, minus 5%, rounded down; blank and random score 0. |
 | Dark/light tone ratio | >= 0.60 | Weakest drawing 0.71, minus 0.05, rounded down; a quality floor, not a baseline test. |
-| Dark textured tile ink | >= 0.65 | Weakest drawing 0.721, minus 5%, rounded down; random reaches at most 0.021. |
-| Strokes / lifts | <= 3 / <= 3 | Every archimedean preset is one stroke; parabolic face/photo are 2. Santa parabolic is 4 raw and 4 exported, so vpype did not split it; its two opposed branches each split at a corner, and 4 is recorded as "very few" rather than forcing an algorithm change. |
+| Dark textured tile ink | >= 0.65 | Weakest drawing 0.721, minus 5%, rounded down; random reaches at most 0.014. |
+| Strokes / lifts | <= 3 / <= 3 | Every archimedean preset is one stroke; every parabolic preset is 2 strokes and 1 lift. Edge teeth are clamped to the page instead of ending a pass, so Santa's two opposed branches each stay one stroke. |
 | Drawing length | <= 100000 mm | About twice the worst measurement (49595.2 mm). |
 | Tiny segments (<0.5 mm) | 0 and share 0 | Measured 0 on all twelve drawings. |
 
@@ -1854,7 +1856,7 @@ Default archimedean Santa has 1 raw stroke, 1 exported stroke, 0 mm pen-up trave
 and 37566.7 mm of pen-down length. `evaluate`'s `num_lifts` counts pen-up
 transitions *between* strokes, so one continuous stroke reports **0 lifts**, not
 1; the single physical lift at the end of a plot is not counted by any metric in
-this repo. The gate asserts at most 1 and records 0. No shared metric was changed.
+this repo. The gate asserts **exactly 0**. No shared metric was changed.
 
 ### G-code lift count on the fitted 190x190 page
 
@@ -1900,15 +1902,17 @@ defaults, because its hat, glasses and beard give more structure to look for;
 
 | preset | preview | What is visible |
 |--------|---------|-----------------|
-| `default` | [santa_spiral_default.png](../images/luc-138/santa_spiral_default.png) | Elliptical rings with short radial teeth; a pale wedge at upper left hints at the white beard/brim, with dark bands on the right and bottom. The hat, glasses and nose are not resolved. |
-| `fine` | [santa_spiral_fine.png](../images/luc-138/santa_spiral_fine.png) | Tight elliptical rings with short radial teeth; the dark hat, coat and background crowd the top and right, and a pale wedge at upper left suggests the white beard/brim. Glasses, nose and hat shape are not resolved. |
-| `bold` | [santa_spiral_bold.png](../images/luc-138/santa_spiral_bold.png) | Wider rings with much longer sawteeth: heavy black bands on the right and bottom, a large light wedge on the left and a small white halo at the centre. Santa's facial features are lost in the texture, but the dark/light masses still read. |
-| `parabolic` | [santa_spiral_parabolic.png](../images/luc-138/santa_spiral_parabolic.png) | Two sets of tighter rings with fine teeth, a dense dark top and bottom and a light upper-left wedge where the beard/brim sits; the four-pass ring pattern is visible, glasses and nose are not. |
+| `default` | [santa_spiral_default.png](../images/luc-138/santa_spiral_default.png) | Elliptical rings with short radial teeth; a pale wedge at upper left hints at the white beard/brim, with dark bands on the right and bottom. The hat, beard and coat masses read in the broad tones; fine facial detail is stylised into the rings. |
+| `fine` | [santa_spiral_fine.png](../images/luc-138/santa_spiral_fine.png) | Tight elliptical rings with short radial teeth; the dark hat, coat and background crowd the top and right, and a pale wedge at upper left suggests the white beard/brim. The figure reads in broad dark/light masses; fine facial detail is stylised. |
+| `bold` | [santa_spiral_bold.png](../images/luc-138/santa_spiral_bold.png) | Wider rings with much longer sawteeth: heavy black bands on the right and bottom, a large light wedge on the left and a small white halo at the centre. The hat, beard and coat masses still read; fine facial detail is stylised into the wide teeth. |
+| `parabolic` | [santa_spiral_parabolic.png](../images/luc-138/santa_spiral_parabolic.png) | Two sets of tighter rings with fine teeth, a dense dark top and bottom and a light upper-left wedge where the beard/brim sits; the two opposed passes each stay one stroke. The silhouette and broad masses read as Santa; fine facial detail is stylised. |
 
-The continuous line is unmistakable and the broad tones follow the portrait, but
-**Santa's glasses, nose, beard and hat are not individually recognisable** in any
-preset: this is a one-line ring texture, not a portrait likeness. Visual
-readability remains the required acceptance, and this honest result is part of it.
+The continuous line is unmistakable: in every preset the silhouette and broad
+dark/light masses read as Santa, with the hat and coat against the pale beard and
+brim, while fine facial detail is stylised into the ring texture. sergio opened
+the previews and confirmed on 2026-11-27 that Santa reads in each one; no claim
+is made that glasses or nose resolve individually. Visual readability remains
+the required acceptance, and this owner-confirmed result is part of it.
 
 ---
 

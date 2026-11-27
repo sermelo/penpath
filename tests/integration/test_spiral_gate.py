@@ -58,7 +58,6 @@ INK_CELL_MIN = 0.0025
 TONE_RATIO_MIN = 0.60
 DARK_TEXTURED_INK_MIN = 0.65
 MAX_LIFTS = 3
-MAX_PARABOLIC_STROKES = 4
 MAX_LENGTH_MM = 100000.0
 MAX_TINY_SEGMENTS = 40
 MAX_TINY_FRACTION = 0.02
@@ -231,7 +230,7 @@ def test_default_santa_is_one_continuous_line(
     report = spiral_report_factory("santa.jpg", "spiral_sawtooth")
     assert report.raw_strokes == 1
     assert report.strokes == 1
-    assert report.lifts <= 1
+    assert report.lifts == 0
     assert report.cost.length_mm > 0
 
 
@@ -246,8 +245,7 @@ def test_preset_is_valid_readable_and_cheap(
     report = spiral_report_factory(reference, preset)
     assert not report.geometry_failures, report.geometry_failures[:5]
     assert report.strokes > 0
-    stroke_cap = MAX_PARABOLIC_STROKES if "parabolic" in preset else MAX_LIFTS
-    assert report.strokes <= stroke_cap, f"{reference}/{preset}: {report.strokes} strokes"
+    assert report.strokes <= MAX_LIFTS, f"{reference}/{preset}: {report.strokes} strokes"
     assert report.lifts <= MAX_LIFTS, f"{reference}/{preset}: {report.lifts} lifts"
 
     m = report.algorithm
