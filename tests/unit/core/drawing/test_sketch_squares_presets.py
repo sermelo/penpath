@@ -8,8 +8,8 @@ from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings, sketc
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.models import SketchSquaresPFM
 from penpath.presets.pfms import (
-    PFM_PRESETS,
     PFM_PRESET_TYPES,
+    PFM_PRESETS,
     SKETCH_SQUARES_PRESETS,
     get_pfm_preset,
     get_pfm_preset_by_id,

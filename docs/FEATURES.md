@@ -26,7 +26,7 @@
 | 12 | Filter pipeline / presets | Chain and save filter sequences | Ordered list, enable/disable per step | `image/ImageFilterSettings.java` | S | — | **later** |
 | **Drawing Algorithms (PFMs)** |||||||
 | 13 | Sketch Lines (hatching) | Versatile pen-and-ink look from photos | Line density, max fill, min/max length, angle range, shading on/off, squiggles, erasing, seed | `pfm/PFMSketchLinesBasic.java` + settings in `Register.java` | L | NumPy, custom geometry | **MVP** |
-| 14 | Sketch Squares (grid hatching) | Structured, graphic look | Grid angle, line density, min/max length | `pfm/PFMSketchSquaresBasic.java` | M | NumPy | **later** |
+| 14 | Sketch Squares (grid hatching) | Structured, graphic look | Grid angle, line density, min/max length, max fill, seed, stroke cap | `pfm/PFMSketchSquaresBasic.java` | M | NumPy | **implemented** — LUC-137 part 2 (registry, presets, CLI and project file); built and merged |
 | 15 | Spiral (sawtooth) | Continuous-line, single-pass plots | Spiral type (Archimedean/parabolic), centre, ring spacing, amplitude, velocity range, connected lines | `pfm/PFMSpiralBasic.java` | M | NumPy | **later** |
 | 16 | Contour tracing (potrace-style) | Clean vector outlines from thresholded image | Turn policy, turd size, alpha max, opticurve | New (DrawingBotV3 Premium only) | L | scikit-image, Shapely | **done** — registered `contour` PFM with presets and `-s` settings (LUC-144/145); no DrawingBotV3 code ported |
 | 17 | Stippling / pointillism | Dot-based shading | Dot density, min/max radius, jitter, seed | New | M | NumPy, Poisson disk | **out** — niche, can be built on Sketch Lines |
