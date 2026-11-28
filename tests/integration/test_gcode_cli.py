@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import shutil
@@ -16,11 +17,13 @@ from penpath.cli.main import main
 from penpath.core import (
     FIT_TOLERANCE_MM,
     FRAME_PAUSE_MESSAGE,
+    MachineProfile,
     fit_layers_to_drawable,
     get_svg_paper_size,
     load_profile,
     page_origin_mm,
     parse_svg_layers,
+    usable_area,
 )
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -1219,3 +1222,125 @@ def test_gcode_frame_help_lists_every_option(runner: CliRunner) -> None:
     assert "--frame-margin FLOAT" in result.stdout
     assert "--frame-pen TEXT" in result.stdout
     assert "--frame-pause" in result.stdout
+
+
+def _scaled_svg(tmp_path: Path) -> Path:
+    """A 400 mm page whose single stroke starts at pen (0, 0) and must scale to fit."""
+    drawing = tmp_path / "scaled.svg"
+    drawing.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg" width="400mm" height="400mm"
+ viewBox="0 0 400 400">
+<polyline points="0,400 400,400 400,0" fill="none" stroke="#000000" stroke-width="0.3"/>
+</svg>""",
+        encoding="utf-8",
+    )
+    return drawing
+
+
+def _move_values(parts: list[str]) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for token in parts:
+        if len(token) > 1 and token[0] in ("X", "Y", "Z"):
+            try:
+                values[token[0]] = float(token[1:])
+            except ValueError:
+                continue
+    return values
+
+
+def _emitted_draw_length(text: str) -> float:
+    """Sum the XY distance of the pen-down G1 moves penpath emitted."""
+    length = 0.0
+    position = (0.0, 0.0)
+    for line in text.splitlines():
+        parts = line.split(";", 1)[0].split()
+        if not parts or parts[0] != "G1":
+            continue
+        values = _move_values(parts[1:])
+        point = (values.get("X", position[0]), values.get("Y", position[1]))
+        length += math.dist(position, point)
+        position = point
+    return length
+
+
+def _emitted_plot_seconds(text: str, profile: MachineProfile) -> float:
+    """Recompute plot time from the emitted G0/G1 XY moves and Z changes."""
+    seconds = 0.0
+    position = (0.0, 0.0)
+    z = 0.0
+    for line in text.splitlines():
+        parts = line.split(";", 1)[0].split()
+        if not parts or parts[0] not in ("G0", "G1"):
+            continue
+        values = _move_values(parts[1:])
+        point = (values.get("X", position[0]), values.get("Y", position[1]))
+        distance = math.dist(position, point)
+        if distance:
+            feed = profile.feed.draw_mm_s if parts[0] == "G1" else profile.feed.travel_mm_s
+            seconds += distance / feed
+        position = point
+        if "Z" in values:
+            seconds += abs(values["Z"] - z) / profile.feed.effective_z_mm_s
+            z = values["Z"]
+    return seconds
+
+
+def test_gcode_no_fit_keeps_the_existing_summary_numbers(runner: CliRunner, card: Path) -> None:
+    """Changing the summary source leaves an unfitted run's numbers untouched."""
+    result = runner.invoke(
+        main, ["gcode", str(card), "--profile", "generic", "--no-fit", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert _summary_value(result.stderr, "Drawing length:") == pytest.approx(30.0)
+    assert _summary_value(result.stderr, "Pen-up travel:") == pytest.approx(14.14, abs=0.01)
+    assert _summary_value(result.stderr, "Pen lifts:") == 1
+    assert _summary_value(result.stderr, "Estimated plot time:") == pytest.approx(1.0, abs=0.05)
+    assert "Drawing placed at X 10.000..40.000, Y 267.000..287.000 mm" in result.stderr
+
+
+def test_gcode_summary_matches_the_emitted_moves_after_scaling(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """A fitted 400 mm drawing is summarised from the G-code it actually emits."""
+    drawing = _scaled_svg(tmp_path)
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "generic", "--dry-run"])
+
+    assert result.exit_code == 0, result.stderr
+    assert "fitted with scale 0.525" in result.stderr
+    emitted_length = _emitted_draw_length(result.stdout)
+    profile = load_profile("generic", profiles_path=tmp_path / "profiles.yaml")
+    emitted_seconds = _emitted_plot_seconds(result.stdout, profile)
+    assert emitted_length > 0
+    assert emitted_seconds > 0
+    assert _summary_value(result.stderr, "Drawing length:") == pytest.approx(
+        emitted_length, rel=0.01
+    )
+    assert _summary_value(result.stderr, "Estimated plot time:") == pytest.approx(
+        emitted_seconds, rel=0.01
+    )
+    assert result.stderr.index("Page placed at") < result.stderr.index("Drawing placed at")
+
+
+def test_gcode_drawing_bounds_line_lists_the_scaled_pen_space_bounds(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    """The new line follows Page placed and reports where the fitted ink lands."""
+    drawing = _aquila_svg(tmp_path, 300.0, 300.0, "0,300 300,300 300,0")
+
+    result = runner.invoke(main, ["gcode", str(drawing), "--profile", "aquila", "--dry-run"])
+
+    assert result.exit_code == 0, result.stderr
+    assert "fitted with scale" in result.stderr
+    match = re.search(
+        r"Drawing placed at X ([\d.]+)\.\.([\d.]+), Y ([\d.]+)\.\.([\d.]+) mm",
+        result.stderr,
+    )
+    assert match is not None, result.stderr
+    x_lo, x_hi, y_lo, y_hi = (float(match.group(index)) for index in range(1, 5))
+    profile = load_profile("aquila", profiles_path=tmp_path / "profiles.yaml")
+    (u_xlo, u_ylo), (u_xhi, u_yhi) = usable_area(profile)
+    assert u_xlo <= x_lo < x_hi <= u_xhi
+    assert u_ylo <= y_lo < y_hi <= u_yhi
+    assert result.stderr.index("Page placed at") < result.stderr.index("Drawing placed at")
