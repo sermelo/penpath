@@ -144,9 +144,41 @@ The two integration jobs run in parallel in CI, so the integration stage took
 about 2:50 of wall-clock time there. A full `uv run pytest` on a VPS (Ubuntu
 24.04, aarch64, Python 3.14.10, vpype 1.15) ran 799 tests in 398.74 s (6:38);
 an earlier run of 796 tests on the same machine took 632.43 s (10:32), so the
-wall time moves with runner load. A slow full suite is why
-[`.github/workflows/nightly.yml`](../.github/workflows/nightly.yml) runs it on a
-schedule and on demand instead of as a pull-request check.
+wall time moves with runner load. A bare `uv run pytest` now excludes the
+`slow`-marked quality gates so pull requests stay fast; those gates run in the
+nightly workload and in the main-only `Quality Gates (Slow)` CI job.
+[`.github/workflows/nightly.yml`](../.github/workflows/nightly.yml) still runs
+the whole suite on a schedule and on demand.
+
+### Fast default versus slow gates (LUC-201, 2026-11-28)
+
+`pyproject.toml` registers `slow` and its `addopts` exclude it, so a bare
+`pytest` selects only fast tests. The modules marked `slow` are the ones that
+render reference images and assert likeness, readability or plot-cost floors:
+`test_sketch_lines_gate.py`, `test_contour_gate.py`, `test_sketch_squares_gate.py`,
+`test_spiral_gate.py`, `test_stipple_gate.py`, `test_hatch_gate.py`,
+`test_sketch_lines_readability.py`, plus the gate tests in `test_max_fill.py`,
+`test_multi_pen_gate.py` and `test_basic_shapes.py`. Their fast checks (CLI
+validation, measurement helpers, fixture checks) stay in the default suite.
+Profiling with `pytest --durations=20` found no other full-render quality gate;
+other slow tests such as `test_readme_commands.py` check features, not quality
+floors, and are left for part 2.
+
+Measured on this shared VPS (Ubuntu, aarch64, Python 3.14.10, pytest 9.2.0,
+vpype 1.15) with `/usr/bin/time`:
+
+| Selection | Command | Result | Test time | Wall time |
+|-----------|---------|--------|----------:|----------:|
+| Before, no filter | `python -m pytest --durations=20 -q` | 2140 passed, 7 skipped, 8 failed¹ | 1088.08 s | 1090.25 s |
+| After, bare default | `python -m pytest -q` | 2048 passed, 111 deselected | 965.73 s | 967.38 s |
+| After, slow only | `python -m pytest -m slow -q` | 111 passed, 2048 deselected | 306.34 s | 307.37 s |
+
+¹ The eight failures in the before run were the vpype-dependent tests in
+`test_full_pipeline.py` and `test_vpype.py`: the reused venv had the vpype
+package but no `vpype` executable on `PATH`. With the venv's `bin` directory on
+`PATH`, the after runs passed. The total grew by four because LUC-201 added four
+pytest configuration tests. The default suite is still dominated by feature
+tests; shortening those is part 2.
 
 One `penpath convert` of a photo was timed on that same VPS with:
 
@@ -180,7 +212,8 @@ libraries and uv:
 3. One timed conversion with the same seed and settings as the workflow, which
    prints `penpath convert wall time: <seconds> s` and writes
    `/tmp/nightly-photo.svg`.
-4. `uv run pytest tests/unit tests/integration -vs`.
+4. `uv run pytest tests/unit tests/integration -vs -m 'slow or not slow'` — the
+   explicit filter overrides the default and includes the slow quality gates.
 
 The script stops at the first failed command and exits with its status. On a
 system where `/usr/bin/time` is not GNU time (for example macOS), point it at a

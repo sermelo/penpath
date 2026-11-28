@@ -13,4 +13,4 @@ uv pip install pytest pytest-cov
   uv run penpath convert tests/fixtures/images/reference/photo.jpg \
     -o /tmp/nightly-photo.svg --pfm-setting seed=42 --quiet
 
-uv run pytest tests/unit tests/integration -vs
+uv run pytest tests/unit tests/integration -vs -m 'slow or not slow'

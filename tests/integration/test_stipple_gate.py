@@ -32,6 +32,8 @@ from stipple_gate import (
 from penpath.cli.main import main as cli_main
 from penpath.core.svg_parse import list_svg_layers, parse_svg_strokes
 
+pytestmark = pytest.mark.slow
+
 COVERAGE_WIDTH_MIN = 0.70
 COVERAGE_HEIGHT_MIN = 0.70
 BBOX_AREA_MIN = 0.51

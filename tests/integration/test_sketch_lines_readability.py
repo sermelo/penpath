@@ -22,6 +22,8 @@ from sketch_lines_gate import (
 from penpath.cli.main import main
 from penpath.core import get_image_placement
 
+pytestmark = pytest.mark.slow
+
 REFERENCE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "images" / "reference"
 PREVIEW_PX_PER_MM = 10.0
 PHOTOS = ("face.jpg", "photo.jpg")
