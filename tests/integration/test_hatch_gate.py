@@ -231,6 +231,9 @@ def test_convert_with_fixed_seed_is_byte_identical(tmp_path: Path) -> None:
             cli_main,
             [
                 "convert",
+                # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+                "--max-coverage",
+                "1",
                 str(image),
                 "-o",
                 str(output),

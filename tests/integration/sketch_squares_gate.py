@@ -119,6 +119,9 @@ def convert_preset(image_path: Path, preset: str, output: Path) -> None:
         cli_main,
         [
             "convert",
+            # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+            "--max-coverage",
+            "1",
             str(image_path),
             "-o",
             str(output),

@@ -143,6 +143,9 @@ def test_two_pen_palette_runs_once_per_pen(tmp_path: Path) -> None:
         cli_main,
         [
             "convert",
+            # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+            "--max-coverage",
+            "1",
             str(image_path),
             "-o",
             str(svg_path),
@@ -182,6 +185,9 @@ def test_convert_santa_and_preview_a_readable_portrait(tmp_path: Path) -> None:
         cli_main,
         [
             "convert",
+            # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+            "--max-coverage",
+            "1",
             str(REFERENCE_DIR / "santa.jpg"),
             "-o",
             str(svg_path),

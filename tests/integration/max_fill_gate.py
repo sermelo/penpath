@@ -152,6 +152,9 @@ def measure_sweep(work_dir: Path, sweep: Sequence[float] = SWEEP) -> list[FillRe
                 main,
                 [
                     "convert",
+                    # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+                    "--max-coverage",
+                    "1",
                     str(work_dir / f"{name}.png"),
                     "-o",
                     str(svg_path),

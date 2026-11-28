@@ -126,6 +126,9 @@ def test_user_can_convert_and_preview_every_preset(tmp_path: Path) -> None:
             cli_main,
             [
                 "convert",
+                # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+                "--max-coverage",
+                "1",
                 str(REFERENCE_DIR / "santa.jpg"),
                 "-o",
                 str(svg_path),
