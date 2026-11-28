@@ -26,6 +26,8 @@ from sketch_squares_gate import (
 
 from penpath.cli.main import main as cli_main
 
+pytestmark = pytest.mark.slow
+
 DARK_RECALL_MIN = 0.19
 INK_PRECISION_MIN = 0.67
 COVERAGE_WIDTH_MIN = 0.94

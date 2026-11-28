@@ -46,6 +46,7 @@ def multi_pen_report(tmp_path_factory: pytest.TempPathFactory) -> MultiPenGateRe
     return measure_reference(work_dir / "photo", SEED)
 
 
+@pytest.mark.slow
 def test_multi_pen_gate_reports_every_used_layer(
     multi_pen_report: MultiPenGateReport,
 ) -> None:
@@ -161,6 +162,7 @@ def test_dilate_mask_extends_the_region_by_half_a_pen_width() -> None:
     assert bool(dilated[2, 2]) and bool(dilated[4, 4])
 
 
+@pytest.mark.slow
 def test_enforced_region_floors_are_all_asserted(multi_pen_report: MultiPenGateReport) -> None:
     """Every region measure in the report has an enforced floor."""
     assert set(ENFORCED_FLOORS) == set(DEFAULT_REGION_FLOORS)
@@ -169,6 +171,7 @@ def test_enforced_region_floors_are_all_asserted(multi_pen_report: MultiPenGateR
         assert all(value > 0 for value in region_floors(layer.pen_name).values())
 
 
+@pytest.mark.slow
 def test_used_layers_meet_region_floors(multi_pen_report: MultiPenGateReport) -> None:
     """The drawing of every used pen clears all enforced region floors."""
     failures = [
@@ -179,6 +182,7 @@ def test_used_layers_meet_region_floors(multi_pen_report: MultiPenGateReport) ->
     assert not failures, "Multi-pen per-layer gate not met:\n" + "\n".join(failures)
 
 
+@pytest.mark.slow
 def test_sparse_layer_choices_are_pinned_after_luc123(
     multi_pen_report: MultiPenGateReport,
 ) -> None:
@@ -209,6 +213,7 @@ def test_sparse_layer_choices_are_pinned_after_luc123(
         assert measured.cell_recall == pytest.approx(cell, abs=0.02)
 
 
+@pytest.mark.slow
 def test_ideal_baseline_clears_every_enforced_floor(
     multi_pen_report: MultiPenGateReport,
 ) -> None:
@@ -221,6 +226,7 @@ def test_ideal_baseline_clears_every_enforced_floor(
     assert not failures, "Floors above a pen's ideal baseline:\n" + "\n".join(failures)
 
 
+@pytest.mark.slow
 def test_blank_page_fails_region_floors(multi_pen_report: MultiPenGateReport) -> None:
     """A blank layer fails recall and precision for every pen."""
     for layer in multi_pen_report.layers:
@@ -230,6 +236,7 @@ def test_blank_page_fails_region_floors(multi_pen_report: MultiPenGateReport) ->
         assert "precision" in failing, layer.pen_name
 
 
+@pytest.mark.slow
 def test_random_scribble_fails_region_floors(multi_pen_report: MultiPenGateReport) -> None:
     """A random scribble fails at least one region floor for every pen."""
     for layer in multi_pen_report.layers:
@@ -239,6 +246,7 @@ def test_random_scribble_fails_region_floors(multi_pen_report: MultiPenGateRepor
         assert failing & {"recall", "precision"}, layer.pen_name
 
 
+@pytest.mark.slow
 def test_union_keeps_the_luc47_floors(multi_pen_report: MultiPenGateReport) -> None:
     """The union is checked with the shipped floors, with any failure pinned.
 

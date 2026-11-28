@@ -119,6 +119,7 @@ def test_threshold_violations_distinguish_floors_and_caps() -> None:
     }
 
 
+@pytest.mark.slow
 def test_basic_shapes_gate_runs(gate_reports: list[ShapeReport]) -> None:
     """The real pipeline runs for every shape and all reported numbers are finite."""
     assert [report.shape for report in gate_reports] == list(SHAPE_NAMES)
@@ -133,6 +134,7 @@ def test_basic_shapes_gate_runs(gate_reports: list[ShapeReport]) -> None:
         assert report.algorithm.likeness != report.blank.likeness
 
 
+@pytest.mark.slow
 def test_basic_shape_previews_are_greyscale(
     gate_data: tuple[list[ShapeReport], Path],
     tmp_path: Path,
@@ -148,36 +150,43 @@ def test_basic_shape_previews_are_greyscale(
             assert image.size == (PREVIEW_WIDTH, PREVIEW_PANEL)
 
 
+@pytest.mark.slow
 def test_basic_shape_black_square(gate_reports: list[ShapeReport]) -> None:
     """The black square drawing meets every floor and cap in the gate table."""
     _assert_shape_meets_thresholds(gate_reports, "black_square")
 
 
+@pytest.mark.slow
 def test_basic_shape_white_square(gate_reports: list[ShapeReport]) -> None:
     """The white square drawing meets every floor and cap in the gate table."""
     _assert_shape_meets_thresholds(gate_reports, "white_square")
 
 
+@pytest.mark.slow
 def test_basic_shape_black_disc(gate_reports: list[ShapeReport]) -> None:
     """The black disc drawing meets every floor and cap in the gate table."""
     _assert_shape_meets_thresholds(gate_reports, "black_disc")
 
 
+@pytest.mark.slow
 def test_basic_shape_horizontal_line(gate_reports: list[ShapeReport]) -> None:
     """The horizontal line drawing meets every floor and cap in the gate table."""
     _assert_shape_meets_thresholds(gate_reports, "horizontal_line")
 
 
+@pytest.mark.slow
 def test_basic_shape_checkerboard(gate_reports: list[ShapeReport]) -> None:
     """The checkerboard drawing meets every floor and cap in the gate table."""
     _assert_shape_meets_thresholds(gate_reports, "checkerboard")
 
 
+@pytest.mark.slow
 def test_basic_shape_triangle(gate_reports: list[ShapeReport]) -> None:
     """The triangle drawing meets every floor and cap in the gate table."""
     _assert_shape_meets_thresholds(gate_reports, "triangle")
 
 
+@pytest.mark.slow
 def test_blank_page_fails_every_shape(gate_reports: list[ShapeReport]) -> None:
     """Inking nothing fails dark_coverage and likeness for every shape."""
     passing: list[str] = []
@@ -194,6 +203,7 @@ def test_blank_page_fails_every_shape(gate_reports: list[ShapeReport]) -> None:
     assert not passing, f"blank page passes a required floor for: {', '.join(passing)}"
 
 
+@pytest.mark.slow
 def test_random_scribble_fails_every_shape(gate_reports: list[ShapeReport]) -> None:
     """Seeded random strokes fail ink_outside and likeness for every shape."""
     passing: list[str] = []

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -95,8 +98,18 @@ def _run_command(job: dict[str, object], step_name: str) -> str:
 
 
 def _pytest_targets(command: str) -> list[str]:
-    tokens = command.split()
-    return [token for token in tokens[tokens.index("pytest") + 1 :] if not token.startswith("-")]
+    tokens = shlex.split(command)
+    index = tokens.index("pytest") + 1
+    targets: list[str] = []
+    skip_next = False
+    for token in tokens[index:]:
+        if skip_next:
+            skip_next = False
+        elif token == "-m":
+            skip_next = True
+        elif not token.startswith("-"):
+            targets.append(token)
+    return targets
 
 
 def _needs(job: dict[str, object]) -> set[str]:
@@ -106,26 +119,105 @@ def _needs(job: dict[str, object]) -> set[str]:
     return {str(entry) for entry in needs}
 
 
+def _pytest_ini() -> dict[str, object]:
+    pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    options = pyproject["tool"]["pytest"]["ini_options"]
+    assert isinstance(options, dict)
+    return options
+
+
+def test_pytest_default_excludes_slow_and_registers_the_marker() -> None:
+    """A bare pytest run is fast; --strict-markers knows the slow marker."""
+    options = _pytest_ini()
+    assert "-m 'not slow'" in str(options["addopts"])
+    markers = options["markers"]
+    assert isinstance(markers, list)
+    assert any(str(marker).startswith("slow:") for marker in markers)
+
+
+def test_pytest_marker_filters_override_the_default() -> None:
+    """Both explicit -m expressions replace, not add to, the default filter."""
+
+    def collected(expression: str) -> str:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "--collect-only",
+                "-q",
+                "-m",
+                expression,
+                "tests/unit/test_ci_config.py",
+                "tests/integration/test_sketch_lines_gate.py",
+            ],
+            cwd=_REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    slow = collected("slow")
+    assert "<Module test_sketch_lines_gate.py>" in slow
+    assert "<Module test_ci_config.py>" not in slow
+
+    everything = collected("slow or not slow")
+    assert "<Module test_sketch_lines_gate.py>" in everything
+    assert "<Module test_ci_config.py>" in everything
+
+
 def test_ci_splits_likeness_gate_from_rest_of_integration() -> None:
     """The gate and the rest of integration run in separate parallel jobs."""
     jobs = _ci_jobs()
     gate = jobs["integration-gate"]
     rest = jobs["integration-rest"]
 
-    assert _pytest_targets(_run_command(gate, "Run likeness gate")) == [
-        "tests/integration/test_sketch_lines_gate.py",
-        "tests/integration/test_gate_measures.py",
-    ]
+    gate_command = _run_command(gate, "Run fast gate helper checks")
+    assert _pytest_targets(gate_command) == ["tests/integration/test_gate_measures.py"]
+    assert "-m 'not slow'" in gate_command
 
     rest_command = _run_command(rest, "Run integration tests")
     assert _pytest_targets(rest_command) == ["tests/integration"]
+    assert "-m 'not slow'" in rest_command
     assert "--ignore=tests/integration/test_sketch_lines_gate.py" in rest_command
     assert "--ignore=tests/integration/test_gate_measures.py" in rest_command
 
     assert "integration-gate" not in _needs(rest)
     assert "integration-rest" not in _needs(gate)
 
-    assert "tests/unit" in _run_command(jobs["test"], "Run unit tests with coverage")
+    unit_command = _run_command(jobs["test"], "Run unit tests with coverage")
+    assert "tests/unit" in unit_command
+    assert "-m 'not slow'" in unit_command
+
+
+def test_required_ci_job_names_are_unchanged() -> None:
+    """Slow gates add a job; the five required checks keep their names."""
+    names = {str(job["name"]) for job in _ci_jobs().values()}
+    assert {
+        "Lint & Format",
+        "Type Check (mypy)",
+        "Unit Tests",
+        "Integration Tests",
+        "Build Wheel",
+    } <= names
+
+
+def test_slow_quality_gates_run_only_on_main_push() -> None:
+    """The main-only job selects slow tests; PR jobs select none of them."""
+    jobs = _ci_jobs()
+    slow = jobs["slow-gates"]
+
+    assert slow["name"] == "Quality Gates (Slow)"
+    assert slow["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    command = _run_command(slow, "Run slow quality gates")
+    assert "-m 'slow'" in command
+    assert "-m 'not slow'" not in command
+
+    for name in ("test", "integration-gate", "integration-rest"):
+        commands = [str(step["run"]) for step in jobs[name]["steps"] if "run" in step]
+        assert all("-m 'slow'" not in command for command in commands), name
 
 
 def _nightly_workflow() -> dict[str, object]:
@@ -170,8 +262,10 @@ def test_nightly_workflow_calls_the_shared_runner() -> None:
 
 
 def test_nightly_script_runs_full_unit_and_integration_suite() -> None:
-    """One shared runner covers both test directories in a single pytest call."""
-    assert "uv run pytest tests/unit tests/integration -vs" in _nightly_script_text()
+    """One shared runner covers both test directories, including slow gates."""
+    script = _nightly_script_text()
+    assert "uv run pytest tests/unit tests/integration -vs -m 'slow or not slow'" in script
+    assert "-m 'not slow'" not in script
 
 
 def test_nightly_script_times_one_photo_conversion() -> None:
