@@ -188,6 +188,11 @@ class ImageRef(BaseModel):
         just before drawing, so every step gets about the same share of the
         inked pixels (see ``penpath.core.drawing.tone_targets``). False by
         default.
+    max_coverage : float
+        Largest share of the paper ink may cover where the source is black,
+        measured with the pen width (0 - 1, default 0.8). Lighter tones scale
+        down in proportion; 1.0 turns the cap off. See
+        :mod:`penpath.core.coverage`.
     background : bool | None
         Mask paper-level pixels before palette separation. ``None`` follows
         the mode: on for a palette, off for a single pen, so old project files
@@ -218,6 +223,7 @@ class ImageRef(BaseModel):
     auto_orient: bool = True
     auto_equalize: bool = True
     equalize_levels: bool = False
+    max_coverage: float = Field(default=0.8, gt=0.0, le=1.0, allow_inf_nan=False)
     background: bool | None = None
     background_threshold: float = Field(
         default=DEFAULT_BACKGROUND_THRESHOLD, ge=0.0, allow_inf_nan=False

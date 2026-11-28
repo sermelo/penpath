@@ -490,6 +490,7 @@ def build_project(
     auto_orient: bool = True,
     auto_equalize: bool = True,
     equalize_levels: bool = False,
+    max_coverage: float = 0.8,
     default_pen: str | None = None,
     default_paper: str | None = None,
     pen_presets: Mapping[str, PenPreset] | None = None,
@@ -543,6 +544,7 @@ def build_project(
             auto_orient=auto_orient,
             auto_equalize=auto_equalize,
             equalize_levels=equalize_levels,
+            max_coverage=max_coverage,
             background=resolved_background,
             background_threshold=(
                 DEFAULT_BACKGROUND_THRESHOLD

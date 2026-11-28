@@ -46,6 +46,10 @@ def _convert(source: Path, output: Path, *flags: str) -> Result:
             "--no-vpype",
             "--fit",
             "none",
+            # These tests count the PFM calls; the coverage cap's calibration
+            # adds its own calls on a test patch, so it is turned off here.
+            "--max-coverage",
+            "1",
             *flags,
         ],
     )

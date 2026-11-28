@@ -120,6 +120,9 @@ penpath convert photo.jpg -f grayscale -f "posterize:levels=4,dither=floyd_stein
 # 7/8 of 0-255 are left alone. Keep the original tones with:
 penpath convert photo.jpg --no-auto-equalize
 
+# Black never becomes solid ink: cap real coverage (default 80%, 1 turns it off)
+penpath convert photo.jpg --max-coverage 0.7
+
 # Spread a dark or flat photo evenly over the algorithm's own tone steps
 penpath convert photo.jpg --pfm hatch:crosshatch --equalize-levels
 
