@@ -19,7 +19,6 @@ from penpath.core.simulation import (
     insert_pen_up_moves,
 )
 
-SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 INKSCAPE_NAMESPACE = "http://www.inkscape.org/namespaces/inkscape"
 
 MM_PER_SVG_UNIT = 25.4 / 96

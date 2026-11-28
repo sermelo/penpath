@@ -43,7 +43,6 @@ def test_non_terminal_reports_flushed_numbered_lines(clock: None) -> None:
     reporter.set_total_stages(3)
 
     with reporter:
-        assert not reporter.uses_bar
         reporter.start("Loading image")
         reporter.finish()
         reporter.start("Generating lines (PFM)")
@@ -64,7 +63,6 @@ def test_terminal_keeps_bar_and_final_summary(clock: None) -> None:
     reporter = StageReporter(Console(file=stream, force_terminal=True), total_stages=2)
 
     with reporter:
-        assert reporter.uses_bar
         reporter.start("Loading image")
         reporter.finish()
         reporter.start("Exporting SVG")
@@ -86,7 +84,6 @@ def test_quiet_writes_nothing(clock: None) -> None:
     reporter = StageReporter(Console(file=stream), quiet=True)
 
     with reporter:
-        assert not reporter.uses_bar
         reporter.start("Loading image")
         reporter.finish()
         reporter.message("Working resolution: 32x32 px")

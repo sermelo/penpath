@@ -40,6 +40,7 @@ dev = [
     "pytest-cov",
     "pre-commit",
     "hatch",
+    "vulture>=2.14,<3",
 ]
 test = [
     "vpype>=1.15",
@@ -91,6 +92,29 @@ strict = true
 python_version = "3.14"
 warn_return_any = true
 warn_unused_ignores = true
+
+[tool.vulture]
+paths = ["src/penpath"]
+min_confidence = 60
+ignore_decorators = ["@*.command"]
+ignore_names = [
+    "__context",
+    "_check_*",
+    "background_color",
+    "disable_step",
+    "down_code",
+    "enable_step",
+    "exit_code",
+    "from_dict",
+    "model_config",
+    "model_dump_for_vpype",
+    "model_post_init",
+    "pen_type",
+    "remove_step",
+    "reorder",
+    "up_code",
+    "validate_*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
