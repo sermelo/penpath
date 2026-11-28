@@ -1204,3 +1204,23 @@ def test_fit_layers_to_drawable_includes_and_transforms_the_frame() -> None:
     assert len(coords) == 5
     assert all(0.0 <= x <= 100.0 and 0.0 <= y <= 100.0 for x, y in coords)
     assert "G0 X12.000 Y42.000 F3600" in produced
+
+
+def test_fit_layers_to_drawable_scales_and_shifts_the_frame_with_the_drawing() -> None:
+    profile = _profile()
+    page = (50.0, 50.0)
+    layers = _one_layer(((0.0, 0.0), (150.0, 50.0)))
+    frame = FrameSpec(margin_mm=2.0)
+
+    fitted = fit_layers_to_drawable(layers, profile, page, frame=frame)
+
+    assert fitted.changed
+    assert fitted.scale < 1.0
+    assert fitted.offset_mm[0] > 0.0
+    assert fitted.frame is not None
+    assert fitted.frame.points(page) != frame.points(page)
+    (x_lo, y_lo), (x_hi, y_hi) = drawing_bounds_pen(fitted.layers, profile, page)
+    (u_xlo, u_ylo), (u_xhi, u_yhi) = usable_area(profile)
+    assert u_xlo <= x_lo <= x_hi <= u_xhi
+    assert u_ylo <= y_lo <= y_hi <= u_yhi
+    assert "; frame pen=ink" in build_gcode(fitted.layers, profile, page, frame=fitted.frame)
