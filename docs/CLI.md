@@ -48,7 +48,7 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--filter NAME` | `-f` | — | Apply filter (repeatable: `-f grayscale -f threshold`). See **Filters** below. |
-| `--no-auto-orient` | — | `false` | Disable EXIF auto-orientation |
+| `--no-auto-orient` | — | `false` | Skip EXIF rotation and keep the stored pixel orientation and size (same as `auto_orient: false` in a project file) |
 | `--auto-equalize` / `--no-auto-equalize` | — | `true` | Normalize the working image's luminance range (linear auto levels) once before drawing. Use `--no-auto-equalize` to keep the original tones. |
 | `--background` / `--no-background` | — | mode-dependent | Mask paper-coloured pixels as no ink. On by default with `--palette`, off for a single pen; the flag overrides either mode. |
 | `--background-threshold FLOAT` | — | `10` | Maximum CIE Lab distance from the detected paper colour treated as no ink. Giving it enables masking unless `--no-background` is also given. |
@@ -292,7 +292,6 @@ or any other PFM.
 | `--output PATH` | `-o` | — | Output SVG path, equivalent to the `OUTPUT_PATH` argument |
 | `--no-vpype` | — | `false` | Skip vpype optimization (use direct SVG export) |
 | `--vpype-path PATH` | — | `vpype` | Path to vpype executable |
-| `--layer-per-pen` / `--single-layer` | — | `layer-per-pen` | SVG layer structure |
 
 `OUTPUT_PATH` and `-o/--output` are two ways to name the same output file. Give
 either one; if both are given and the paths differ, `penpath convert` exits 2 with
@@ -1710,7 +1709,6 @@ paper:
 output:
   path: "plot.svg"
   vpype: true
-  layer_per_pen: true
 ```
 
 `pen:`, `palette:` and `pens:` are mutually exclusive: a project file that
