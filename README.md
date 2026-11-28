@@ -52,8 +52,8 @@ quality gates — with:
 bash scripts/nightly.sh
 ```
 
-See [docs/TESTING.md](docs/TESTING.md#run-the-nightly-workload-locally) for the
-prerequisites and the exact steps it runs.
+See [docs/TESTING.md](docs/TESTING.md#nightly-workload) for the prerequisites
+and the exact steps it runs.
 
 ### Optional: `vpype`
 
@@ -486,8 +486,8 @@ committed at [docs/images/luc-47/photo_after.png](docs/images/luc-47/photo_after
 
 Before the LUC-53 algorithm fix the same photo produced a much smaller, sparser
 plot (SSIM 0.4917, only 41% of the placement width covered). Compare the
-[before preview](docs/images/luc-47/photo_before.png) and the full
-[before/after measurements](docs/TESTING.md#final-shipped-defaults-measurement-luc-54-2026-11-25).
+[before preview](docs/images/luc-47/photo_before.png) and the enforced floors in
+the [gate table](docs/TESTING.md#enforced-gates).
 
 ### One example per algorithm
 
@@ -569,9 +569,8 @@ look. The gallery image above is the older elliptical render; compare the new
 [default circle on the photo](docs/images/luc-176/photo_circle.png),
 [`cover` filling its corners](docs/images/luc-176/photo_cover.png),
 [`ellipse` old look](docs/images/luc-176/photo_ellipse.png) and
-[default circle on Santa](docs/images/luc-176/santa_circle.png). The
-[measurements and visual descriptions](docs/TESTING.md#spiral-sawtooth-shapes-circle-ellipse-and-cover-luc-176-2026-11-28)
-record how they were rendered.
+[default circle on Santa](docs/images/luc-176/santa_circle.png). The enforced
+floors for this PFM are in the [gate table](docs/TESTING.md#enforced-gates).
 
 ```bash
 penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/spiral_sawtooth.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm spiral_sawtooth:fine
@@ -823,14 +822,9 @@ Simulated plot previews on the free Santa portrait:
 [tsp on the photo](docs/images/tsp/photo_tsp.png) ·
 [squiggle on the face](docs/images/squiggle/face_squiggle.png) ·
 [squiggle on the photo](docs/images/squiggle/photo_squiggle.png).
-The
-[Sketch Squares gate](docs/TESTING.md#sketch-squares-readability-and-plot-cost-gate-luc-149-2026-11-27),
-[Contour gate](docs/TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27),
-[Stipple gate](docs/TESTING.md#stipple-likeness-and-plot-cost-gate-luc-154-2026-11-27)
-[Hatch gate](docs/TESTING.md#hatch-acceptance-gate-luc-167-2026-11-27)
-and [Patch Hatch measurements](docs/TESTING.md#patch-hatch-measurements-2026-11-27)
-record the measured readability and plot cost; acceptance is by looking at the
-previews, not by SSIM alone.
+The [gate table](docs/TESTING.md#enforced-gates) records the readability and
+plot-cost floors for these PFMs; acceptance is by looking at the previews, not
+by SSIM alone.
 
 ```bash
 penpath convert photo.jpg --pfm sketch_lines:fine -o fine.svg
