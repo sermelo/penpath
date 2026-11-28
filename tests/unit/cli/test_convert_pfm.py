@@ -71,6 +71,13 @@ class TestResolvePFM:
         assert isinstance(settings, (SketchLinesSettings, SketchSquaresSettings))
         assert settings.white_threshold == 0.9
 
+    def test_max_tone_ink_is_a_sketch_lines_only_setting(self) -> None:
+        settings = _resolve_pfm("sketch_lines", {"max_tone_ink": "0.7"}).to_typed_settings()
+        assert isinstance(settings, SketchLinesSettings)
+        assert settings.max_tone_ink == 0.7
+        with pytest.raises(click.BadParameter):
+            _resolve_pfm("sketch_squares", {"max_tone_ink": "0.7"})
+
     def test_boolean_and_tuple_overrides_for_sketch_lines(self) -> None:
         pfm = _resolve_pfm(
             "sketch_lines",

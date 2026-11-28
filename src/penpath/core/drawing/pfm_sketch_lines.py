@@ -32,6 +32,11 @@ _BLANK_CANVAS_MEAN = 254.0
 _TONE_DESIRED_LUMINANCE = 254.2
 _TEXTURED_FRACTION = 0.18
 _WHITE_STOP_RUN = 8
+_DARKEST_QUANTILE = 0.10
+# The cap counts one working-pixel centre per stroke step; a simulated 0.3 mm
+# pen covers about 1.2 of those pixels, so the engine budget is scaled down to
+# keep the simulated coverage at or below the named cap.
+_TONE_INK_BLEED_FACTOR = 0.83
 _LEGACY_MAX_FILL = 80.0
 _LEGACY_LINE_DENSITY = 0.75
 
@@ -73,6 +78,14 @@ class SketchLinesSettings(BaseModel):
         How much local texture reduces ``tone_coverage`` in dark areas
         (0 - 1). Textured dark tones get a higher stop point than flat ones,
         so hair, foliage and slopes do not turn into solid black.
+    max_tone_ink : float
+        Largest share of the darkest source pixels that may receive ink
+        (0 - 1). The darkest tenth of the original grayscale is tracked while
+        strokes are drawn and the run stops when that share is reached, so a
+        tree mass or hair keeps white gaps instead of turning solid black.
+        The default 0.85 leaves about 15% uninked; 1.0 opts out of the cap.
+        Only the tone rule uses the cap; flat shapes, palette channels and
+        Sketch Squares keep their existing behaviour.
     min_length : float
         Minimum line length in image pixels (1 - 1000). Reference default 2.
     max_length : float
@@ -131,6 +144,7 @@ class SketchLinesSettings(BaseModel):
     tone_coverage: float = Field(default=0.5, ge=0.0, le=1.0)
     tone_exponent: float = Field(default=0.55, ge=0.0, le=2.0)
     texture_limit: float = Field(default=0.8, ge=0.0, le=1.0)
+    max_tone_ink: float = Field(default=0.85, ge=0.0, le=1.0)
     min_length: float = Field(default=2.0, ge=1.0, le=1000.0)
     max_length: float = Field(default=40.0, ge=1.0, le=5000.0)
     angle_range: tuple[float, float] = Field(default=(-72.0, -52.0))
@@ -486,17 +500,35 @@ def _apply_erase(
     score: NDArray[np.float64] | None = None,
     tone_offsets: NDArray[np.float64] | None = None,
     caps: NDArray[np.float64] | None = None,
-) -> None:
-    """Lighten pixels under a segment with the reference's round erase brush."""
+    inked: NDArray[np.bool_] | None = None,
+    darkest: NDArray[np.bool_] | None = None,
+) -> int:
+    """Lighten pixels under a segment with the reference's round erase brush.
+
+    When ``inked`` and ``darkest`` are given, mark the centre pixel of each
+    Bresenham step and return how many new darkest-tone pixels it inked. The
+    count is used by the per-tone cap; the erase brush itself is unchanged.
+    """
     h, w = working.shape
     progress = _erase_progress(float(working[y0, x0]), tone)
     amount = int(erase_min + progress * (erase_max - erase_min))
     if amount <= 0:
-        return
+        return 0
     radius = radius_min + progress * (radius_max - radius_min)
     offsets = _brush_offsets(radius)
     covered: set[tuple[int, int]] = set()
+    newly_inked = 0
     for px, py in _bresenham_line(x0, y0, x1, y1):
+        if (
+            inked is not None
+            and darkest is not None
+            and 0 <= px < w
+            and 0 <= py < h
+            and darkest[py, px]
+            and not inked[py, px]
+        ):
+            inked[py, px] = True
+            newly_inked += 1
         for dx, dy in offsets:
             x, y = px + dx, py + dy
             if 0 <= x < w and 0 <= y < h and (x, y) not in covered:
@@ -504,6 +536,7 @@ def _apply_erase(
                 working[y, x] = min(_WHITE, working[y, x] + amount)
                 if score is not None and tone_offsets is not None and caps is not None:
                     score[y, x] = min(caps[y, x], working[y, x] + tone_offsets[y, x])
+    return newly_inked
 
 
 class _SketchEngineSettings(Protocol):
@@ -530,6 +563,7 @@ class _SketchEngineSettings(Protocol):
     tone_coverage: float
     tone_exponent: float
     texture_limit: float
+    max_tone_ink: float
 
     @property
     def model_fields_set(self) -> set[str]:
@@ -580,6 +614,22 @@ def _run_sketch_engine(
             or settings.texture_limit > 0.0
         )
     )
+    # The cap is a share of the darkest source-tone pixels that may receive
+    # ink. It uses the pre-max_fill grayscale, so a clamped black point cannot
+    # change which pixels count as darkest. Only the tone path tracks it: flat
+    # shapes, sparse palette channels and Sketch Squares keep their old look.
+    ink_cap = settings.max_tone_ink * _TONE_INK_BLEED_FACTOR
+    cap_tone_ink = tone_rule and settings.max_tone_ink < 1.0
+    darkest: NDArray[np.bool_] | None = None
+    inked: NDArray[np.bool_] | None = None
+    darkest_total = 0
+    inked_dark = 0
+    if cap_tone_ink:
+        darkest = source <= np.quantile(source, _DARKEST_QUANTILE)
+        darkest_total = int(np.count_nonzero(darkest))
+        cap_tone_ink = darkest_total > 0
+        if cap_tone_ink:
+            inked = np.zeros_like(working, dtype=np.bool_)
     max_fill = settings.max_fill
     line_density = settings.line_density
     if not tone_rule:
@@ -633,6 +683,8 @@ def _run_sketch_engine(
     lines: list[LineString] = []
     fails = 0
     while len(lines) < max_strokes and fails < _MAX_FAILS:
+        if cap_tone_ink and inked_dark / darkest_total >= ink_cap:
+            break
         canvas_avg = float(np.mean(score))
         if float(np.min(score)) >= _WHITE:
             break
@@ -711,7 +763,7 @@ def _run_sketch_engine(
                 points.append((float(next_x), float(next_y)))
 
             if settings.erase_enabled:
-                _apply_erase(
+                newly_inked = _apply_erase(
                     working,
                     current_x,
                     current_y,
@@ -725,7 +777,13 @@ def _run_sketch_engine(
                     score=score if tone_rule else None,
                     tone_offsets=offsets if tone_rule else None,
                     caps=caps if tone_rule else None,
+                    inked=inked,
+                    darkest=darkest,
                 )
+                if cap_tone_ink:
+                    inked_dark += newly_inked
+                    if inked_dark / darkest_total >= ink_cap:
+                        break
             current_x, current_y = next_x, next_y
 
         if len(points) >= 2:
@@ -754,8 +812,11 @@ def sketch_lines(image: Image.Image, settings: SketchLinesSettings) -> list[Line
     pixels darker than their local surroundings
     keep more budget, while textured dark pixels lose part of theirs to
     ``texture_limit``, so dark areas keep white gaps instead of saturating.
-    Flat shapes and near-white pixels keep a small budget so every part of the
-    image can receive ink. On a nearly blank canvas (mean from 252.5 to below 254),
+    The darkest tenth of that source is also tracked while strokes are drawn:
+    once ``max_tone_ink`` of it has received ink the run stops, leaving the
+    rest as visible white gaps. Flat shapes and near-white pixels keep a small
+    budget so every part of the image can receive ink. On a nearly blank canvas
+    (mean from 252.5 to below 254),
     that average is taken over the ink-bearing pixels only: a sparse palette
     channel is mostly white, so a whole-canvas average collapses the stop
     target and ends the run after a handful of strokes. Canvases below 252.5

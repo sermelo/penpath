@@ -146,6 +146,9 @@ penpath convert photo.jpg -s line_density=0.5 -s max_fill=90 -s seed=42
 penpath convert photo.jpg -s white_threshold=0.9 -o white-lift.svg
 penpath convert photo.jpg --pfm sketch_squares -s white_threshold=0.9 -o squares-white.svg
 
+# Keep at least 15% of the darkest source tones uninked (1.0 opts out)
+penpath convert photo.jpg -s max_tone_ink=0.85 -o hatched-dark.svg
+
 # Grid hatching bends short strokes into a structured, graphic page; presets set the look
 penpath convert photo.jpg --pfm sketch_squares -s seed=42
 penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -s seed=42

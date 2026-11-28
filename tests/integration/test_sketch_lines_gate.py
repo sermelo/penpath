@@ -13,12 +13,15 @@ unchanged.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 
 import click
 import pytest
+from click.testing import CliRunner
 from PIL import Image
 from sketch_lines_gate import (
+    DARK_DECILE_INK_MAX,
     DARK_TILE_INK_MAX,
     DARK_TILE_INK_MIN,
     PX_PER_MM,
@@ -33,6 +36,8 @@ from sketch_lines_gate import (
     print_measurement_table,
     tile_readability,
 )
+
+from penpath.cli.main import main
 
 SSIM_THRESHOLDS: dict[str, float] = {
     "circle.png": 0.53,
@@ -49,6 +54,7 @@ TONE_RATIO_MIN = 2.0
 READABILITY_REFERENCES = ("face.jpg", "photo.jpg")
 WHITE_INK_MAX = 0.01
 MEASURED_MAIN_SSIM = {"face.jpg": 0.606598, "photo.jpg": 0.533787}
+MEASURED_MAIN_MASKED_3PX = {"face.jpg": 0.521474, "photo.jpg": 0.441838}
 SSIM_BASELINE_TOLERANCE = 1e-3
 
 
@@ -122,6 +128,48 @@ def test_masked_likeness_is_not_below_the_measured_main_baseline(
     floor = MEASURED_MAIN_SSIM[reference]
     click.echo(f"{reference}: SSIM {report.algorithm.ssim:.6f}, main baseline {floor:.6f}")
     assert report.algorithm.ssim >= floor - SSIM_BASELINE_TOLERANCE
+
+
+@pytest.mark.parametrize("reference", READABILITY_REFERENCES)
+def test_darkest_decile_keeps_a_white_hatch(
+    gate_report_factory: Callable[[str], GateReport], reference: str
+) -> None:
+    """The darkest source tenth is not filled solid on either photo."""
+    report = gate_report_factory(reference)
+    ink = report.algorithm.darkest_decile_ink
+    click.echo(f"{reference}: darkest-decile ink {ink:.6f}, cap {DARK_DECILE_INK_MAX:.2f}")
+    assert ink < DARK_DECILE_INK_MAX
+
+
+@pytest.mark.parametrize("reference", READABILITY_REFERENCES)
+def test_masked_likeness_at_3px_is_not_below_the_measured_main_baseline(
+    gate_report_factory: Callable[[str], GateReport], reference: str
+) -> None:
+    """Evaluate the gate SVG as a user does and compare masked SSIM to main.
+
+    ``--px-per-mm 3`` is the resolution the older ``--dpi 3`` flag meant before
+    the flag was renamed to real DPI; at 3 px/mm the A4 page is about 630x890
+    px. The seed comes from the gate harness, so only the drawing change is
+    compared. The 0.47/0.49 reference floors predate these measured baselines.
+    """
+    report = gate_report_factory(reference)
+    result = CliRunner().invoke(
+        main,
+        [
+            "evaluate",
+            "--json",
+            "--px-per-mm",
+            "3",
+            str(REFERENCE_DIR / reference),
+            str(report.svg_path),
+        ],
+        env={"XDG_CONFIG_HOME": str(report.svg_path.parent / "config")},
+    )
+    assert result.exit_code == 0, result.output
+    measured = float(json.loads(result.output)["masked_likeness"])
+    floor = MEASURED_MAIN_MASKED_3PX[reference]
+    click.echo(f"{reference}: masked likeness {measured:.6f}, main baseline {floor:.6f}")
+    assert measured >= floor - SSIM_BASELINE_TOLERANCE
 
 
 def test_face_ink_on_near_white_source_stays_below_one_percent(
