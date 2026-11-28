@@ -243,11 +243,11 @@ def test_info_pfms_json_lists_each_pfms_own_presets(fake_pfm: None) -> None:
     data = json.loads(result.stdout)
     by_name = {row["name"]: row for row in data["available_pfms"]}
     assert set(by_name) == {"sketch_lines", "fake_dots"}
-    assert by_name["sketch_lines"]["presets"] == sorted(PFM_PRESETS)
-    assert by_name["fake_dots"]["presets"] == ["fake_fine"]
+    assert by_name["sketch_lines"]["presets"] == sorted(f"sketch_lines:{p}" for p in PFM_PRESETS)
+    assert by_name["fake_dots"]["presets"] == ["fake_dots:fake_fine"]
     assert by_name["fake_dots"]["settings_model"] == "FakeDotsSettings"
     assert by_name["fake_dots"]["default_settings"]["dots_per_cm"] == 3
-    assert "fake_fine" in data["presets"]
+    assert "fake_dots:fake_fine" in data["presets"]
 
 
 def test_info_pfms_table_and_yaml_stay_valid(fake_pfm: None) -> None:
@@ -260,4 +260,4 @@ def test_info_pfms_table_and_yaml_stay_valid(fake_pfm: None) -> None:
     assert yaml_result.exit_code == 0, yaml_result.output
     data = yaml.safe_load(yaml_result.output)
     by_name = {row["name"]: row for row in data["available_pfms"]}
-    assert by_name["fake_dots"]["presets"] == ["fake_fine"]
+    assert by_name["fake_dots"]["presets"] == ["fake_dots:fake_fine"]

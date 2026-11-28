@@ -791,14 +791,15 @@ swell where the image is darker). Each PFM accepts its own
 `--pfm hatch` is different from `--style hatch`, which is a Sketch Lines look.
 Use a qualified `PFM:PRESET` id below; bare names are the legacy Sketch Lines,
 Contour and Stipple preset names. `penpath info pfms` is the source of truth: it
-lists every PFM, its defaults and its presets.
+lists every PFM with its description and canonical preset ids. Run
+`penpath info pfm NAME` to see one PFM's settings, defaults and help.
 
 | PFM | Preset ids | Character |
 |-----|------------|-----------|
 | `sketch_lines` | `sketch_lines:default`, `sketch_lines:fine`, `sketch_lines:bold`, `sketch_lines:shaded`, `sketch_lines:squiggly`, `sketch_lines:crosshatch`, `sketch_lines:hatch_horizontal`, `sketch_lines:hatch_vertical` | Free-angle hatching. The shipped `default` is calibrated for likeness; `fine` and `bold` change stroke length and density, the rest are directional or shaded looks. |
 | `sketch_squares` | `sketch_squares:coarse`, `sketch_squares:fine`, `sketch_squares:crosshatch-grid` | Short grid-aligned strokes: open, dense, or a rotated crosshatch grid. |
-| `contour` | `contour_portrait`, `contour_silhouette` | Four threshold levels for internal detail on a face; one level and a larger minimum speck size for a few bold outlines. |
-| `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. `-s dot_shape=circle\|tap` switches dots from the default `dash` to closed rings or in-place pen taps. |
+| `contour` | `contour:portrait`, `contour:silhouette` | Four threshold levels for internal detail on a face; one level and a larger minimum speck size for a few bold outlines. |
+| `stipple` | `stipple:default`, `stipple:fine`, `stipple:bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. `-s dot_shape=circle\|tap` switches dots from the default `dash` to closed rings or in-place pen taps. |
 | `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line with round rings by default (`-s shape=circle`); `-s shape=cover` grows them into all four corners, and `-s shape=ellipse` keeps the old stretched look. Presets: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
 | `patch_hatch` | `patch_hatch:default`, `patch_hatch:fine`, `patch_hatch:bold`, `patch_hatch:fast` | Hand-drawn cross-hatching in 4–10 mm patches, each with its own direction along the local edges; darker tones add crossing layers. `fine` and `bold` change spacing and patch size; `fast` joins every patch into zig-zag strokes (about 2x fewer pen lifts, with visible patch borders). |
 | `squiggle` | `squiggle:default`, `squiggle:fine`, `squiggle:diagonal` | One wavy stroke per row: 2 mm horizontal rows for `default`, 1.2 mm rows with tighter waves for `fine`, 45° rows for `diagonal`. Very few pen lifts. |
@@ -835,8 +836,8 @@ previews, not by SSIM alone.
 penpath convert photo.jpg --pfm sketch_lines:fine -o fine.svg
 penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -o grid.svg
 penpath convert photo.jpg --pfm contour -o outlines.svg
-penpath convert photo.jpg --pfm contour_portrait -o portrait_contour.svg
-penpath convert photo.jpg --pfm stipple_fine --no-vpype -s seed=42 -o dots.svg
+penpath convert photo.jpg --pfm contour:portrait -o portrait_contour.svg
+penpath convert photo.jpg --pfm stipple:fine --no-vpype -s seed=42 -o dots.svg
 penpath convert photo.jpg --pfm stipple -s dot_shape=circle -s seed=42 -o circles.svg
 penpath preview dots.svg -o dots.png --px-per-mm 4
 penpath convert photo.jpg --pfm spiral_sawtooth:bold -s seed=42 -o spiral.svg

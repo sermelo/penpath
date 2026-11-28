@@ -773,7 +773,8 @@ PFM's field types. The qualified ids are unambiguous; bare names are the
 legacy Sketch Lines, Contour and Stipple preset names, so a bare `fine` still
 means `sketch_lines:fine`. A bare name that only exists for another PFM is
 rejected with the qualified id in the message. Run
-`penpath info pfms` to list every PFM, its defaults and presets.
+`penpath info pfms` to list every PFM with its description and preset ids, and
+`penpath info pfm NAME` for one PFM's settings and defaults.
 
 Legacy Sketch Lines preset ids (`sketch_lines:NAME`, bare `NAME` also works):
 
@@ -1528,7 +1529,8 @@ penpath info [SUBCOMMAND] [OPTIONS]
 | `pens` | List built-in pen presets |
 | `palettes` | List built-in palettes and their pens in drawing order |
 | `papers` | List built-in paper presets |
-| `pfms` | List registered PFMs, their settings, defaults and own presets (with qualified ids) |
+| `pfms` | List registered PFMs with a one-line description and their canonical preset ids |
+| `pfm NAME` | Show one registered PFM's description, preset ids, settings, defaults and help |
 | `profiles` | List built-in and user machine profiles (source, description, bed size, feeds) |
 | `filters` | List available filters with parameters |
 | `image PATH` | Show image info (size, mode, EXIF, DPI, planned working resolution) |
@@ -1557,16 +1559,45 @@ column in drawing order — light ink first, dark ink later and near-black last 
 from `penpath.core.order_pens_for_drawing`. Palette definition order is
 unchanged and still governs colour separation.
 
-`penpath info pfms` lists every registered PFM with its `name`,
-`settings_model`, `default_settings`, its `presets` (legacy bare names for
-`sketch_lines`, `contour` and `stipple`, qualified ids for `sketch_squares` and
-`spiral_sawtooth`) and qualified `preset_ids` such as
-`sketch_squares:crosshatch-grid` and `spiral_sawtooth:fine`; `--format json` and
-`--format yaml` print the same fields for scripts. It is the source of truth
-for the `--pfm` choices:
+`penpath info pfms` prints one compact row per registered PFM with exactly
+three columns: **Name**, **Description** (one line, folded if needed) and
+**Preset ids** (canonical `PFM:PRESET` ids, folded if needed). Settings dicts
+are deliberately not printed in the table; use `penpath info pfm NAME` for
+them. Every PFM has a non-empty description and at least one preset id.
+
+`--format json` and `--format yaml` keep the script-facing keys: a top-level
+`available_pfms` array whose rows have `name`, `description`, `settings_model`,
+`default_settings`, `presets` and `preset_ids`, plus top-level `presets` and
+`preset_ids`. Every `presets` and `preset_ids` list uses canonical qualified
+ids, including the contour and stipple presets (`contour:portrait`,
+`stipple:fine`, ...); `default_settings` stays in the machine output. This is
+the source of truth for the `--pfm` choices:
 
 ```bash
 penpath info pfms --format json | python -c 'import json,sys; print([p["name"] for p in json.load(sys.stdin)["available_pfms"]])'
+```
+
+#### `penpath info pfm NAME`
+
+```bash
+penpath info pfm NAME [OPTIONS]
+```
+
+`NAME` is a registered PFM name such as `sketch_lines` or `contour`, **not** a
+preset id. The human table starts with the PFM's description and its canonical
+preset ids, then lists every settings field with **Setting**, **Default** and
+**Help**. Help is read from the settings model's documented fields; Default is
+the field's default value, shown as `None` when the default is null and `-`
+when the field is required. An unknown name is a click error that lists the
+available PFMs and exits non-zero.
+
+`--format json` and `--format yaml` return one object with `name`,
+`description`, `presets` (canonical ids) and a `settings` array whose rows have
+`name`, `default` and `help`.
+
+```bash
+penpath info pfm sketch_lines
+penpath info pfm contour --format json
 ```
 
 #### `penpath info palette-match`
@@ -1605,6 +1636,8 @@ penpath info palettes --format json
 penpath info papers --format yaml
 penpath info pfms
 penpath info pfms --format json
+penpath info pfm sketch_lines
+penpath info pfm contour --format yaml
 penpath info profiles
 penpath info profiles --format json
 penpath info filters
