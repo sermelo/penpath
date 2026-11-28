@@ -32,14 +32,12 @@ class GcodePreviewError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class GcodeHeader:
-    """Profile name, page placement, usable area and Z heights a header declares."""
+    """Profile name, page placement and Z heights a header declares."""
 
     profile: str | None = None
     page: tuple[float, float] | None = None
     place: str | None = None
     page_origin: tuple[float, float] | None = None
-    usable_x: tuple[float, float] | None = None
-    usable_y: tuple[float, float] | None = None
     z_up: float | None = None
     z_touch: float | None = None
     z_down: float | None = None
@@ -105,8 +103,6 @@ def parse_gcode_header(text: str) -> GcodeHeader:
             page=_page_size(fields["page"]) if "page" in fields else None,
             place=fields.get("place"),
             page_origin=_origin(fields["page_origin"]) if "page_origin" in fields else None,
-            usable_x=_pair(fields["usable_x"], "..") if "usable_x" in fields else None,
-            usable_y=_pair(fields["usable_y"], "..") if "usable_y" in fields else None,
             z_up=_number(fields["z_up"]) if "z_up" in fields else None,
             z_touch=_number(fields["z_touch"]) if "z_touch" in fields else None,
             z_down=_number(fields["z_down"]) if "z_down" in fields else None,

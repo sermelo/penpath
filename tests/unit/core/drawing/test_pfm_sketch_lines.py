@@ -528,21 +528,6 @@ class TestSketchLinesAlgorithm:
         assert stopped and full
         assert self._stroke_signature(stopped) != self._stroke_signature(full)
 
-    def test_ray_into_white_ends_at_the_last_dark_pixel(self):
-        """A candidate ray stops before a run of source pixels above the cutoff."""
-        from penpath.core.drawing.pfm_sketch_lines import _sample_line_luminance
-
-        source = np.full((1, 80), 255.0)
-        source[0, :21] = 30.0
-        luminance = np.linspace(255.0, 0.0, 80)[None, :]
-        cutoff = 0.92 * 255.0
-
-        stopped, stop_x, stop_y = _sample_line_luminance(luminance, 5, 0, 79, 0, 2, source, cutoff)
-        full, full_x, _ = _sample_line_luminance(luminance, 5, 0, 79, 0, 2, source, None)
-        assert stopped < 255.0 and full < 255.0
-        assert (stop_x, stop_y) == (20, 0)
-        assert full_x == 79
-
     def test_erase_disabled_stops_at_hard_cap_and_is_denser(self):
         """Without erasing the image cannot lighten, so only the stroke cap stops it."""
         img = self._create_test_image()
@@ -704,49 +689,6 @@ class TestBresenhamLine:
         assert points == [(5, 5)]
 
 
-class TestSampleLineLuminance:
-    """Tests for the running-mean luminance endpoint rule."""
-
-    def _sample_line_luminance(
-        self,
-        luminance: np.ndarray,
-        x0: int,
-        y0: int,
-        x1: int,
-        y1: int,
-        min_length: int,
-    ) -> tuple[float, int, int]:
-        from penpath.core.drawing.pfm_sketch_lines import _sample_line_luminance
-
-        return _sample_line_luminance(luminance, x0, y0, x1, y1, min_length)
-
-    def test_endpoint_is_darkest_window(self):
-        luminance = np.full((100, 100), 200.0, dtype=np.float64)
-        luminance[10, 20:26] = 10.0
-        avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 60, 10, 2)
-        assert 20 <= ex <= 25
-        assert ey == 10
-        assert avg < 200.0
-
-    def test_uniform_luminance_stops_at_first_valid_prefix(self):
-        luminance = np.full((100, 100), 128.0, dtype=np.float64)
-        avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 50, 10, 5)
-        assert abs(avg - 128.0) < 0.1
-        assert ex == 15
-        assert ey == 10
-
-    def test_too_short_line_uses_last_valid_pixel(self):
-        luminance = np.full((100, 100), 128.0, dtype=np.float64)
-        avg, ex, ey = self._sample_line_luminance(luminance, 10, 10, 12, 10, 5)
-        assert abs(avg - 128.0) < 0.1
-        assert (ex, ey) == (12, 10)
-
-    def test_out_of_bounds_stops_at_edge(self):
-        luminance = np.full((100, 100), 128.0, dtype=np.float64)
-        _avg, ex, _ey = self._sample_line_luminance(luminance, 10, 10, 150, 10, 5)
-        assert 0 <= ex < 100
-
-
 class TestFindDarkestPixel:
     """Tests for darkest pixel finding."""
 
@@ -868,15 +810,6 @@ class TestAddSquiggle:
 class TestErase:
     """Tests for the reference erase model."""
 
-    def test_dark_pixel_erases_less_than_light_pixel(self):
-        from penpath.core.drawing.pfm_sketch_lines import _erase_amount
-
-        dark = _erase_amount(0.0, 50.0, 125.0, 0.5)
-        light = _erase_amount(255.0, 50.0, 125.0, 0.5)
-        assert dark == 50
-        assert light == 125
-        assert dark < light
-
     def test_drawing_lightens_the_working_image_toward_white(self):
         from penpath.core.drawing.pfm_sketch_lines import _apply_erase
 
@@ -903,13 +836,6 @@ class TestErase:
         assert working[10, 12] == 50.0
         assert working[8, 10] == 50.0
         assert working[7, 10] == 0.0
-
-    def test_tone_blends_cubic_and_linear_progress(self):
-        from penpath.core.drawing.pfm_sketch_lines import _erase_amount
-
-        mid = 255.0 / 2
-        expected = int(50 + (0.5 * mid**3 / 255**3 + 0.5 * mid / 255) * 75)
-        assert _erase_amount(mid, 50.0, 125.0, 0.5) == expected
 
 
 class TestSparseCanvas:

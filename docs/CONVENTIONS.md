@@ -1,7 +1,7 @@
 # penpath Conventions
 
 **Status**: Mandatory for all contributors  
-**Enforced by**: CI (ruff, mypy, pytest)
+**Enforced by**: CI (ruff, vulture, mypy, pytest)
 
 ---
 
@@ -14,6 +14,7 @@
 | Build Backend | `hatchling` | `pyproject.toml` only, no `setup.py` |
 | Formatter | `ruff format` | 100-char line length |
 | Linter | `ruff check` | All rules enabled except `D` (docstrings) |
+| Dead Code Detector | `vulture` | Min confidence 60 on `src/penpath`; only framework/API false positives whitelisted |
 | Type Checker | `mypy --strict` | No `ignore_errors`, no `Any` without comment |
 | Test Runner | `pytest` | `pytest -vs` for dev, `pytest --cov` for CI |
 | Pre-commit | `pre-commit` | `ruff format`, `ruff check`, `mypy`, `pytest` |
