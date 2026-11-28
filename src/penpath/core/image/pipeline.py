@@ -11,7 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from penpath.core.image.filters import (
     box_blur,
     brightness,
+    clahe,
     contrast,
+    equalize,
     gamma,
     gaussian_blur,
     grayscale,
@@ -42,6 +44,8 @@ _FILTER_REGISTRY: dict[str, Callable[..., Image.Image]] = {
     "brightness": brightness,
     "gamma": gamma,
     "invert": invert,
+    "equalize": equalize,
+    "clahe": clahe,
 }
 
 

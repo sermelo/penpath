@@ -20,7 +20,9 @@ class TestFilterRegistry:
         expected = [
             "box_blur",
             "brightness",
+            "clahe",
             "contrast",
+            "equalize",
             "gamma",
             "gaussian_blur",
             "grayscale",

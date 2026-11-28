@@ -51,6 +51,7 @@ penpath convert [OPTIONS] INPUT_PATH [OUTPUT_PATH]
 | `--no-auto-orient` | — | `false` | Skip EXIF rotation and keep the stored pixel orientation and size (same as `auto_orient: false` in a project file) |
 | `--auto-equalize` / `--no-auto-equalize` | — | `true` | Normalize the working image's luminance range (linear auto levels) once before drawing. Use `--no-auto-equalize` to keep the original tones. |
 | `--max-coverage` | FLOAT (0, 1] | `0.8` | Largest share of the paper ink may cover where the image is black, measured with the pen width (stroke length × pen width). Lighter tones scale down in proportion. Algorithms with a regular line structure (Hatch, Patch Hatch, Engraving, Squiggle, Spiral) are calibrated on a black test patch first; then every algorithm's latest strokes are removed wherever ~3 mm windows still exceed the cap. Styles that step in whole layers or strokes land on the step at or just below the cap. `1` turns it off. Project file: `image.max_coverage`. |
+| `--auto-levels-clip` | FLOAT 0–10 | `0` | Percent of pixels ignored at each end when auto equalize measures the tonal range. `0` uses the darkest and lightest pixel (a single speck or highlight can block the stretch); `0.5` stretches flat photos that have a few extreme pixels. Project file: `image.auto_levels_clip`. |
 | `--equalize-levels` / `--no-equalize-levels` | — | `false` | Equalise each pen's image onto the drawing algorithm's own tone steps just before drawing, so every step gets about the same share of the inked pixels: Hatch's bands, Patch Hatch's layers (from pen width and spacing), Engraving's stroke counts, Contour's levels, or 8 even steps for continuous algorithms. Makes dark and flat photos readable; it deliberately changes the tones, so SSIM against the original usually drops. Project file: `image.equalize_levels`. |
 | `--background` / `--no-background` | — | mode-dependent | Mask paper-coloured pixels as no ink. On by default with `--palette`, off for a single pen; the flag overrides either mode. |
 | `--background-threshold FLOAT` | — | `10` | Maximum CIE Lab distance from the detected paper colour treated as no ink. Giving it enables masking unless `--no-background` is also given. |
@@ -878,6 +879,8 @@ Squares has its own gate linked above. Running `--pfm sketch_squares`,
 | `brightness` | `factor=float>=0` | Brightness adjustment (1.0 = no change) |
 | `gamma` | `gamma=float>0` | Gamma correction (1.0 = no change) |
 | `invert` | (none) | Invert colors (negative) |
+| `equalize` | (none) | Global histogram equalisation of the luminance (colour kept) |
+| `clahe` | `clip_limit=float (0,1]`, `tiles=int 2-64` | Local contrast equalisation (CLAHE): evens out contrast region by region; defaults 0.01 and 8 |
 
 **Example**: `-f grayscale -f "threshold:level=128,dither=floyd_steinberg" -f "gaussian_blur:radius=1.5"`
 

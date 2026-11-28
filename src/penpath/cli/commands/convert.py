@@ -169,6 +169,16 @@ def _resolve_output_path(
     ),
 )
 @click.option(
+    "--auto-levels-clip",
+    "auto_levels_clip_opt",
+    type=click.FloatRange(0.0, 10.0),
+    default=None,
+    help=(
+        "Percent of pixels ignored at each end when auto equalize measures the range "
+        "(default: 0; 0.5 ignores a few extreme pixels so flat photos get stretched)"
+    ),
+)
+@click.option(
     "--equalize-levels/--no-equalize-levels",
     "equalize_levels_flag",
     default=None,
@@ -327,6 +337,7 @@ def convert_cmd(
     no_auto_orient: bool,
     auto_equalize_flag: bool | None,
     equalize_levels_flag: bool | None,
+    auto_levels_clip_opt: float | None,
     max_coverage_opt: float | None,
     background_flag: bool | None,
     background_threshold: float | None,
@@ -424,6 +435,8 @@ def convert_cmd(
             project.image.auto_equalize = auto_equalize_flag
         if equalize_levels_flag is not None:
             project.image.equalize_levels = equalize_levels_flag
+        if auto_levels_clip_opt is not None:
+            project.image.auto_levels_clip = auto_levels_clip_opt
         if max_coverage_opt is not None:
             project.image.max_coverage = max_coverage_opt
         if background_flag is not None:
@@ -467,6 +480,7 @@ def convert_cmd(
                 auto_orient=not no_auto_orient,
                 auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
                 equalize_levels=bool(equalize_levels_flag),
+                auto_levels_clip=auto_levels_clip_opt or 0.0,
                 max_coverage=0.8 if max_coverage_opt is None else max_coverage_opt,
                 default_pen=config.default_pen,
                 default_paper=config.default_paper,
