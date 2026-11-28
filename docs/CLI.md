@@ -512,6 +512,39 @@ values or out-of-range numbers exit 2 naming the setting.
 
 **Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s ring_spacing=5 -s amplitude=0.8`
 
+#### PFM Settings (Squiggle)
+
+Select this PFM with `--pfm squiggle` (or `squiggle:default`, `squiggle:fine`,
+`squiggle:diagonal`). Parallel rows run across the image and each row is one
+wavy stroke whose amplitude and frequency grow with the local darkness
+(averaged over the row's band), like "Squiggle Draw": dark areas get tall,
+tight waves, light areas nearly straight lines. Very fast to plot, with one
+pen lift per row. Lengths are in millimetres on paper.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `line_spacing` | float | >0 mm | `2.0` | Distance between rows. |
+| `angle` | float | −360–360° | `0.0` | Row direction; 0 is horizontal. |
+| `max_amplitude` | float | 0–1.5 | `0.9` | Wave height at full black, as a fraction of half the row spacing; above 1 rows may touch. |
+| `min_frequency` | float | >=0 /mm | `0.2` | Waves per millimetre at the lightest drawn tone. |
+| `max_frequency` | float | >= `min_frequency` | `1.5` | Waves per millimetre at full black; never tighter than one wave per two pen widths. |
+| `tone_gamma` | float | >0 | `1.2` | Exponent on darkness; higher keeps mid-tones calmer. |
+| `min_tone` | float | 0–1 | `0.05` | Darkness below which the row is a straight line. |
+| `skip_white` | bool | — | `false` | Lift the pen over areas lighter than `min_tone` instead of drawing a straight line. |
+| `serpentine` | bool | — | `true` | Reverse every other row so the next row starts near the last one's end. |
+| `seed` | int or `null` | any | `null` | Accepted for symmetry; the algorithm is deterministic. |
+
+| Preset id | Character |
+|-----------|-----------|
+| `squiggle:default` | 2 mm horizontal rows. |
+| `squiggle:fine` | 1.2 mm rows, up to 2.5 waves/mm: more detail. |
+| `squiggle:diagonal` | The defaults at 45°. |
+
+```bash
+penpath convert photo.jpg --pfm squiggle -o squiggle.svg
+penpath convert photo.jpg --pfm squiggle:fine -s skip_white=true -o waves.svg
+```
+
 #### PFM Settings (TSP Art)
 
 Select this PFM with `--pfm tsp` (or `tsp:default` / `tsp:fine`). It draws the
