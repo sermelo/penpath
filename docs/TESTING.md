@@ -2079,6 +2079,117 @@ the required acceptance, and this owner-confirmed result is part of it.
 
 ---
 
+## Spiral Sawtooth shapes: circle, ellipse and cover (LUC-176, 2026-11-28)
+
+Part 1 (LUC-203) added `SpiralSettings.shape` with `circle` as the default,
+replacing the LUC-155 ellipse. The
+[Spiral Sawtooth gate (LUC-138)](#spiral-sawtooth-gate-luc-138-2026-11-27) above
+therefore records the **historical elliptical default** and its four Santa
+previews; neither its numbers nor its images were rewritten. This section
+publishes the measured evidence and previews for the new default and its two
+alternatives. Neither the algorithm nor any gate expectation changed here.
+
+Reproduce the measured table with:
+
+```bash
+uv run pytest tests/integration/test_spiral_gate.py -m slow -s
+```
+
+On Python 3.14.10 with vpype 1.15 this reported `8 passed in 43.70 s`. The
+harness converts all three references with the default preset in each `shape`
+and all four presets in the default `circle` shape through the real CLI:
+`--pfm <id> -s seed=42 -s shape=<shape> --paper 190x190,0 --pen
+0.4,#000000,fineliner --dpi 96 --max-resolution 384`. "Raw/svg" are the strokes
+from `spiral_strokes` on the working image and from the exported SVG (equal in
+every case here); lifts come from `penpath evaluate --json`. "reachΔ" is how far
+the horizontal and vertical radial reaches differ, in working-image pixels.
+
+### Measured values
+
+| image | preset | shape | raw/svg | lifts | reachΔ | rank | dark ink | cov W | cov H | bbox | ink min | tone | mm | tiny | SSIM |
+|-------|--------|-------|--------:|------:|-------:|-----:|---------:|------:|------:|-----:|--------:|-----:|---:|-----:|-----:|
+| `face.jpg` | `spiral_sawtooth` | circle | 1/1 | 0 | 2.81 | -0.258 | 0.852 | 0.963 | 0.784 | 0.754 | 0.0043 | 0.58 | 24089.3 | 0 | 0.301 |
+| `face.jpg` | `spiral_sawtooth:fine` | circle | 1/1 | 0 | 0.75 | -0.230 | 0.812 | 0.978 | 0.777 | 0.760 | 0.0056 | 0.50 | 23986.6 | 0 | 0.378 |
+| `face.jpg` | `spiral_sawtooth:bold` | circle | 1/1 | 0 | 2.35 | -0.290 | 0.944 | 0.921 | 0.758 | 0.698 | 0.0009 | 0.47 | 33245.1 | 0 | 0.157 |
+| `face.jpg` | `spiral_sawtooth:parabolic` | circle | 2/2 | 1 | 2.11 | -0.239 | 0.803 | 0.996 | 0.785 | 0.782 | 0.0047 | 0.48 | 23753.3 | 0 | 0.378 |
+| `face.jpg` | `spiral_sawtooth` | ellipse | 1/1 | 0 | 36.81 | 0.133 | 0.796 | 0.963 | 0.960 | 0.924 | 0.0128 | 1.57 | 29798.6 | 0 | 0.270 |
+| `face.jpg` | `spiral_sawtooth` | cover | 1/1 | 0 | 38.50 | 0.984 | 0.929 | 0.997 | 0.997 | 0.994 | 0.0243 | 4.40 | 56456.6 | 0 | 0.427 |
+| `photo.jpg` | `spiral_sawtooth` | circle | 1/1 | 0 | 1.44 | -0.011 | 0.775 | 0.645 | 0.947 | 0.611 | 0.0007 | 0.98 | 16542.8 | 0 | 0.329 |
+| `photo.jpg` | `spiral_sawtooth:fine` | circle | 1/1 | 0 | 2.32 | 0.038 | 0.707 | 0.654 | 0.965 | 0.631 | 0.0009 | 1.12 | 15769.8 | 0 | 0.392 |
+| `photo.jpg` | `spiral_sawtooth:bold` | circle | 1/1 | 0 | 6.42 | -0.113 | 0.849 | 0.631 | 0.883 | 0.558 | 0.0000 | 0.73 | 22776.7 | 0 | 0.288 |
+| `photo.jpg` | `spiral_sawtooth:parabolic` | circle | 2/2 | 1 | 1.76 | 0.000 | 0.872 | 0.652 | 0.992 | 0.646 | 0.0008 | 1.06 | 16666.8 | 0 | 0.403 |
+| `photo.jpg` | `spiral_sawtooth` | ellipse | 1/1 | 0 | 59.76 | 0.536 | 0.747 | 0.943 | 0.948 | 0.893 | 0.0096 | 2.21 | 23514.3 | 0 | 0.221 |
+| `photo.jpg` | `spiral_sawtooth` | cover | 1/1 | 0 | 64.00 | 0.929 | 0.875 | 0.997 | 0.996 | 0.993 | 0.0299 | 2.72 | 41637.4 | 0 | 0.326 |
+| `santa.jpg` | `spiral_sawtooth` | circle | 1/1 | 0 | 2.13 | -0.162 | 0.910 | 0.982 | 0.741 | 0.728 | 0.0033 | 0.88 | 31267.3 | 0 | 0.298 |
+| `santa.jpg` | `spiral_sawtooth:fine` | circle | 1/1 | 0 | 2.73 | -0.117 | 0.855 | 0.986 | 0.748 | 0.738 | 0.0034 | 1.00 | 30262.6 | 0 | 0.333 |
+| `santa.jpg` | `spiral_sawtooth:bold` | circle | 1/1 | 0 | 3.76 | -0.293 | 0.984 | 0.948 | 0.726 | 0.688 | 0.0008 | 0.56 | 43725.8 | 0 | 0.138 |
+| `santa.jpg` | `spiral_sawtooth:parabolic` | circle | 2/2 | 1 | 2.62 | -0.081 | 0.847 | 0.997 | 0.750 | 0.748 | 0.0035 | 0.98 | 29861.7 | 0 | 0.357 |
+| `santa.jpg` | `spiral_sawtooth` | ellipse | 1/1 | 0 | 44.78 | 0.013 | 0.870 | 0.959 | 0.969 | 0.929 | 0.0108 | 1.19 | 37566.7 | 0 | 0.284 |
+| `santa.jpg` | `spiral_sawtooth` | cover | 1/1 | 0 | 44.00 | 0.846 | 0.933 | 0.997 | 0.997 | 0.994 | 0.0260 | 2.40 | 67546.1 | 0 | 0.507 |
+
+The `ellipse` rows are identical to the LUC-138 historical table, confirming
+that the old per-axis scaling was kept byte for byte. Every row keeps zero
+sub-0.5 mm segments and a zero tiny-segment share; all six default-preset and
+shape rows stay within 3 strokes and 3 lifts (one stroke and zero lifts for
+every archimedean default, two strokes and one lift for parabolic).
+
+### Enforced floors and why they differ by shape
+
+| Measure | Floor / cap | Enforced on | Why |
+|---------|------------:|-------------|-----|
+| Covered width | >= 0.85 | `cover` | Round rings grown to the farthest corner reach 0.997 on all three references; default `circle` reaches only 0.645 on the landscape photo by design. |
+| Covered height | >= 0.80 | `cover` | `cover` reaches 0.996-0.997; default `circle` reaches 0.741 on the portrait because round rings stop at the nearest edge. |
+| Bounding-box area | >= 0.70 | `cover` | `cover` reaches 0.993-0.994, so no corner of the placement is empty; the scribble baselines stay below 0.402. |
+| Ink per 4x4 cell | >= 0.0025 | `ellipse`, `cover` | The edge-reaching shapes spread ink to all sixteen cells; default `circle` leaves corner cells blank (0.0007 on `photo.jpg`). |
+| Dark/light tone ratio | >= 0.60 | `ellipse`, `cover` | Same reason: the round default's empty corners pull its ratio below the quality floor on some presets. |
+| Roundness (reachΔ) | <= 3.5 px | default preset, `circle` | `ring_spacing / 2 * amplitude = 3.5` px is the tooth reach; the default preset measures 2.81 / 1.44 / 2.13 px, so horizontal and vertical reach agree within one tooth. |
+| Dark textured tile ink | >= 0.65 | every shape | Weakest drawing 0.707; blank and random score at most 0.014. |
+| Strokes / lifts | <= 3 / <= 3 | every shape | One archimedean stroke, or two opposed parabolic strokes with one lift. |
+| Drawing length | <= 100000 mm | every shape | About 1.5x the longest measurement (67546.1 mm). |
+| Tiny segments (<0.5 mm) | 0 and share 0 | every shape | Clamped `cover` teeth advance less than 1.5 px and are dropped, so this cap holds on all three shapes. |
+
+Coverage is enforced on `cover` rather than `circle` because empty corners are
+the *point* of the new round default on a landscape image: `circle` grows true
+round rings only out to the nearest page edge, so its landscape photo measures
+0.645 wide and 0.611 bbox. Enforcing coverage there would reject the intended
+default. `cover` grows the same round rings out to the farthest corner and
+clips the teeth to the page, so its 0.997/0.997/0.994 measurements prove every
+corner carries lines without changing what `circle` draws. Roundness is
+enforced on default `circle` instead, because the new default's defining
+property is that rings stay round — reachΔ must fit inside the 3.5 px tooth
+reach on all three references. Ink spread and tone stay quality floors on the
+shapes that reach the page edges; SSIM is evidence only and never a floor.
+
+### Visual acceptance
+
+The four committed previews were rendered with the documented commands, for
+example:
+
+```bash
+penpath convert tests/fixtures/images/reference/photo.jpg -o /tmp/photo_cover.svg \
+  --pfm spiral_sawtooth -s seed=42 -s shape=cover --paper 190x190,0 \
+  --pen "0.4,#000000,fineliner" --dpi 96 --max-resolution 384 --quiet
+penpath preview /tmp/photo_cover.svg -o docs/images/luc-176/photo_cover.png --px-per-mm 3
+```
+
+`--px-per-mm 3` on the 190x190 mm gate paper gives 570x570 px previews. Each
+PNG was opened with `read` and compared with its source image; none returned an
+image error.
+
+| preview | What is visible |
+|---------|-----------------|
+| [`photo_circle.png`](../images/luc-176/photo_circle.png) | True round rings centred on the landscape: dense teeth follow the dark forest, lake and rocky shore on the right and lower half, open rings sit over the pale sky and snowy peak, and all four corners of the photo band stay blank paper. |
+| [`santa_circle.png`](../images/luc-176/santa_circle.png) | Round rings centred on Santa's face: the dark coat and background crowd both sides with tight teeth, a lighter open wedge follows the white beard and hat brim at upper left, and the portrait's corners stay blank. |
+| [`photo_cover.png`](../images/luc-176/photo_cover.png) | The same round rings grown to the farthest corner and clipped at the image band, so lines reach all four corners of the landscape; the forest and lake reflection stay heavily inked on the right and below while the sky keeps open rings. |
+| [`photo_ellipse.png`](../images/luc-176/photo_ellipse.png) | The old stretched look: wide oval rings hug the landscape rectangle, tighter top to bottom and wider left to right, with dark forest and lake crowding the lower right and the pale sky left open. |
+
+The round default and `cover` keep the mountain, lake and tree masses
+recognisable; `ellipse` is included only as the pre-LUC-203 comparison. Fine
+facial detail on Santa stays stylised into the ring texture, as in the LUC-138
+section.
+
+---
+
 ## Contact sheet readability (LUC-141, 2026-11-27)
 
 Acceptance is **by looking at the PNG**, not by exit code or a score. With the
