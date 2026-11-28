@@ -146,6 +146,9 @@ def convert_photo(work_dir: Path, seed: int = SEED) -> Path:
         main,
         [
             "convert",
+            # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+            "--max-coverage",
+            "1",
             str(REFERENCE_DIR / PHOTO_NAME),
             "-o",
             str(svg_path),

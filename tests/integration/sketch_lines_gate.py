@@ -404,6 +404,9 @@ def measure_reference(image_path: Path, work_dir: Path, seed: int = SEED) -> Gat
         main,
         [
             "convert",
+            # Gates measure the algorithm itself; the ink coverage cap is tested separately.
+            "--max-coverage",
+            "1",
             str(image_path),
             "-o",
             str(svg_path),
