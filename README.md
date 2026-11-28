@@ -45,7 +45,8 @@ uv sync --extra dev  # or: pip install -e ".[dev]"
 ```
 
 Run the whole nightly workload locally — dependency sync, a timed reference
-photo conversion and the full unit + integration suite — with:
+photo conversion and the full unit + integration suite, including the slow
+quality gates — with:
 
 ```bash
 bash scripts/nightly.sh

@@ -43,6 +43,7 @@ def test_shipped_default_matches_the_calibrated_value() -> None:
     assert SketchLinesSettings().max_fill == 90.0
 
 
+@pytest.mark.slow
 def test_sweep_covers_every_figure_and_value(sweep_reports: list[FillReport]) -> None:
     """Each of the three figures was drawn at all five sweep points."""
     assert len(sweep_reports) == len(FIGURE_NAMES) * len(SWEEP)
@@ -54,6 +55,7 @@ def test_sweep_covers_every_figure_and_value(sweep_reports: list[FillReport]) ->
         assert np.isfinite(report.measures.ssim)
 
 
+@pytest.mark.slow
 def test_default_reduces_ink_in_the_solid_dark_figure(sweep_reports: list[FillReport]) -> None:
     """Ink in the solid black square falls monotonically as max_fill falls."""
     densities = [measurement_for(sweep_reports, "dark_figure", value).dark_ink for value in SWEEP]
@@ -63,6 +65,7 @@ def test_default_reduces_ink_in_the_solid_dark_figure(sweep_reports: list[FillRe
     assert capped < 0.9 * full
 
 
+@pytest.mark.slow
 def test_light_figure_still_receives_ink(sweep_reports: list[FillReport]) -> None:
     """A tone lighter than the black point is drawn exactly as in full range."""
     capped = measurement_for(sweep_reports, "light_figure", DEFAULT_MAX_FILL)
@@ -72,6 +75,7 @@ def test_light_figure_still_receives_ink(sweep_reports: list[FillReport]) -> Non
     assert capped.drawing_length_mm == pytest.approx(full.drawing_length_mm, abs=1e-6)
 
 
+@pytest.mark.slow
 def test_gradient_keeps_tone_ordering(sweep_reports: list[FillReport]) -> None:
     """Dark, middle and light bands get decreasing ink at the shipped default."""
     capped = measurement_for(sweep_reports, "gradient", DEFAULT_MAX_FILL)
@@ -81,6 +85,7 @@ def test_gradient_keeps_tone_ordering(sweep_reports: list[FillReport]) -> None:
     assert capped.bands[2] == pytest.approx(full.bands[2], abs=0.01)
 
 
+@pytest.mark.slow
 def test_default_lowers_machine_cost(sweep_reports: list[FillReport]) -> None:
     """The black area and the gradient take fewer millimetres of pen-down travel."""
     for figure in ("dark_figure", "gradient"):
@@ -90,6 +95,7 @@ def test_default_lowers_machine_cost(sweep_reports: list[FillReport]) -> None:
         assert capped.num_strokes < full.num_strokes
 
 
+@pytest.mark.slow
 def test_default_keeps_likeness_close_to_full_range(sweep_reports: list[FillReport]) -> None:
     """The cap spends a little SSIM to make the solid black area plottable."""
     for figure in ("dark_figure", "gradient"):

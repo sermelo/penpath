@@ -42,6 +42,8 @@ from sketch_lines_gate import PlotMeasures
 from penpath.cli.main import main as cli_main
 from penpath.core import parse_svg_strokes
 
+pytestmark = pytest.mark.slow
+
 MAX_WALL_SECONDS = 30.0
 FLOORS: dict[str, dict[str, float]] = {
     "face.jpg": {

@@ -60,7 +60,7 @@ def _run_runner(cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_runner_runs_nightly_workload_in_order(stubbed_tools: Path, tmp_path: Path) -> None:
-    """Invoking the script runs sync, tools, timed convert and full suite in order."""
+    """Invoking the script runs sync, tools, timed convert and the full suite in order."""
     result = _run_runner(tmp_path)
 
     assert result.returncode == 0, result.stderr
@@ -73,7 +73,7 @@ def test_runner_runs_nightly_workload_in_order(stubbed_tools: Path, tmp_path: Pa
             "tests/fixtures/images/reference/photo.jpg "
             "-o /tmp/nightly-photo.svg --pfm-setting seed=42 --quiet"
         ),
-        f"{_REPO_ROOT}|run pytest tests/unit tests/integration -vs",
+        f"{_REPO_ROOT}|run pytest tests/unit tests/integration -vs -m slow or not slow",
     ]
 
 
