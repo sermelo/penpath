@@ -818,6 +818,58 @@ def fit_layers_to_drawable(
     return FitResult(fitted_layers, scale, offset, overshoot, True, fitted_frame)
 
 
+def drawing_bounds_pen(
+    layers: Sequence[GcodeLayer],
+    profile: MachineProfile,
+    page_size_mm: Coordinate,
+    placement: PagePlacement | None = None,
+) -> Bounds:
+    """Return the pen-space bounds of the drawing's emitted strokes.
+
+    Points go through the emitter's own page-to-pen mapping, so the bounds
+    describe the geometry that :func:`build_gcode` receives after fitting.
+    Only polylines with at least two points count, matching the strokes the
+    emitter draws; a separate frame is not included.
+
+    Parameters
+    ----------
+    layers : Sequence[GcodeLayer]
+        Layers of polylines in SVG page millimetres, in drawing order.
+    profile : MachineProfile
+        Validated machine profile; the only source of bed and placement values.
+    page_size_mm : Coordinate
+        SVG page width and height in millimetres, used for the Y flip.
+    placement : PagePlacement | None
+        Page placement the emitter used. Computed from the profile when omitted.
+
+    Returns
+    -------
+    Bounds
+        ``((min_x, min_y), (max_x, max_y))`` in pen-space millimetres.
+
+    Raises
+    ------
+    GcodeError
+        The drawing has no polyline with two or more points to bound.
+    """
+    final_placement = placement if placement is not None else place_page(profile, page_size_mm)
+    origin = final_placement.origin_mm
+    page_height = page_size_mm[1]
+    points = [
+        _svg_to_pen(point, page_height, origin, profile)
+        for layer in layers
+        for polyline in layer.polylines
+        if len(polyline) >= 2
+        for point in polyline
+    ]
+    if not points:
+        raise GcodeError("drawing has no drawn points to bound")
+    return (
+        (min(point[0] for point in points), min(point[1] for point in points)),
+        (max(point[0] for point in points), max(point[1] for point in points)),
+    )
+
+
 def build_gcode(
     layers: Sequence[GcodeLayer],
     profile: MachineProfile,
@@ -973,6 +1025,7 @@ __all__ = [
     "PlacementName",
     "PointOutsideBedError",
     "build_gcode",
+    "drawing_bounds_pen",
     "fit_layers_to_drawable",
     "frame_polyline",
     "lead_in_mm",
