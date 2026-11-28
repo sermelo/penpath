@@ -647,6 +647,7 @@ is rejected with a message naming both settings.
 | `serpentine` | bool | — | `true` | Reverse every other line so the end of one is near the start of the next. |
 | `join_runs` | bool | — | `false` | Join overlapping runs on adjacent lines of a band into continuous zig-zag strokes, drawing the short connectors; fewer pen lifts. Requires `serpentine=true` (otherwise the command exits 2). |
 | `jitter` | float | >=0 mm | `0.0` | Seeded perpendicular wobble; `0` gives perfectly straight parallel lines. |
+| `auto_thresholds` | bool | — | `false` | Fit the thresholds to this image's own tonal range: with `lo`/`hi` the 2nd/98th percentiles of the darkness of non-white pixels, threshold `t` becomes `lo + t * (hi - lo)`, so a flat, low-contrast photo still uses every band. |
 | `seed` | int or `null` | any | `null` | Seed for the jitter. Fix it with `-s seed=42` for byte-identical reruns. |
 
 **Examples**:
@@ -658,6 +659,8 @@ penpath convert photo.jpg --pfm hatch:default -s seed=42 -o hatch.svg
 penpath convert photo.jpg --pfm hatch:crosshatch -s seed=42 -o crosshatch.svg
 # Finer 0.6 mm lines; include a third band with a 0.6 darkness threshold
 penpath convert photo.jpg --pfm hatch:fine -s angles=45,135,0 -s thresholds=0.2,0.4,0.6
+# Fit the bands to a flat, low-contrast photo's own tonal range
+penpath convert photo.jpg --pfm hatch:crosshatch -s auto_thresholds=true -o fitted.svg
 # Continuous zig-zag strokes on the algorithm defaults (fewer pen lifts)
 penpath convert photo.jpg --pfm hatch -s join_runs=true -o joined.svg
 # Palette: each successive pen's angles rotate by 30 degrees

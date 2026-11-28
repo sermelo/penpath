@@ -74,6 +74,11 @@ class HatchSettings(BaseModel):
     jitter : float
         Seeded perpendicular position wobble in millimetres (>= 0). Default
         0.0, i.e. perfectly straight parallel lines.
+    auto_thresholds : bool
+        Fit the thresholds to this image's own tonal range: with ``lo`` and
+        ``hi`` the 2nd and 98th percentiles of the darkness of the non-white
+        pixels, threshold ``t`` becomes ``lo + t * (hi - lo)``. A flat,
+        low-contrast photo then still uses every band. Default False.
     seed : int | None
         Random seed for the jitter. None is non-deterministic. Default None.
     """
@@ -87,6 +92,7 @@ class HatchSettings(BaseModel):
     serpentine: bool = True
     join_runs: bool = False
     jitter: float = Field(default=0.0, ge=0.0)
+    auto_thresholds: bool = False
     seed: int | None = None
 
     @field_validator("angles")
@@ -151,6 +157,44 @@ def _darkness_map(image: Image.Image) -> NDArray[np.float64]:
     """Return ``1 - L/255`` for an image of any mode."""
     gray = image.convert("L") if image.mode != "L" else image
     return 1.0 - np.asarray(gray, dtype=np.float64) / 255.0
+
+
+def adaptive_thresholds(
+    darkness: NDArray[np.float64], thresholds: tuple[float, ...]
+) -> tuple[float, ...]:
+    """Map ``thresholds`` into the image's own darkness range.
+
+    The range is the 2nd to 98th percentile of the darkness of pixels that
+    are not pure white (darkness above 1/255). Threshold ``t`` becomes
+    ``lo + t * (hi - lo)``; results stay strictly increasing inside (0, 1).
+    An image with no ink, or a range narrower than 0.02, returns
+    ``thresholds`` unchanged.
+
+    Parameters
+    ----------
+    darkness : numpy.ndarray
+        Darkness map ``1 - L/255``.
+    thresholds : tuple[float, ...]
+        Strictly increasing thresholds in (0, 1).
+
+    Returns
+    -------
+    tuple[float, ...]
+        The fitted thresholds.
+    """
+    inked = darkness[darkness > 1.0 / 255.0]
+    if inked.size == 0:
+        return thresholds
+    lo, hi = (float(v) for v in np.percentile(inked, [2.0, 98.0]))
+    if hi - lo < 0.02:
+        return thresholds
+    fitted: list[float] = []
+    for threshold in thresholds:
+        value = min(0.999, max(0.001, lo + threshold * (hi - lo)))
+        if fitted and value <= fitted[-1]:
+            value = min(0.9999, fitted[-1] + 1e-4)
+        fitted.append(value)
+    return tuple(fitted)
 
 
 def _sample_darkness(darkness: NDArray[np.float64], x: float, y: float) -> float:
@@ -289,7 +333,12 @@ def hatch_strokes(
     rng = random.Random(settings.seed)
     strokes: list[LineString] = []
 
-    for angle, threshold in zip(settings.angles, settings.thresholds, strict=True):
+    thresholds = (
+        adaptive_thresholds(darkness, settings.thresholds)
+        if settings.auto_thresholds
+        else settings.thresholds
+    )
+    for angle, threshold in zip(settings.angles, thresholds, strict=True):
         raw_spacing = settings.spacing
         if settings.variable_spacing:
             raw_spacing *= 1.0 - 0.5 * threshold
@@ -403,6 +452,7 @@ def hatch_strokes(
 __all__ = [
     "PALETTE_ANGLE_STEP_DEG",
     "HatchSettings",
+    "adaptive_thresholds",
     "hatch_strokes",
     "with_angle_offset",
 ]
