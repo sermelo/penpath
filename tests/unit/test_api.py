@@ -252,6 +252,31 @@ def test_pen_and_palette_overrides_on_base_match_direct_mode(tmp_path: Path) -> 
     )
 
 
+def test_one_pen_palette_base_override_matches_direct_pen(tmp_path: Path) -> None:
+    """A one-pen palette base is still palette mode for a pen override."""
+    pen_direct = convert(
+        SPHERE,
+        pen="fine",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+    solo_base = build_project(SPHERE, palette="solo=0.3,#000000", settings={"seed": 42})
+    pen_override = convert(
+        SPHERE,
+        project=solo_base,
+        pen="fine",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+
+    assert pen_override.strokes_by_pen == pen_direct.strokes_by_pen
+    assert _svg_bytes(pen_override, tmp_path, "solo_override") == _svg_bytes(
+        pen_direct, tmp_path, "solo_direct"
+    )
+
+
 def test_pen_and_palette_together_is_rejected() -> None:
     """The library rejects the same conflict the CLI rejects."""
     with pytest.raises(ResolutionError, match="mutually exclusive"):

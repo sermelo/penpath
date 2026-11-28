@@ -86,7 +86,7 @@ def _apply_mode_background(project: Project, *, palette: bool) -> None:
     A base project that deliberately chose the other value keeps its choice;
     otherwise the chosen mode's default applies.
     """
-    previous_palette = len(project.palette) > 1
+    previous_palette = bool(project.pens)
     if project.image.background is None or project.image.background == previous_palette:
         project.image.background = palette
 
