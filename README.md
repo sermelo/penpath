@@ -120,6 +120,9 @@ penpath convert photo.jpg -f grayscale -f "posterize:levels=4,dither=floyd_stein
 # 7/8 of 0-255 are left alone. Keep the original tones with:
 penpath convert photo.jpg --no-auto-equalize
 
+# Spread a dark or flat photo evenly over the algorithm's own tone steps
+penpath convert photo.jpg --pfm hatch:crosshatch --equalize-levels
+
 # Palette mode masks pale paper as no ink by default; tune or override it:
 penpath convert photo.jpg --palette stabilo_88 --background-threshold 6
 penpath convert photo.jpg --palette stabilo_88 --no-background
