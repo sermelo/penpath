@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import StrEnum
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 _WIDE_RANGE_MIN_SPAN = 224
+ROBUST_CLIP_PERCENT = 0.5
+"""Recommended ``clip_percent`` for robust auto levels."""
 
 
 class GrayscaleMethod(StrEnum):
@@ -29,21 +32,29 @@ class DitherMethod(StrEnum):
     ORDERED = "ordered"
 
 
-def auto_equalize(image: Image.Image) -> Image.Image:
-    """Stretch the image's luminance range to 0-255 (linear auto levels).
+def auto_equalize(image: Image.Image, clip_percent: float = 0.0) -> Image.Image:
+    """Stretch the image's luminance range to 0-255 (robust linear auto levels).
 
-    The range is measured with the same BT.601 luminance as :func:`grayscale`.
-    One lookup table maps ``[lo, hi]`` to ``[0, 255]`` and is applied to every
-    colour channel; an alpha channel is copied through unchanged. A copy is
-    returned unchanged when the image already spans 0-255, when its range is
-    narrower than 16 levels (blank or near-uniform input), or when it already
-    spans at least 7/8 of 0-255 (224 levels), where the largest possible
-    stretch is 255/224 and a calibrated plot is left undisturbed.
+    The range is measured with the same BT.601 luminance as :func:`grayscale`,
+    as the ``clip_percent`` and ``100 - clip_percent`` percentiles. With the
+    default 0 these are the single darkest and lightest pixel (the original
+    behaviour); with ``clip_percent=0.5`` (:data:`ROBUST_CLIP_PERCENT`) a few
+    extreme pixels (a dark speck, a specular highlight, which nearly every
+    JPEG photo has) no longer hide a flat photo's narrow range. One lookup table maps
+    ``[lo, hi]`` to ``[0, 255]`` (clipping the few pixels outside) and is
+    applied to every colour channel; an alpha channel is copied through
+    unchanged. A copy is returned unchanged when the measured range is
+    narrower than 16 levels (blank or near-uniform input) or already spans at
+    least 7/8 of 0-255 (224 levels), where the largest possible stretch is
+    255/224 and a calibrated plot is left undisturbed.
 
     Parameters
     ----------
     image : PIL.Image.Image
         Input image in ``L``, ``LA``, ``RGB`` or ``RGBA`` mode.
+    clip_percent : float, optional
+        Percent of pixels ignored at each end when measuring the range
+        (0 - 10). Default 0.
 
     Returns
     -------
@@ -55,6 +66,8 @@ def auto_equalize(image: Image.Image) -> Image.Image:
     TypeError
         If the mode is not ``L``, ``LA``, ``RGB`` or ``RGBA``.
     """
+    if not 0.0 <= clip_percent <= 10.0:
+        raise ValueError(f"clip_percent must be in 0 - 10, got {clip_percent}")
     if image.mode not in ("L", "LA", "RGB", "RGBA"):
         raise TypeError(
             "auto_equalize supports L, LA, RGB and RGBA images, got "
@@ -63,16 +76,17 @@ def auto_equalize(image: Image.Image) -> Image.Image:
 
     arr = np.asarray(image)
     if image.mode in ("L", "LA"):
-        luminance = arr if image.mode == "L" else arr[:, :, 0]
-        lo = int(luminance.min())
-        hi = int(luminance.max())
+        luminance = (arr if image.mode == "L" else arr[:, :, 0]).astype(np.float32)
     else:
         rgb = arr[:, :, :3].astype(np.float32)
         luminance = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
-        lo = int(np.floor(luminance.min()))
-        hi = int(np.ceil(luminance.max()))
+    low_value, high_value = np.percentile(
+        luminance, [clip_percent, 100.0 - clip_percent], method="nearest"
+    )
+    lo = int(np.floor(low_value))
+    hi = int(np.ceil(high_value))
 
-    if (lo == 0 and hi == 255) or hi - lo < 16 or hi - lo >= _WIDE_RANGE_MIN_SPAN:
+    if hi - lo < 16 or hi - lo >= _WIDE_RANGE_MIN_SPAN:
         return image.copy()
 
     scale = 255.0 / (hi - lo)
@@ -451,6 +465,87 @@ def gamma(image: Image.Image, gamma: float = 1.0) -> Image.Image:
         return image.point(table * (3 if image.mode == "RGB" else 4))
     else:
         return image.convert("RGB").point(table * 3).convert(image.mode)
+
+
+def _on_luminance(
+    image: Image.Image, transform: Callable[[Image.Image], Image.Image]
+) -> Image.Image:
+    """Apply a greyscale ``transform`` to the image's luminance, keeping colour."""
+    if image.mode == "L":
+        return transform(image)
+    if image.mode == "LA":
+        lightness, la_alpha = image.split()
+        return Image.merge("LA", (transform(lightness), la_alpha))
+    rgba_alpha = image.getchannel("A") if image.mode == "RGBA" else None
+    y, cb, cr = image.convert("RGB").convert("YCbCr").split()
+    result = Image.merge("YCbCr", (transform(y), cb, cr)).convert("RGB")
+    if rgba_alpha is not None:
+        result.putalpha(rgba_alpha)
+    return result
+
+
+def equalize(image: Image.Image) -> Image.Image:
+    """Global histogram equalisation of the luminance.
+
+    Spreads the image's grey levels so every level is about equally used,
+    which brings out mid-tone detail in flat or low-contrast photos. Colour
+    images are equalised on their luminance (YCbCr), so hues do not shift.
+
+    Parameters
+    ----------
+    image : PIL.Image.Image
+        Input image in ``L``, ``LA``, ``RGB`` or ``RGBA`` mode.
+
+    Returns
+    -------
+    PIL.Image.Image
+        The equalised image, same mode.
+    """
+    from PIL import ImageOps
+
+    return _on_luminance(image, ImageOps.equalize)
+
+
+def clahe(image: Image.Image, clip_limit: float = 0.01, tiles: int = 8) -> Image.Image:
+    """Local contrast equalisation (CLAHE) of the luminance.
+
+    Contrast Limited Adaptive Histogram Equalization evens out contrast
+    region by region, so detail in both shadows and highlights shows, while
+    ``clip_limit`` stops it from amplifying noise in flat areas.
+
+    Parameters
+    ----------
+    image : PIL.Image.Image
+        Input image in ``L``, ``LA``, ``RGB`` or ``RGBA`` mode.
+    clip_limit : float
+        Contrast limit, 0 - 1 (default 0.01). Higher means stronger local
+        contrast and more noise.
+    tiles : int
+        Number of regions across the longest side (2 - 64, default 8).
+
+    Returns
+    -------
+    PIL.Image.Image
+        The equalised image, same mode.
+
+    Raises
+    ------
+    ValueError
+        If ``clip_limit`` or ``tiles`` is out of range.
+    """
+    if not 0.0 < clip_limit <= 1.0:
+        raise ValueError(f"clip_limit must be in (0, 1], got {clip_limit}")
+    if not 2 <= int(tiles) <= 64:
+        raise ValueError(f"tiles must be in 2 - 64, got {tiles}")
+    from skimage.exposure import equalize_adapthist
+
+    def transform(gray: Image.Image) -> Image.Image:
+        values = np.asarray(gray, dtype=np.float64) / 255.0
+        kernel = max(8, round(max(values.shape) / int(tiles)))
+        out = equalize_adapthist(values, kernel_size=kernel, clip_limit=clip_limit)
+        return Image.fromarray(np.clip(np.rint(np.asarray(out) * 255.0), 0, 255).astype(np.uint8))
+
+    return _on_luminance(image, transform)
 
 
 def invert(image: Image.Image) -> Image.Image:

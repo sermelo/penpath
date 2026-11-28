@@ -490,6 +490,7 @@ def build_project(
     auto_orient: bool = True,
     auto_equalize: bool = True,
     equalize_levels: bool = False,
+    auto_levels_clip: float = 0.0,
     max_coverage: float = 0.8,
     default_pen: str | None = None,
     default_paper: str | None = None,
@@ -544,6 +545,7 @@ def build_project(
             auto_orient=auto_orient,
             auto_equalize=auto_equalize,
             equalize_levels=equalize_levels,
+            auto_levels_clip=auto_levels_clip,
             max_coverage=max_coverage,
             background=resolved_background,
             background_threshold=(

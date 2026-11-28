@@ -386,7 +386,7 @@ def draw_project(
     # every palette channel shares one luminance range and explicit -f filters
     # keep their current meaning.
     if project.image.auto_equalize:
-        working_image = auto_equalize(working_image)
+        working_image = auto_equalize(working_image, project.image.auto_levels_clip)
 
     if use_background:
         report.start("Masking paper background")

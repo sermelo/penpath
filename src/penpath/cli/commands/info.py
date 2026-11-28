@@ -391,6 +391,17 @@ def info_filters(fmt: str) -> None:
             "description": "Invert colors (negative)",
             "params": {},
         },
+        "equalize": {
+            "description": "Global histogram equalisation of the luminance",
+            "params": {},
+        },
+        "clahe": {
+            "description": "Local contrast equalisation (CLAHE) of the luminance",
+            "params": {
+                "clip_limit": "float in (0, 1], higher = stronger (default: 0.01)",
+                "tiles": "int 2-64, regions across the longest side (default: 8)",
+            },
+        },
     }
 
     filter_data = []
