@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from PIL import Image
+from pydantic import BaseModel
 from shapely import LineString
 
 from penpath.core.coverage import calibrate_darkness_scale, cap_coverage, scale_darkness
@@ -285,6 +286,344 @@ def _draw_capped(
     return cap_coverage(lines, (image.height, image.width), pixels_per_mm, pen_width_mm, limit)
 
 
+@dataclass(frozen=True)
+class _PipelineFlags:
+    """Mode switches derived from the project before the optional stages run."""
+
+    use_palette: bool
+    use_background: bool
+    saturation_active: bool
+    use_key_layer: bool
+
+
+@dataclass(frozen=True)
+class _ImageSetup:
+    """Working image and placement derived from the loaded source image."""
+
+    working_image: Image.Image
+    source_size_px: tuple[int, int]
+    working_size_px: tuple[int, int]
+    image_placement: ImagePlacement
+    clip_rect: ImagePlacement | None
+    resolution: WorkingResolution
+    fit_mode: FitMode
+
+
+@dataclass(frozen=True)
+class _PFMPlan:
+    """Drawing function and settings shared by every pen in a project."""
+
+    draw: Callable[..., list[LineString]]
+    settings: BaseModel
+
+
+def _pipeline_flags(project: Project) -> _PipelineFlags:
+    """Resolve the mode switches that decide which optional stages run."""
+    use_palette = len(project.palette) > 1
+    background = project.image.background
+    key_layer = project.image.key_layer
+    return _PipelineFlags(
+        use_palette=use_palette,
+        use_background=background if background is not None else use_palette,
+        saturation_active=use_palette
+        and (project.image.saturation != NO_BOOST_FACTOR or project.image.palette_adapt),
+        use_key_layer=key_layer if key_layer is not None else use_palette,
+    )
+
+
+def _prepare_image(
+    project: Project,
+    flags: _PipelineFlags,
+    report: Reporter,
+    max_resolution_px: int | None,
+    no_downscale: bool,
+) -> _ImageSetup:
+    """Load the image, plan its resolution and downscale when needed."""
+    # Placement is derived from the source size so the drawing rectangle does
+    # not move when the working image is downscaled.
+    report.start("Loading image")
+    image = load_image(project.image.path, auto_orient=project.image.auto_orient)
+    source_size_px = image.size
+    origin_x_mm, origin_y_mm = project.paper.drawable_origin_mm
+    fit_mode = project.paper.fit
+    image_placement = fit_image_placement(
+        image_size_px=source_size_px,
+        area_width_mm=project.paper.drawable_width_mm,
+        area_height_mm=project.paper.drawable_height_mm,
+        image_dpi=project.image.dpi,
+        offset_x_mm=origin_x_mm,
+        offset_y_mm=origin_y_mm,
+        mode=fit_mode,
+    )
+    clip_rect = (
+        ImagePlacement(
+            origin_x_mm,
+            origin_y_mm,
+            project.paper.drawable_width_mm,
+            project.paper.drawable_height_mm,
+        )
+        if fit_mode == "fill"
+        else None
+    )
+    resolution = plan_working_resolution(
+        source_size_px,
+        project.paper,
+        project.palette[0].width_mm,
+        max_longest_px=max_resolution_px,
+    )
+    if no_downscale:
+        resolution = replace(resolution, target_size_px=source_size_px, scale=1.0)
+    downscaling = resolution.target_size_px != source_size_px
+    report.set_total_stages(
+        5
+        + int(downscaling)
+        + int(flags.use_background)
+        + int(flags.saturation_active)
+        + int(flags.use_key_layer)
+    )
+    report.finish()
+
+    working_width, working_height = resolution.target_size_px
+    report.message(
+        f"Working resolution: {working_width}x{working_height} px "
+        f"(source {source_size_px[0]}x{source_size_px[1]} px, scale {resolution.scale:.3f})"
+    )
+
+    if downscaling:
+        report.start("Downscaling image")
+    working_image = apply_working_resolution(image, resolution)
+    if downscaling:
+        report.finish()
+    return _ImageSetup(
+        working_image=working_image,
+        source_size_px=source_size_px,
+        working_size_px=working_image.size,
+        image_placement=image_placement,
+        clip_rect=clip_rect,
+        resolution=resolution,
+        fit_mode=fit_mode,
+    )
+
+
+def _apply_passes(
+    image: Image.Image,
+    project: Project,
+    pens: list[Pen],
+    flags: _PipelineFlags,
+    report: Reporter,
+) -> tuple[Image.Image, list[LineString]]:
+    """Equalize, mask, boost saturation and trace key edges before separation."""
+    working_image = image
+    # Auto levels run once on the whole working image, before separation, so
+    # every palette channel shares one luminance range and explicit -f filters
+    # keep their current meaning.
+    if project.image.auto_equalize:
+        working_image = auto_equalize(working_image, project.image.auto_levels_clip)
+
+    if flags.use_background:
+        report.start("Masking paper background")
+        masked = mask_background(
+            working_image,
+            threshold=project.image.background_threshold,
+            method=project.image.background_method,
+        )
+        working_image = masked.image
+        report.finish()
+        report.message(
+            f"Paper colour: {masked.paper_color} ({project.image.background_method} method); "
+            f"masked {masked.masked_percent:.1f}% of pixels as no ink"
+        )
+
+    # Chroma boost runs on the masked working image. A single pen has no colour
+    # decision to make, so both paths are silent no-ops there.
+    if flags.saturation_active:
+        if project.image.saturation != NO_BOOST_FACTOR:
+            factor = project.image.saturation
+            report.start("Boosting saturation")
+            working_image = boost_saturation(working_image, factor)
+            report.finish()
+            mode = "manual"
+        else:
+            report.start("Adapting saturation to palette")
+            factor = adapt_saturation(working_image, pens)
+            report.finish()
+            if factor != NO_BOOST_FACTOR:
+                working_image = boost_saturation(working_image, factor)
+            mode = "palette-adapted"
+        report.message(f"Saturation factor: {factor:.2f} ({mode})")
+
+    # The key pass traces the working colour image once, before separation, so
+    # it sees the same masking and chroma boost as the palette channels.
+    key_lines: list[LineString] = []
+    if flags.use_key_layer:
+        report.start("Tracing key edges")
+        key_lines = key_layer_strokes(working_image)
+        report.finish()
+    return working_image, key_lines
+
+
+def _separate_and_filter(
+    working_image: Image.Image, pens: list[Pen], project: Project, report: Reporter
+) -> list[Image.Image]:
+    """Split channels before filtering so colour is available for pen choice."""
+    report.start("Applying filters")
+    pen_images = separate_palette(working_image, pens)
+    filtered = [project.image.filters.apply(img) for _, img in pen_images]
+    report.finish()
+    return filtered
+
+
+def _pfm_plan(project: Project, use_palette: bool) -> _PFMPlan:
+    """Select the PFM and apply legacy sketch-lines defaults for a palette."""
+    draw, _ = get_pfm(project.pfm.pfm_type)
+    settings = project.pfm.to_typed_settings()
+    if use_palette and isinstance(settings, SketchLinesSettings):
+        legacy = {
+            "max_fill": 80.0,
+            "line_density": 0.75,
+            "tone_coverage": 1.0,
+            "tone_exponent": 1.0,
+            "texture_limit": 0.0,
+        }
+        updates = {
+            key: value for key, value in legacy.items() if key not in settings.model_fields_set
+        }
+        if updates:
+            settings = settings.model_copy(update=updates)
+    return _PFMPlan(draw=draw, settings=settings)
+
+
+def _draw_pen(
+    image: Image.Image,
+    index: int,
+    pens: list[Pen],
+    plan: _PFMPlan,
+    project: Project,
+    use_palette: bool,
+    pixels_per_mm: float,
+) -> list[LineString]:
+    """Draw one pen's filtered image with its own settings and coverage cap."""
+    pen_settings = plan.settings
+    pfm_kwargs: dict[str, object] = {}
+    # Hatch, Patch Hatch, TSP, Squiggle and Engraving need the physical scale,
+    # which the serialisable settings do not carry. A palette rotates the angle
+    # set per pen so colour layers do not sit exactly on top of one another; a
+    # single pen keeps the original angles.
+    if isinstance(
+        pen_settings,
+        (HatchSettings, PatchHatchSettings, TSPSettings, SquiggleSettings, EngravingSettings),
+    ):
+        if use_palette and isinstance(pen_settings, HatchSettings):
+            pen_settings = with_angle_offset(pen_settings, index * PALETTE_ANGLE_STEP_DEG)
+        elif use_palette and isinstance(pen_settings, PatchHatchSettings):
+            pen_settings = with_layer_angle_offset(pen_settings, index * PALETTE_ANGLE_STEP_DEG)
+        pfm_kwargs = {
+            "pixels_per_mm": pixels_per_mm,
+            "pen_width_mm": pens[index].width_mm,
+        }
+    if project.image.equalize_levels:
+        image = apply_tone_levels(image, pfm_tone_targets(pen_settings, pens[index].width_mm))
+    draw_pen = partial(
+        _draw_with, pfm_fn=plan.draw, settings=pen_settings, style=project.style, kwargs=pfm_kwargs
+    )
+    return _draw_capped(
+        image,
+        draw_pen,
+        project.image.max_coverage,
+        pixels_per_mm,
+        pens[index].width_mm,
+        isinstance(pen_settings, _CALIBRATED_SETTINGS),
+    )
+
+
+def _generate_lines(
+    project: Project,
+    filtered_by_pen: list[Image.Image],
+    pens: list[Pen],
+    setup: _ImageSetup,
+    flags: _PipelineFlags,
+    report: Reporter,
+) -> list[list[LineString]]:
+    """Run the PFM once per pen at the working image's physical scale."""
+    report.start("Generating lines (PFM)")
+    plan = _pfm_plan(project, flags.use_palette)
+    pixels_per_mm = setup.resolution.target_size_px[0] / setup.image_placement.width
+    lines_by_pen = [
+        _draw_pen(img, index, pens, plan, project, flags.use_palette, pixels_per_mm)
+        for index, img in enumerate(filtered_by_pen)
+    ]
+    report.finish()
+    return lines_by_pen
+
+
+def _order_pens_and_merge_key(
+    pens: list[Pen],
+    lines_by_pen: list[list[LineString]],
+    key_lines: list[LineString],
+    flags: _PipelineFlags,
+) -> tuple[list[Pen], list[list[LineString]]]:
+    """Order pens for drawing and attach the key strokes to their final layer."""
+    drawing_pens = order_pens_for_drawing(pens)
+    position_by_id = {id(pen): index for index, pen in enumerate(pens)}
+    ordered_lines = [lines_by_pen[position_by_id[id(pen)]] for pen in drawing_pens]
+    pens = drawing_pens
+
+    # In palette mode the key strokes share the near-black pen, which drawing
+    # order puts last. A single pen or a palette without black gets its own
+    # appended "key" pen so the edges land in a separate final layer.
+    if flags.use_key_layer:
+        if flags.use_palette and pens and is_near_black_pen(pens[-1]):
+            ordered_lines[-1] = [*ordered_lines[-1], *key_lines]
+        else:
+            key_pen = Pen(
+                name="key",
+                width_mm=min(pen.width_mm for pen in pens),
+                color="#000000",
+            )
+            pens = [*pens, key_pen]
+            ordered_lines = [*ordered_lines, key_lines]
+    return pens, ordered_lines
+
+
+def _optimize_lines(
+    lines_by_pen: list[list[LineString]], paper: Paper, report: Reporter
+) -> list[list[LineString]]:
+    """Optimize geometry per pen; never merge or sort across pens."""
+    report.start("Optimizing geometry")
+    strokes_by_pen = [
+        optimize(
+            lines,
+            paper,
+            simplify_tol_mm=0.1,
+            merge_angle_deg=5.0,
+            merge_dist_mm=0.5,
+        )
+        for lines in lines_by_pen
+    ]
+    report.finish()
+    return strokes_by_pen
+
+
+def _make_drawing(
+    project: Project,
+    setup: _ImageSetup,
+    pens: list[Pen],
+    strokes_by_pen: list[list[LineString]],
+) -> Drawing:
+    """Collect the pipeline results in a Drawing."""
+    return Drawing(
+        paper=project.paper,
+        pens=pens,
+        strokes_by_pen=strokes_by_pen,
+        image_placement=setup.image_placement,
+        resolution=setup.resolution,
+        fit_mode=setup.fit_mode,
+        clip_rect=setup.clip_rect,
+        source_size_px=setup.source_size_px,
+        working_size_px=setup.working_size_px,
+    )
+
+
 def draw_project(
     project: Project,
     *,
@@ -318,230 +657,19 @@ def draw_project(
     """
     report = reporter if reporter is not None else _NULL_REPORTER
     pens = project.palette
-    use_palette = len(pens) > 1
-    use_background = (
-        project.image.background if project.image.background is not None else use_palette
-    )
-    saturation_active = use_palette and (
-        project.image.saturation != NO_BOOST_FACTOR or project.image.palette_adapt
-    )
-    use_key_layer = project.image.key_layer if project.image.key_layer is not None else use_palette
-
-    # Step 1: Load image and plan the working resolution. Placement is derived
-    # from the source size so the drawing rectangle does not move when the
-    # working image is downscaled.
-    report.start("Loading image")
-    image = load_image(project.image.path, auto_orient=project.image.auto_orient)
-    source_size_px = image.size
-    origin_x_mm, origin_y_mm = project.paper.drawable_origin_mm
-    fit_mode = project.paper.fit
-    image_placement = fit_image_placement(
-        image_size_px=source_size_px,
-        area_width_mm=project.paper.drawable_width_mm,
-        area_height_mm=project.paper.drawable_height_mm,
-        image_dpi=project.image.dpi,
-        offset_x_mm=origin_x_mm,
-        offset_y_mm=origin_y_mm,
-        mode=fit_mode,
-    )
-    clip_rect = (
-        ImagePlacement(
-            origin_x_mm,
-            origin_y_mm,
-            project.paper.drawable_width_mm,
-            project.paper.drawable_height_mm,
-        )
-        if fit_mode == "fill"
-        else None
-    )
-    resolution = plan_working_resolution(
-        source_size_px,
-        project.paper,
-        pens[0].width_mm,
-        max_longest_px=max_resolution_px,
-    )
-    if no_downscale:
-        resolution = replace(resolution, target_size_px=source_size_px, scale=1.0)
-    downscaling = resolution.target_size_px != source_size_px
-    report.set_total_stages(
-        5 + int(downscaling) + int(use_background) + int(saturation_active) + int(use_key_layer)
-    )
-    report.finish()
-
-    working_width, working_height = resolution.target_size_px
-    report.message(
-        f"Working resolution: {working_width}x{working_height} px "
-        f"(source {source_size_px[0]}x{source_size_px[1]} px, scale {resolution.scale:.3f})"
-    )
-
-    # Step 2: Downscale to the working resolution, only when it changes the image.
-    if downscaling:
-        report.start("Downscaling image")
-    working_image = apply_working_resolution(image, resolution)
-    if downscaling:
-        report.finish()
-    working_size_px = working_image.size
-
-    # Auto levels run once on the whole working image, before separation, so
-    # every palette channel shares one luminance range and explicit -f filters
-    # keep their current meaning.
-    if project.image.auto_equalize:
-        working_image = auto_equalize(working_image, project.image.auto_levels_clip)
-
-    if use_background:
-        report.start("Masking paper background")
-        masked = mask_background(
-            working_image,
-            threshold=project.image.background_threshold,
-            method=project.image.background_method,
-        )
-        working_image = masked.image
-        report.finish()
-        report.message(
-            f"Paper colour: {masked.paper_color} ({project.image.background_method} method); "
-            f"masked {masked.masked_percent:.1f}% of pixels as no ink"
-        )
-
-    # Chroma boost runs on the masked working image. A single pen has no colour
-    # decision to make, so both paths are silent no-ops there.
-    if saturation_active:
-        if project.image.saturation != NO_BOOST_FACTOR:
-            factor = project.image.saturation
-            report.start("Boosting saturation")
-            working_image = boost_saturation(working_image, factor)
-            report.finish()
-            mode = "manual"
-        else:
-            report.start("Adapting saturation to palette")
-            factor = adapt_saturation(working_image, pens)
-            report.finish()
-            if factor != NO_BOOST_FACTOR:
-                working_image = boost_saturation(working_image, factor)
-            mode = "palette-adapted"
-        report.message(f"Saturation factor: {factor:.2f} ({mode})")
-
-    # The key pass traces the working colour image once, before separation, so
-    # it sees the same masking and chroma boost as the palette channels.
-    key_lines: list[LineString] = []
-    if use_key_layer:
-        report.start("Tracing key edges")
-        key_lines = key_layer_strokes(working_image)
-        report.finish()
-
-    # Step 3: Split before filtering, so the default grayscale filter cannot
-    # throw away the colour needed to choose a pen.
-    report.start("Applying filters")
-    pen_images = separate_palette(working_image, pens)
-    filtered_by_pen = [project.image.filters.apply(img) for _, img in pen_images]
-    report.finish()
-
-    # Step 4: Run the PFM once per pen, with settings in working-image pixels.
-    report.start("Generating lines (PFM)")
-    pfm_fn, _ = get_pfm(project.pfm.pfm_type)
-    pfm_settings = project.pfm.to_typed_settings()
-    if use_palette and isinstance(pfm_settings, SketchLinesSettings):
-        legacy = {
-            "max_fill": 80.0,
-            "line_density": 0.75,
-            "tone_coverage": 1.0,
-            "tone_exponent": 1.0,
-            "texture_limit": 0.0,
-        }
-        updates = {
-            key: value for key, value in legacy.items() if key not in pfm_settings.model_fields_set
-        }
-        if updates:
-            pfm_settings = pfm_settings.model_copy(update=updates)
-    # Hatch, Patch Hatch, TSP, Squiggle and Engraving need the physical scale,
-    # which the serialisable settings do not carry. A palette rotates the angle
-    # set per pen so colour layers do not sit exactly on top of one another; a
-    # single pen keeps the original angles.
-    pixels_per_mm = working_width / image_placement.width
-    lines_by_pen: list[list[LineString]] = []
-    for index, img in enumerate(filtered_by_pen):
-        pen_settings = pfm_settings
-        pfm_kwargs: dict[str, object] = {}
-        if isinstance(
-            pen_settings,
-            (HatchSettings, PatchHatchSettings, TSPSettings, SquiggleSettings, EngravingSettings),
-        ):
-            if use_palette and isinstance(pen_settings, HatchSettings):
-                pen_settings = with_angle_offset(pen_settings, index * PALETTE_ANGLE_STEP_DEG)
-            elif use_palette and isinstance(pen_settings, PatchHatchSettings):
-                pen_settings = with_layer_angle_offset(pen_settings, index * PALETTE_ANGLE_STEP_DEG)
-            pfm_kwargs = {
-                "pixels_per_mm": pixels_per_mm,
-                "pen_width_mm": pens[index].width_mm,
-            }
-        if project.image.equalize_levels:
-            img = apply_tone_levels(img, pfm_tone_targets(pen_settings, pens[index].width_mm))
-        draw_pen = partial(
-            _draw_with, pfm_fn=pfm_fn, settings=pen_settings, style=project.style, kwargs=pfm_kwargs
-        )
-        lines_by_pen.append(
-            _draw_capped(
-                img,
-                draw_pen,
-                project.image.max_coverage,
-                pixels_per_mm,
-                pens[index].width_mm,
-                isinstance(pen_settings, _CALIBRATED_SETTINGS),
-            )
-        )
-    report.finish()
-
-    drawing_pens = order_pens_for_drawing(pens)
-    position_by_id = {id(pen): index for index, pen in enumerate(pens)}
-    lines_by_pen = [lines_by_pen[position_by_id[id(pen)]] for pen in drawing_pens]
-    pens = drawing_pens
-
-    # In palette mode the key strokes share the near-black pen, which drawing
-    # order puts last. A single pen or a palette without black gets its own
-    # appended "key" pen so the edges land in a separate final layer.
-    if use_key_layer:
-        if use_palette and pens and is_near_black_pen(pens[-1]):
-            lines_by_pen[-1] = [*lines_by_pen[-1], *key_lines]
-        else:
-            key_pen = Pen(
-                name="key",
-                width_mm=min(pen.width_mm for pen in pens),
-                color="#000000",
-            )
-            pens = [*pens, key_pen]
-            lines_by_pen = [*lines_by_pen, key_lines]
-
-    def _drawing(strokes: list[list[LineString]], drawing_pens: list[Pen]) -> Drawing:
-        return Drawing(
-            paper=project.paper,
-            pens=drawing_pens,
-            strokes_by_pen=strokes,
-            image_placement=image_placement,
-            resolution=resolution,
-            fit_mode=fit_mode,
-            clip_rect=clip_rect,
-            source_size_px=source_size_px,
-            working_size_px=working_size_px,
-        )
+    flags = _pipeline_flags(project)
+    setup = _prepare_image(project, flags, report, max_resolution_px, no_downscale)
+    working_image, key_lines = _apply_passes(setup.working_image, project, pens, flags, report)
+    filtered_by_pen = _separate_and_filter(working_image, pens, project, report)
+    lines_by_pen = _generate_lines(project, filtered_by_pen, pens, setup, flags, report)
+    pens, lines_by_pen = _order_pens_and_merge_key(pens, lines_by_pen, key_lines, flags)
 
     if not any(lines_by_pen):
         report.message("Warning: No lines generated", style="yellow")
-        return _drawing([[] for _ in pens], pens)
+        return _make_drawing(project, setup, pens, [[] for _ in pens])
 
-    # Step 5: Optimize geometry per pen; never merge or sort across pens.
-    report.start("Optimizing geometry")
-    strokes_by_pen = [
-        optimize(
-            lines,
-            project.paper,
-            simplify_tol_mm=0.1,
-            merge_angle_deg=5.0,
-            merge_dist_mm=0.5,
-        )
-        for lines in lines_by_pen
-    ]
-    report.finish()
-
-    return _drawing(strokes_by_pen, pens)
+    strokes_by_pen = _optimize_lines(lines_by_pen, project.paper, report)
+    return _make_drawing(project, setup, pens, strokes_by_pen)
 
 
 __all__ = ["Drawing", "Reporter", "draw_project"]
