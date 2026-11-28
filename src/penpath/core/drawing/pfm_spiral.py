@@ -18,6 +18,7 @@ two); DrawingBotV3 stops at the far corner without clipping.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -106,6 +107,204 @@ def _ease_in_sine(value: float) -> float:
     return 1.0 - math.cos(value * math.pi / 2.0)
 
 
+@dataclass(frozen=True, slots=True)
+class _Geometry:
+    """Derived ring geometry and step sizes, in image pixels and degrees."""
+
+    width: int
+    height: int
+    centre_x: float
+    centre_y: float
+    scale_x: float
+    scale_y: float
+    scale: float
+    shape: SpiralShape
+    parabolic: bool
+    ring_spacing: float
+    tooth_reach: float
+    end_radius: float
+    min_velocity: float
+    max_velocity: float
+
+
+def _build_geometry(settings: SpiralSettings, width: int, height: int) -> _Geometry | None:
+    """Derive the ring geometry, or None when the image cannot hold a spiral."""
+    centre_x = settings.centre_x * (width - 1)
+    centre_y = settings.centre_y * (height - 1)
+    scale_x = min(centre_x, (width - 1) - centre_x)
+    scale_y = min(centre_y, (height - 1) - centre_y)
+    if scale_x <= 0.0 or scale_y <= 0.0:
+        return None
+    scale = min(scale_x, scale_y)
+    shape = settings.shape
+    parabolic = settings.spiral_type == "parabolic"
+    ring_spacing = settings.ring_spacing / 10.0 if parabolic else settings.ring_spacing
+    amplitude = settings.amplitude / 1.5 if parabolic else settings.amplitude
+    tooth_reach = (ring_spacing / 2.0) * amplitude
+    if shape == "cover":
+        base_radius = math.hypot(
+            max(centre_x, (width - 1) - centre_x),
+            max(centre_y, (height - 1) - centre_y),
+        )
+    else:
+        base_radius = scale
+    if shape == "ellipse":
+        end_radius = base_radius * settings.spiral_size - tooth_reach * (
+            max(scale_x, scale_y) / scale
+        )
+    else:
+        end_radius = base_radius * settings.spiral_size - tooth_reach
+    if end_radius <= 0.0:
+        return None
+    min_velocity = settings.min_velocity / 10.0 if parabolic else settings.min_velocity
+    max_velocity = settings.max_velocity / 10.0 if parabolic else settings.max_velocity
+    if not settings.variable_velocity:
+        max_velocity = min_velocity
+    return _Geometry(
+        width=width,
+        height=height,
+        centre_x=centre_x,
+        centre_y=centre_y,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        scale=scale,
+        shape=shape,
+        parabolic=parabolic,
+        ring_spacing=ring_spacing,
+        tooth_reach=tooth_reach,
+        end_radius=end_radius,
+        min_velocity=min_velocity,
+        max_velocity=max_velocity,
+    )
+
+
+def _position(geometry: _Geometry, radius: float, alpha: float, pass_index: int) -> _PathPoint:
+    """Return the spiral point at a radius and angle for one pass."""
+    theta = math.radians(alpha)
+    offset = radius * (-1.0 if pass_index == 2 else 1.0) if geometry.parabolic else radius
+    if geometry.parabolic:
+        offset *= math.sqrt(theta)
+    if geometry.shape == "ellipse":
+        fraction = offset / geometry.scale
+        x = geometry.centre_x + fraction * geometry.scale_x * math.cos(theta)
+        y = geometry.centre_y + fraction * geometry.scale_y * math.sin(theta)
+    else:
+        x = geometry.centre_x + offset * math.cos(theta)
+        y = geometry.centre_y + offset * math.sin(theta)
+    return x, y
+
+
+def _advance(
+    radius: float, alpha: float, velocity: float, ring_spacing: float
+) -> tuple[float, float]:
+    """Advance the angular position and radius by one velocity-scaled step."""
+    step = (velocity / 2.0) / radius
+    return alpha + step, radius + ring_spacing * step / 360.0
+
+
+def _tooth_and_velocity(geometry: _Geometry, tone: float) -> tuple[float, float]:
+    """Turn a sampled tone into its radial tooth reach and angular velocity."""
+    brightness = tone / 255.0
+    tooth = (1.0 - brightness) * geometry.tooth_reach
+    velocity = geometry.min_velocity + _ease_in_sine(brightness) * (
+        geometry.max_velocity - geometry.min_velocity
+    )
+    return tooth, velocity
+
+
+class _StrokeCollector:
+    """Accumulate teeth into non-zero strokes, breaking over white paper."""
+
+    def __init__(self, geometry: _Geometry, settings: SpiralSettings) -> None:
+        self._geometry = geometry
+        self._connected = settings.connected_lines
+        self._ignore_white = settings.ignore_white
+        self._max_strokes = settings.max_strokes
+        self.strokes: list[LineString] = []
+        self._current: list[_PathPoint] = []
+        self.stroke_count = 0
+
+    @property
+    def capped(self) -> bool:
+        return self._max_strokes is not None and self.stroke_count >= self._max_strokes
+
+    def flush(self) -> None:
+        if len(self._current) >= 2 and (line := LineString(self._current)).length > 0.0:
+            self.strokes.append(line)
+            self.stroke_count += 1
+        self._current = []
+
+    def append(self, point: _PathPoint) -> None:
+        if not self._current:
+            self._current.append(point)
+            return
+        last = self._current[-1]
+        if last == point:
+            return
+        if (
+            self._geometry.shape == "cover"
+            and math.hypot(point[0] - last[0], point[1] - last[1]) < _COVER_MIN_STEP
+        ):
+            return
+        self._current.append(point)
+
+    def add(self, tone: float, tooth_start: _PathPoint, tooth_end: _PathPoint) -> None:
+        if self._ignore_white and tone >= _WHITE_MASK:
+            self.flush()
+            return
+        tooth_start = self._clamp(tooth_start)
+        tooth_end = self._clamp(tooth_end)
+        if self._connected:
+            self.append(tooth_start)
+            self.append(tooth_end)
+        elif tooth_start != tooth_end:
+            line = LineString([tooth_start, tooth_end])
+            if line.length > 0.0:
+                self.strokes.append(line)
+                self.stroke_count += 1
+
+    def _clamp(self, point: _PathPoint) -> _PathPoint:
+        x, y = point
+        return (
+            min(max(x, 0.0), self._geometry.width - 1),
+            min(max(y, 0.0), self._geometry.height - 1),
+        )
+
+
+def _run_pass(
+    geometry: _Geometry,
+    luminance: np.ndarray,
+    pass_index: int,
+    collector: _StrokeCollector,
+) -> None:
+    """Sample and draw every tooth of one spiral pass."""
+    alpha = 0.0
+    radius = geometry.min_velocity / 360.0
+    last_luminance = 255.0
+    steps = 0
+    while True:
+        effective = radius * math.sqrt(math.radians(alpha)) if geometry.parabolic else radius
+        if effective >= geometry.end_radius or steps >= _MAX_STEPS or collector.capped:
+            break
+        steps += 1
+        point = _position(geometry, radius, alpha, pass_index)
+        sample_x = min(max(round(point[0]), 0), geometry.width - 1)
+        sample_y = min(max(round(point[1]), 0), geometry.height - 1)
+        sampled = float(luminance[sample_y, sample_x])
+        tone = (sampled + last_luminance) / 2.0
+        last_luminance = sampled
+
+        tooth, velocity = _tooth_and_velocity(geometry, tone)
+        alpha, radius = _advance(radius, alpha, geometry.min_velocity, geometry.ring_spacing)
+        alpha, radius = _advance(radius, alpha, velocity, geometry.ring_spacing)
+        tooth_start = _position(geometry, radius + tooth, alpha, pass_index)
+        alpha, radius = _advance(radius, alpha, velocity, geometry.ring_spacing)
+        tooth_end = _position(geometry, radius - tooth, alpha, pass_index)
+        collector.add(tone, tooth_start, tooth_end)
+
+    collector.flush()
+
+
 def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineString]:
     """Generate Spiral Sawtooth strokes from an image.
 
@@ -140,134 +339,13 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
     height, width = (int(size) for size in luminance.shape)
     if width < 2 or height < 2:
         return []
-
-    centre_x = settings.centre_x * (width - 1)
-    centre_y = settings.centre_y * (height - 1)
-    scale_x = min(centre_x, (width - 1) - centre_x)
-    scale_y = min(centre_y, (height - 1) - centre_y)
-    if scale_x <= 0.0 or scale_y <= 0.0:
+    geometry = _build_geometry(settings, width, height)
+    if geometry is None:
         return []
-
-    scale = min(scale_x, scale_y)
-    shape = settings.shape
-    parabolic = settings.spiral_type == "parabolic"
-    ring_spacing = settings.ring_spacing / 10.0 if parabolic else settings.ring_spacing
-    amplitude = settings.amplitude / 1.5 if parabolic else settings.amplitude
-    tooth_reach = (ring_spacing / 2.0) * amplitude
-    if shape == "cover":
-        base_radius = math.hypot(
-            max(centre_x, (width - 1) - centre_x),
-            max(centre_y, (height - 1) - centre_y),
-        )
-    else:
-        base_radius = scale
-    if shape == "ellipse":
-        end_radius = base_radius * settings.spiral_size - tooth_reach * (
-            max(scale_x, scale_y) / scale
-        )
-    else:
-        end_radius = base_radius * settings.spiral_size - tooth_reach
-    if end_radius <= 0.0:
-        return []
-    min_velocity = settings.min_velocity / 10.0 if parabolic else settings.min_velocity
-    max_velocity = settings.max_velocity / 10.0 if parabolic else settings.max_velocity
-    if not settings.variable_velocity:
-        max_velocity = min_velocity
-
-    strokes: list[LineString] = []
-    current: list[_PathPoint] = []
-    stroke_count = 0
-
-    def flush() -> None:
-        nonlocal current, stroke_count
-        if len(current) >= 2 and (line := LineString(current)).length > 0.0:
-            strokes.append(line)
-            stroke_count += 1
-        current = []
-
-    def append(point: _PathPoint) -> None:
-        if not current:
-            current.append(point)
-            return
-        last = current[-1]
-        if last == point:
-            return
-        if (
-            shape == "cover"
-            and math.hypot(point[0] - last[0], point[1] - last[1]) < _COVER_MIN_STEP
-        ):
-            return
-        current.append(point)
-
-    def clamp_to_page(point: _PathPoint) -> _PathPoint:
-        x, y = point
-        return min(max(x, 0.0), width - 1), min(max(y, 0.0), height - 1)
-
-    def position(radius: float, alpha: float, pass_index: int) -> _PathPoint:
-        theta = math.radians(alpha)
-        offset = radius * (-1.0 if pass_index == 2 else 1.0) if parabolic else radius
-        if parabolic:
-            offset *= math.sqrt(theta)
-        if shape == "ellipse":
-            fraction = offset / scale
-            x = centre_x + fraction * scale_x * math.cos(theta)
-            y = centre_y + fraction * scale_y * math.sin(theta)
-        else:
-            x = centre_x + offset * math.cos(theta)
-            y = centre_y + offset * math.sin(theta)
-        return x, y
-
-    def advance(radius: float, alpha: float, velocity: float) -> tuple[float, float]:
-        step = (velocity / 2.0) / radius
-        return alpha + step, radius + ring_spacing * step / 360.0
-
-    for pass_index in range(1, 3 if parabolic else 2):
-        alpha = 0.0
-        radius = min_velocity / 360.0
-        last_luminance = 255.0
-        steps = 0
-
-        while True:
-            effective = radius * math.sqrt(math.radians(alpha)) if parabolic else radius
-            capped = settings.max_strokes is not None and stroke_count >= settings.max_strokes
-            if effective >= end_radius or steps >= _MAX_STEPS or capped:
-                break
-            steps += 1
-
-            point = position(radius, alpha, pass_index)
-            sample_x = min(max(round(point[0]), 0), width - 1)
-            sample_y = min(max(round(point[1]), 0), height - 1)
-            sampled = float(luminance[sample_y, sample_x])
-            tone = (sampled + last_luminance) / 2.0
-            last_luminance = sampled
-
-            tooth = (1.0 - tone / 255.0) * tooth_reach
-            velocity = min_velocity + _ease_in_sine(tone / 255.0) * (max_velocity - min_velocity)
-
-            alpha, radius = advance(radius, alpha, min_velocity)
-            alpha, radius = advance(radius, alpha, velocity)
-            tooth_start = position(radius + tooth, alpha, pass_index)
-            alpha, radius = advance(radius, alpha, velocity)
-            tooth_end = position(radius - tooth, alpha, pass_index)
-
-            if settings.ignore_white and tone >= _WHITE_MASK:
-                flush()
-                continue
-
-            tooth_start = clamp_to_page(tooth_start)
-            tooth_end = clamp_to_page(tooth_end)
-            if settings.connected_lines:
-                append(tooth_start)
-                append(tooth_end)
-            elif tooth_start != tooth_end:
-                line = LineString([tooth_start, tooth_end])
-                if line.length > 0.0:
-                    strokes.append(line)
-                    stroke_count += 1
-
-        flush()
-
-    return strokes
+    collector = _StrokeCollector(geometry, settings)
+    for pass_index in range(1, 3 if geometry.parabolic else 2):
+        _run_pass(geometry, luminance, pass_index, collector)
+    return collector.strokes
 
 
 __all__ = ["SpiralSettings", "spiral_strokes"]
