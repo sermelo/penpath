@@ -46,11 +46,6 @@ class StageReporter:
         self._progress: Progress | None = None
         self._task_id: TaskID | None = None
 
-    @property
-    def uses_bar(self) -> bool:
-        """Whether a live progress bar is active (stderr is a terminal)."""
-        return self._progress is not None
-
     def __enter__(self) -> Self:
         if not self._quiet and self._console.is_terminal:
             self._progress = Progress(

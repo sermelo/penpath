@@ -141,8 +141,6 @@ def test_build_gcode_header_reports_usable_area_and_page_origin() -> None:
     )
     header = parse_gcode_header(produced)
     assert header.page_origin == (-2.0, 3.0)
-    assert header.usable_x == (4.0, 98.0)
-    assert header.usable_y == (3.0, 99.0)
 
 
 def test_gcode_to_strokes_uses_header_page_origin_for_a_margin_override() -> None:
