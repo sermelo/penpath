@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
@@ -543,6 +544,53 @@ class _SketchEngineSettings(Protocol):
 _AngleProvider = Callable[[random.Random, int, int, int], float]
 
 
+@dataclass
+class _ToneConfiguration:
+    """Decisions and masks that only the tone-aware engine path uses."""
+
+    tone_rule: bool
+    cap_tone_ink: bool
+    ink_cap: float
+    darkest: NDArray[np.bool_] | None
+    inked: NDArray[np.bool_] | None
+    darkest_total: int
+
+
+@dataclass
+class _EngineState:
+    """Mutable and derived state shared by the sketch engine helpers."""
+
+    settings: _SketchEngineSettings
+    angle_provider: _AngleProvider
+    rng: random.Random
+    working: NDArray[np.float64]
+    source: NDArray[np.float64]
+    score: NDArray[np.float64]
+    caps: NDArray[np.float64]
+    offsets: NDArray[np.float64]
+    progress_pixels: NDArray[np.bool_] | None
+    darkest: NDArray[np.bool_] | None
+    inked: NDArray[np.bool_] | None
+    darkest_total: int
+    inked_dark: int
+    ink_cap: float
+    cap_tone_ink: bool
+    tone_rule: bool
+    sample_step: int
+    min_len: int
+    max_len: int
+    num_tests: int
+    line_density: float
+    white_cutoff: float | None
+    initial_avg: float
+    max_strokes: int
+    shading_enabled: bool
+    squiggle_enabled: bool
+    shading_threshold: float
+    width: int
+    height: int
+
+
 def _run_sketch_engine(
     image: Image.Image,
     settings: _SketchEngineSettings,
@@ -567,7 +615,26 @@ def _run_sketch_engine(
     if h == 0 or w == 0:
         return []
 
-    sample_step = int(settings.sample_step)
+    state = _create_engine_state(
+        rng,
+        working,
+        source,
+        settings,
+        angle_provider,
+        shading_enabled,
+        squiggle_enabled,
+        shading_threshold,
+    )
+    return _run_engine_loop(state)
+
+
+def _tone_configuration(
+    settings: _SketchEngineSettings,
+    working: NDArray[np.float64],
+    source: NDArray[np.float64],
+    sample_step: int,
+) -> _ToneConfiguration:
+    """Decide whether the tone rule and the darkest-tone cap apply."""
     _raw_mean, raw_std = _local_texture(working, max(2, sample_step))
     textured = bool(np.mean(raw_std >= 20.0) >= _TEXTURED_FRACTION)
     sparse_canvas = bool((working < _WHITE).any()) and bool(
@@ -592,13 +659,21 @@ def _run_sketch_engine(
     darkest: NDArray[np.bool_] | None = None
     inked: NDArray[np.bool_] | None = None
     darkest_total = 0
-    inked_dark = 0
     if cap_tone_ink:
         darkest = source <= np.quantile(source, _DARKEST_QUANTILE)
         darkest_total = int(np.count_nonzero(darkest))
         cap_tone_ink = darkest_total > 0
         if cap_tone_ink:
             inked = np.zeros_like(working, dtype=np.bool_)
+    return _ToneConfiguration(tone_rule, cap_tone_ink, ink_cap, darkest, inked, darkest_total)
+
+
+def _clamp_working_image(
+    settings: _SketchEngineSettings,
+    working: NDArray[np.float64],
+    tone_rule: bool,
+) -> float:
+    """Clamp dark pixels to the legacy black point when the tone rule is off."""
     max_fill = settings.max_fill
     line_density = settings.line_density
     if not tone_rule:
@@ -609,11 +684,28 @@ def _run_sketch_engine(
     black_point = _WHITE * (1.0 - max_fill / 100.0)
     if black_point > 0.0:
         np.maximum(working, black_point, out=working)
+    return line_density
+
+
+def _create_engine_state(
+    rng: random.Random,
+    working: NDArray[np.float64],
+    source: NDArray[np.float64],
+    settings: _SketchEngineSettings,
+    angle_provider: _AngleProvider,
+    shading_enabled: bool,
+    squiggle_enabled: bool,
+    shading_threshold: float,
+) -> _EngineState:
+    """Derive the score canvas, budgets and stopping limits from the settings."""
+    h, w = working.shape
+    sample_step = int(settings.sample_step)
+    tone = _tone_configuration(settings, working, source, sample_step)
+    line_density = max(0.01, _clamp_working_image(settings, working, tone.tone_rule))
 
     white_cutoff = settings.white_threshold * _WHITE if settings.white_threshold < 1.0 else None
     min_len = int(max(1, settings.min_length))
     max_len = int(max(min_len, settings.max_length))
-    line_density = max(0.01, line_density)
     num_tests = max(1, round(360.0 / settings.search_angle_step))
 
     canvas_avg = float(np.mean(working))
@@ -621,7 +713,7 @@ def _run_sketch_engine(
     sparse_canvas = bool(ink_pixels.any()) and _NEARLY_BLANK_MEAN <= canvas_avg < _BLANK_CANVAS_MEAN
     local_mean, local_std = _local_texture(working, max(2, sample_step))
     offsets = np.zeros_like(working)
-    if tone_rule:
+    if tone.tone_rule:
         offsets = _tone_budgets(
             working,
             local_mean,
@@ -635,7 +727,7 @@ def _run_sketch_engine(
         _WHITE,
         _WHITE - 0.5 - 0.5 * (working / _WHITE),
     )
-    score = np.minimum(caps, working + offsets) if tone_rule else working
+    score = np.minimum(caps, working + offsets) if tone.tone_rule else working
     progress_pixels = ink_pixels if sparse_canvas else None
     initial_avg = (
         float(np.mean(score[progress_pixels]))
@@ -649,123 +741,185 @@ def _run_sketch_engine(
     else:
         max_strokes = max(100, min(200, int(w * h * line_density * 0.02)))
 
-    lines: list[LineString] = []
-    fails = 0
-    while len(lines) < max_strokes and fails < _MAX_FAILS:
-        if cap_tone_ink and inked_dark / darkest_total >= ink_cap:
-            break
-        canvas_avg = float(np.mean(score))
-        if float(np.min(score)) >= _WHITE:
-            break
-        current_avg = (
-            float(np.mean(score[progress_pixels])) if progress_pixels is not None else canvas_avg
+    return _EngineState(
+        settings=settings,
+        angle_provider=angle_provider,
+        rng=rng,
+        working=working,
+        source=source,
+        score=score,
+        caps=caps,
+        offsets=offsets,
+        progress_pixels=progress_pixels,
+        darkest=tone.darkest,
+        inked=tone.inked,
+        darkest_total=tone.darkest_total,
+        inked_dark=0,
+        ink_cap=tone.ink_cap,
+        cap_tone_ink=tone.cap_tone_ink,
+        tone_rule=tone.tone_rule,
+        sample_step=sample_step,
+        min_len=min_len,
+        max_len=max_len,
+        num_tests=num_tests,
+        line_density=line_density,
+        white_cutoff=white_cutoff,
+        initial_avg=initial_avg,
+        max_strokes=max_strokes,
+        shading_enabled=shading_enabled,
+        squiggle_enabled=squiggle_enabled,
+        shading_threshold=shading_threshold,
+        width=w,
+        height=h,
+    )
+
+
+def _stroke_progress(state: _EngineState) -> tuple[bool, float, float]:
+    """Return whether the run must stop, its luminance progress and the canvas mean."""
+    canvas_avg = float(np.mean(state.score))
+    if state.cap_tone_ink and state.inked_dark / state.darkest_total >= state.ink_cap:
+        return True, 0.0, canvas_avg
+    if float(np.min(state.score)) >= _WHITE:
+        return True, 0.0, canvas_avg
+    if not state.settings.erase_enabled:
+        return False, 0.0, canvas_avg
+    current_avg = (
+        float(np.mean(state.score[state.progress_pixels]))
+        if state.progress_pixels is not None
+        else canvas_avg
+    )
+    if state.tone_rule:
+        target = min(_TONE_DESIRED_LUMINANCE, float(np.mean(state.caps)))
+        density = min(1.0, state.line_density)
+    else:
+        target = _DESIRED_LUMINANCE
+        density = state.line_density
+    if state.initial_avg >= target:
+        return True, 0.0, canvas_avg
+    lum_progress = (current_avg - state.initial_avg) / ((target - state.initial_avg) * density)
+    return lum_progress >= 1.0, lum_progress, canvas_avg
+
+
+def _segment_allowed(
+    state: _EngineState, step: int, avg_lum: float, allowable: float, canvas_avg: float
+) -> bool:
+    """Check the darkness rule that ends a squiggle before its length cap."""
+    if state.settings.erase_enabled:
+        return not (
+            step >= state.settings.squiggle_min_length
+            and (avg_lum > allowable or avg_lum > canvas_avg)
         )
-        if settings.erase_enabled:
-            if tone_rule:
-                target = min(_TONE_DESIRED_LUMINANCE, float(np.mean(caps)))
-                density = min(1.0, line_density)
-            else:
-                target = _DESIRED_LUMINANCE
-                density = line_density
-            if initial_avg >= target:
-                break
-            lum_progress = (current_avg - initial_avg) / ((target - initial_avg) * density)
-            if lum_progress >= 1.0:
-                break
-        else:
-            lum_progress = 0.0
+    return avg_lum <= allowable
 
-        start_x, start_y = _find_darkest_pixel(score, sample_step, rng)
-        initial_darkness = float(score[start_y, start_x])
-        if settings.erase_enabled:
-            allowable = initial_darkness + max(
-                1.0, _DESIRED_LUMINANCE * settings.squiggle_max_deviation
-            )
-        else:
-            allowable = _DESIRED_LUMINANCE
 
-        current_x, current_y = start_x, start_y
-        points: list[tuple[float, float]] = [(float(start_x), float(start_y))]
-        shading = bool(shading_enabled and lum_progress > shading_threshold)
-
-        for s in range(settings.squiggle_max_length):
-            line_len = rng.randint(min_len, max_len)
-            start_angle = angle_provider(rng, current_x, current_y, s)
-            avg_lum, next_x, next_y = _find_darkest_line(
-                score,
+def _trace_squiggle(
+    state: _EngineState,
+    start_x: int,
+    start_y: int,
+    lum_progress: float,
+    canvas_avg: float,
+) -> tuple[list[tuple[float, float]], int, int, int]:
+    """Walk one stroke, erase as it goes and return its points and new ink count."""
+    settings = state.settings
+    initial_darkness = float(state.score[start_y, start_x])
+    if settings.erase_enabled:
+        allowable = initial_darkness + max(
+            1.0, _DESIRED_LUMINANCE * settings.squiggle_max_deviation
+        )
+    else:
+        allowable = _DESIRED_LUMINANCE
+    current_x, current_y = start_x, start_y
+    points: list[tuple[float, float]] = [(float(start_x), float(start_y))]
+    shading = bool(state.shading_enabled and lum_progress > state.shading_threshold)
+    inked_dark = state.inked_dark
+    for step in range(settings.squiggle_max_length):
+        line_len = state.rng.randint(state.min_len, state.max_len)
+        start_angle = state.angle_provider(state.rng, current_x, current_y, step)
+        avg_lum, next_x, next_y = _find_darkest_line(
+            state.score,
+            current_x,
+            current_y,
+            state.min_len,
+            line_len,
+            shading,
+            start_angle,
+            state.num_tests,
+            180.0,
+            state.source,
+            state.white_cutoff,
+        )
+        if (next_x, next_y) == (current_x, current_y):
+            break
+        if not _segment_allowed(state, step, avg_lum, allowable, canvas_avg):
+            break
+        if state.squiggle_enabled and step > 0:
+            segment = _add_squiggle(
                 current_x,
                 current_y,
-                min_len,
-                line_len,
-                shading,
-                start_angle,
-                num_tests,
-                180.0,
-                source,
-                white_cutoff,
+                next_x,
+                next_y,
+                state.min_len,
+                2.0,
+                state.rng,
+                (state.width, state.height),
             )
-
-            if (next_x, next_y) == (current_x, current_y):
+            points.extend(segment[1:])
+        else:
+            points.append((float(next_x), float(next_y)))
+        if settings.erase_enabled:
+            inked_dark += _apply_erase(
+                state.working,
+                current_x,
+                current_y,
+                next_x,
+                next_y,
+                settings.erase_min,
+                settings.erase_max,
+                settings.tone,
+                settings.erase_radius_min,
+                settings.erase_radius_max,
+                score=state.score if state.tone_rule else None,
+                tone_offsets=state.offsets if state.tone_rule else None,
+                caps=state.caps if state.tone_rule else None,
+                inked=state.inked,
+                darkest=state.darkest,
+            )
+            if state.cap_tone_ink and inked_dark / state.darkest_total >= state.ink_cap:
                 break
+        current_x, current_y = next_x, next_y
+    return points, current_x, current_y, inked_dark
 
-            if settings.erase_enabled:
-                if s >= settings.squiggle_min_length and (
-                    avg_lum > allowable or avg_lum > canvas_avg
-                ):
-                    break
-            elif avg_lum > allowable:
-                break
 
-            if squiggle_enabled and s > 0:
-                segment = _add_squiggle(
-                    current_x,
-                    current_y,
-                    next_x,
-                    next_y,
-                    min_len,
-                    2.0,
-                    rng,
-                    (w, h),
-                )
-                points.extend(segment[1:])
-            else:
-                points.append((float(next_x), float(next_y)))
+def _accept_line(lines: list[LineString], points: list[tuple[float, float]]) -> bool:
+    """Append a traced stroke when it is a valid, non-degenerate line."""
+    if len(points) < 2:
+        return False
+    line = LineString(points)
+    if not line.is_valid or line.length <= 0:
+        return False
+    lines.append(line)
+    return True
 
-            if settings.erase_enabled:
-                newly_inked = _apply_erase(
-                    working,
-                    current_x,
-                    current_y,
-                    next_x,
-                    next_y,
-                    settings.erase_min,
-                    settings.erase_max,
-                    settings.tone,
-                    settings.erase_radius_min,
-                    settings.erase_radius_max,
-                    score=score if tone_rule else None,
-                    tone_offsets=offsets if tone_rule else None,
-                    caps=caps if tone_rule else None,
-                    inked=inked,
-                    darkest=darkest,
-                )
-                if cap_tone_ink:
-                    inked_dark += newly_inked
-                    if inked_dark / darkest_total >= ink_cap:
-                        break
-            current_x, current_y = next_x, next_y
 
-        if len(points) >= 2:
-            line = LineString(points)
-            if line.is_valid and line.length > 0:
-                lines.append(line)
-                fails = 0
-                continue
-        working[current_y, current_x] = _WHITE
-        if tone_rule:
-            score[current_y, current_x] = _WHITE
+def _run_engine_loop(state: _EngineState) -> list[LineString]:
+    """Draw strokes until a stop rule, the stroke cap or the failure cap is hit."""
+    lines: list[LineString] = []
+    fails = 0
+    while len(lines) < state.max_strokes and fails < _MAX_FAILS:
+        stop, lum_progress, canvas_avg = _stroke_progress(state)
+        if stop:
+            break
+        start_x, start_y = _find_darkest_pixel(state.score, state.sample_step, state.rng)
+        points, current_x, current_y, state.inked_dark = _trace_squiggle(
+            state, start_x, start_y, lum_progress, canvas_avg
+        )
+        if _accept_line(lines, points):
+            fails = 0
+            continue
+        state.working[current_y, current_x] = _WHITE
+        if state.tone_rule:
+            state.score[current_y, current_x] = _WHITE
         fails += 1
-
     return lines
 
 
