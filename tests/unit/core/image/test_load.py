@@ -184,6 +184,21 @@ class TestExifOrientation:
         loaded = load_image(path)
         assert loaded.size == (50, 100)
 
+    def test_auto_orient_false_keeps_stored_pixels_and_size(self, tmp_path: Path) -> None:
+        """Disabling auto-orientation keeps the JPEG's stored orientation."""
+        path = self._create_image_with_orientation(tmp_path, 6)
+
+        oriented = load_image(path)
+        stored = load_image(path, auto_orient=False)
+
+        assert oriented.size == (50, 100)
+        assert stored.size == (100, 50)
+        # The stored image has a red left half and a blue right half.
+        r, g, b = stored.getpixel((25, 25))
+        assert r > 250 and g < 5 and b < 5
+        r, g, b = stored.getpixel((75, 25))
+        assert r < 5 and g < 5 and b > 250
+
     def test_orientation_7_flip_horizontal_rotate_270(self, tmp_path: Path) -> None:
         """Test orientation 7 (flip horizontal + rotate 270 CW)."""
         path = self._create_image_with_orientation(tmp_path, 7)

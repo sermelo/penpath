@@ -33,21 +33,25 @@ class UnsupportedFormatError(ImageLoadError):
     pass
 
 
-def load_image(path: str | Path) -> Image.Image:
-    """Load an image with EXIF auto-orientation applied.
+def load_image(path: str | Path, *, auto_orient: bool = True) -> Image.Image:
+    """Load an image, applying EXIF auto-orientation unless disabled.
 
     Supports PNG, JPEG, TIFF, and BMP formats. Applies EXIF orientation
-    correction for all 8 orientation values.
+    correction for all 8 orientation values by default; ``auto_orient=False``
+    keeps the stored pixel orientation and size.
 
     Parameters
     ----------
     path : str | Path
         Path to the image file.
+    auto_orient : bool
+        Apply the EXIF orientation tag when true (default). When false, load
+        the pixels exactly as stored.
 
     Returns
     -------
     PIL.Image.Image
-        The loaded image with orientation corrected, converted to RGB mode.
+        The loaded image, converted to RGB mode.
 
     Raises
     ------
@@ -74,16 +78,18 @@ def load_image(path: str | Path) -> Image.Image:
                     f"Supported formats: {', '.join(sorted(SUPPORTED_FORMATS))}"
                 )
 
-            img = _apply_exif_orientation(img)
+            image: Image.Image = img
+            if auto_orient:
+                image = _apply_exif_orientation(image)
 
-            if img.mode not in ("RGB", "RGBA", "L", "LA"):
-                img = img.convert("RGB")
-            elif img.mode in ("RGBA", "LA"):
+            if image.mode not in ("RGB", "RGBA", "L", "LA"):
+                image = image.convert("RGB")
+            elif image.mode in ("RGBA", "LA"):
                 pass
             else:
-                img = img.convert("RGB")
+                image = image.convert("RGB")
 
-            return img.copy()
+            return image.copy()
 
     except UnidentifiedImageError as e:
         raise ImageLoadError(f"Cannot identify image file: {path}") from e

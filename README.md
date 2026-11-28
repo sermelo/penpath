@@ -355,7 +355,6 @@ paper:
 output:
   path: "plot.svg"
   vpype: true
-  layer_per_pen: true
 ```
 
 **Minimal example:**
