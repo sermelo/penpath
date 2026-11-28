@@ -239,7 +239,7 @@ def load_yaml(path: Path) -> Project:
     version = data.get("version", 1)
     if version != PROJECT_FILE_VERSION:
         # Placeholder for future version migration logic
-        data = _migrate_project(data, version)
+        data = _migrate_project(data)
 
     try:
         project = Project.model_validate(_resolve_palette_yaml(data))
@@ -291,15 +291,13 @@ def save_yaml(project: Project, path: Path) -> None:
         raise ProjectSaveError(f"Failed to write project file: {e}") from e
 
 
-def _migrate_project(data: dict[str, Any], from_version: int) -> dict[str, Any]:
-    """Migrate project data from an older version to the current version.
+def _migrate_project(data: dict[str, Any]) -> dict[str, Any]:
+    """Migrate project data to the current version.
 
     Parameters
     ----------
     data : dict
         Project data dictionary.
-    from_version : int
-        Version number of the input data.
 
     Returns
     -------

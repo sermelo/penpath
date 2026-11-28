@@ -323,32 +323,6 @@ def _sample_rays(
     return chosen_mean, xs[row, best], ys[row, best]
 
 
-def _sample_line_luminance(
-    luminance: NDArray[np.float64],
-    x0: int,
-    y0: int,
-    x1: int,
-    y1: int,
-    min_length: int,
-    source: NDArray[np.float64] | None = None,
-    white_cutoff: float | None = None,
-) -> tuple[float, int, int]:
-    """Walk one ray and return its lowest running mean and the pixel where it occurs."""
-    if (x1, y1) == (x0, y0):
-        return _WHITE, x0, y0
-    lum, end_x, end_y = _sample_rays(
-        luminance,
-        x0,
-        y0,
-        np.array([x1 - x0], dtype=np.int64),
-        np.array([y1 - y0], dtype=np.int64),
-        min_length,
-        source,
-        white_cutoff,
-    )
-    return float(lum[0]), int(end_x[0]), int(end_y[0])
-
-
 def _find_darkest_pixel(
     luminance: NDArray[np.float64],
     sample_step: int,
@@ -466,11 +440,6 @@ def _erase_progress(luminance: float, tone: float) -> float:
     """Cubic/linear blend used by ``AbstractSketchPFM.eraseGeometry``."""
     x_progress = min(1.0, max(0.0, luminance / _WHITE))
     return x_progress**3 * tone + x_progress * (1.0 - tone)
-
-
-def _erase_amount(luminance: float, erase_min: float, erase_max: float, tone: float) -> int:
-    """Brightness added by ``AbstractSketchPFM.eraseGeometry`` for a pixel."""
-    return int(erase_min + _erase_progress(luminance, tone) * (erase_max - erase_min))
 
 
 def _brush_offsets(radius: float) -> list[tuple[int, int]]:
