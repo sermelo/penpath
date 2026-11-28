@@ -435,7 +435,7 @@ penpath evaluate photo.jpg plot.svg --json | jq '{likeness, masked_likeness, tot
 ```
 
 The machine-cost table includes a `Pen` column with the Inkscape layer name
-(falling back to the stroke hex) and a `Coverage (%)` column; the JSON output
+(falling back to the stroke hex) and an `Ink %` column; the JSON output
 includes `pen` and `ink_coverage_pct` per layer, and `ink_coverage_pct` in
 `total`. A layer covering more than 50% of the page warns on stderr (naming
 the layer and suggesting
