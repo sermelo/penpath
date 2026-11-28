@@ -16,6 +16,7 @@ from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings, patch_hatch
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 from penpath.core.drawing.pfm_sketch_squares import SketchSquaresSettings, sketch_squares
 from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
+from penpath.core.drawing.pfm_squiggle import SquiggleSettings, squiggle_strokes
 from penpath.core.drawing.pfm_stipple import StippleSettings, stipple
 from penpath.core.drawing.pfm_tsp import TSPSettings, tsp_strokes
 
@@ -138,6 +139,7 @@ register_pfm("spiral_sawtooth", spiral_strokes, SpiralSettings)
 register_pfm("hatch", hatch_strokes, HatchSettings)
 register_pfm("patch_hatch", patch_hatch_strokes, PatchHatchSettings)
 register_pfm("tsp", tsp_strokes, TSPSettings)
+register_pfm("squiggle", squiggle_strokes, SquiggleSettings)
 
 __all__ = [
     "PFMRegistry",
