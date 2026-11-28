@@ -11,8 +11,8 @@ from click.testing import CliRunner
 from PIL import Image
 from shapely import LineString
 
-from penpath.cli.commands import convert as convert_module
 from penpath.cli.main import main
+from penpath.core import convert as convert_module
 
 if TYPE_CHECKING:
     from collections.abc import Callable
