@@ -172,3 +172,5 @@
 
 - 2026-11-28 — LUC-180 dead code: keep `FilterPipeline.remove_step`/`enable_step`/`disable_step`/`reorder`/`from_dict` as documented public library API and whitelist them for vulture instead of deleting them. Remove the unused `GcodeHeader.usable_x`/`usable_y` fields and their parsing from the G-code preview (the emitter's header fields stay), along with `_sample_line_luminance`, `_erase_amount`, `SVG_NAMESPACE`, `_migrate_project`'s `from_version` parameter and the test-only `StageReporter.uses_bar`. Add vulture to the existing `Lint & Format` CI job at min-confidence 60 on `src/penpath`, with a minimal ignore list for Click commands and Pydantic hooks/fields, so dead code cannot return.
 
+- 2026-11-28 — LUC-201: register the `slow` pytest marker and make a bare `pytest` exclude it through `addopts = "-vs --strict-markers -m 'not slow'"`; the full-render likeness, readability and plot-cost gates are slow and run in the nightly workload (`-m 'slow or not slow'`) and in a new main-only CI job (`-m 'slow'`), never on pull requests. No test was deleted and no gate threshold or production code changed.
+

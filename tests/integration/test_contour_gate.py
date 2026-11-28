@@ -26,6 +26,8 @@ from PIL import Image
 
 from penpath.cli.main import main as cli_main
 
+pytestmark = pytest.mark.slow
+
 EDGE_ALIGNMENT_MIN = 0.60
 COVERAGE_WIDTH_MIN = 0.60
 COVERAGE_HEIGHT_MIN = 0.60

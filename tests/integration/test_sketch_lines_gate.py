@@ -39,6 +39,8 @@ from sketch_lines_gate import (
 
 from penpath.cli.main import main
 
+pytestmark = pytest.mark.slow
+
 SSIM_THRESHOLDS: dict[str, float] = {
     "circle.png": 0.53,
     "gradient.png": 0.47,

@@ -16,7 +16,7 @@
 | Linter | `ruff check` | All rules enabled except `D` (docstrings) |
 | Dead Code Detector | `vulture` | Min confidence 60 on `src/penpath`; only framework/API false positives whitelisted |
 | Type Checker | `mypy --strict` | No `ignore_errors`, no `Any` without comment |
-| Test Runner | `pytest` | `pytest -vs` for dev, `pytest --cov` for CI |
+| Test Runner | `pytest` | Bare `pytest` runs the fast suite (`-m 'not slow'`); `pytest -m slow` runs the quality gates |
 | Pre-commit | `pre-commit` | `ruff format`, `ruff check`, `mypy`, `pytest` |
 
 **CI Matrix**: Python 3.14 on Ubuntu latest
@@ -139,6 +139,23 @@ tests/
     └── projects/         # Sample project.yaml files
 ```
 
+### Fast default and the slow marker
+
+`pyproject.toml` registers `slow` and sets
+`addopts = "-vs --strict-markers -m 'not slow'"`, so a bare `uv run pytest`
+runs only the fast suite. Mark a test `slow` only when it renders reference
+images and asserts likeness, readability or plot-cost floors through the real
+convert or simulate path. Use `pytestmark = pytest.mark.slow` when the whole
+module is a gate and `@pytest.mark.slow` when the module also holds fast checks;
+leave measurement-helper modules such as `test_gate_measures.py` fast.
+
+Both explicit filters replace the default cleanly:
+
+```bash
+uv run pytest -m slow                 # quality gates only
+uv run pytest -m 'slow or not slow'   # everything, as nightly and CI on main run it
+```
+
 ### Test Naming
 - `test_<function>_<scenario>_<expected>`
 - Example: `test_simplify_lines_zero_tolerance_returns_original`
@@ -236,7 +253,10 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-vs --strict-markers"
+addopts = "-vs --strict-markers -m 'not slow'"
+markers = [
+    "slow: full-render likeness, readability and plot-cost gates",
+]
 
 [build-system]
 requires = ["hatchling"]

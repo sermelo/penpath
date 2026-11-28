@@ -40,6 +40,8 @@ from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
 from penpath.core.models import Paper
 from penpath.presets.pfms import get_pfm_preset_by_id
 
+pytestmark = pytest.mark.slow
+
 REFERENCES = ("face.jpg", "photo.jpg", "santa.jpg")
 PRESETS = (
     "spiral_sawtooth",
