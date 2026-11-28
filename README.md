@@ -154,8 +154,11 @@ penpath convert photo.jpg -s max_tone_ink=0.85 -o hatched-dark.svg
 penpath convert photo.jpg --pfm sketch_squares -s seed=42
 penpath convert photo.jpg --pfm sketch_squares:crosshatch-grid -s seed=42
 
-# Spiral Sawtooth draws one continuous line; -s tunes ring spacing and teeth
+# Spiral Sawtooth draws one continuous line; rings are round by default (shape=circle)
 penpath convert photo.jpg --pfm spiral_sawtooth:fine -s ring_spacing=4 -o spiral.svg
+# cover grows the round rings into all four corners; ellipse keeps the old stretched look
+penpath convert photo.jpg --pfm spiral_sawtooth -s shape=cover -o spiral-cover.svg
+penpath convert photo.jpg --pfm spiral_sawtooth -s shape=ellipse -o spiral-ellipse.svg
 
 # Hatch lays down straight, millimetre-spaced lines (not --style hatch)
 penpath convert photo.jpg --pfm hatch:crosshatch -o hatch.svg
@@ -482,7 +485,9 @@ All nine use the free [Santa portrait](tests/fixtures/images/reference/santa.jpg
 as the source. Presets were picked after opening the rendered previews: the
 hatching and contour read as a face, stipple keeps the beard as paper, and
 `spiral_sawtooth:fine` is the cleanest of that PFM's three presets (an abstract
-continuous-line reading rather than a portrait).
+continuous-line reading rather than a portrait). Spiral rings are round by
+default (`shape=circle`); `shape=cover` fills a landscape photo's corners and
+`shape=ellipse` keeps the old stretched look.
 
 #### `sketch_lines` (the default)
 
@@ -547,11 +552,24 @@ penpath preview build/gallery/stipple.gcode -o docs/images/luc-88/stipple_gcode.
 | ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![spiral_sawtooth SVG plot](docs/images/luc-88/spiral_sawtooth_plot.png) | ![spiral_sawtooth G-code preview](docs/images/luc-88/spiral_sawtooth_gcode.png) |
 | Santa's red hat, white beard and glasses on a dark background. | One continuous sawtooth spiral: tight teeth in dark areas, open rings over the light beard. | The same spiral on the bed, with the plotted page outlined. |
 
+`shape` selects the ring geometry: `circle` (the default) draws true round rings
+and can leave a landscape photo's corners empty, `-s shape=cover` grows them
+into all four corners, and `-s shape=ellipse` keeps the pre-LUC-203 stretched
+look. The gallery image above is the older elliptical render; compare the new
+[default circle on the photo](docs/images/luc-176/photo_circle.png),
+[`cover` filling its corners](docs/images/luc-176/photo_cover.png),
+[`ellipse` old look](docs/images/luc-176/photo_ellipse.png) and
+[default circle on Santa](docs/images/luc-176/santa_circle.png). The
+[measurements and visual descriptions](docs/TESTING.md#spiral-sawtooth-shapes-circle-ellipse-and-cover-luc-176-2026-11-28)
+record how they were rendered.
+
 ```bash
 penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/spiral_sawtooth.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm spiral_sawtooth:fine
 penpath preview build/gallery/spiral_sawtooth.svg -o docs/images/luc-88/spiral_sawtooth_plot.png --px-per-mm 2.86
 penpath gcode build/gallery/spiral_sawtooth.svg --profile generic -o build/gallery/spiral_sawtooth.gcode
 penpath preview build/gallery/spiral_sawtooth.gcode -o docs/images/luc-88/spiral_sawtooth_gcode.png --px-per-mm 2.86
+penpath convert tests/fixtures/images/reference/photo.jpg -o build/gallery/spiral_cover.svg -s seed=42 -s shape=cover --pfm spiral_sawtooth -q
+penpath preview build/gallery/spiral_cover.svg -o docs/images/luc-176/photo_cover.png --px-per-mm 3
 ```
 
 #### `patch_hatch`
@@ -771,7 +789,7 @@ lists every PFM, its defaults and its presets.
 | `sketch_squares` | `sketch_squares:coarse`, `sketch_squares:fine`, `sketch_squares:crosshatch-grid` | Short grid-aligned strokes: open, dense, or a rotated crosshatch grid. |
 | `contour` | `contour_portrait`, `contour_silhouette` | Four threshold levels for internal detail on a face; one level and a larger minimum speck size for a few bold outlines. |
 | `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. `-s dot_shape=circle\|tap` switches dots from the default `dash` to closed rings or in-place pen taps. |
-| `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
+| `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line with round rings by default (`-s shape=circle`); `-s shape=cover` grows them into all four corners, and `-s shape=ellipse` keeps the old stretched look. Presets: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
 | `patch_hatch` | `patch_hatch:default`, `patch_hatch:fine`, `patch_hatch:bold`, `patch_hatch:fast` | Hand-drawn cross-hatching in 4–10 mm patches, each with its own direction along the local edges; darker tones add crossing layers. `fine` and `bold` change spacing and patch size; `fast` joins every patch into zig-zag strokes (about 2x fewer pen lifts, with visible patch borders). |
 | `squiggle` | `squiggle:default`, `squiggle:fine`, `squiggle:diagonal` | One wavy stroke per row: 2 mm horizontal rows for `default`, 1.2 mm rows with tighter waves for `fine`, 45° rows for `diagonal`. Very few pen lifts. |
 | `engraving` | `engraving:default`, `engraving:fine`, `engraving:swirl`, `engraving:contour` | Lines whose width follows darkness, drawn as up to N strokes one pen width apart: 1.5 mm straight 45° lines for `default`, 0.9 mm for `fine`, lines twisted around the centre for `swirl`, or parallel to the main edges for `contour`. |
@@ -785,7 +803,7 @@ Simulated plot previews on the free Santa portrait:
 [stipple_default](docs/images/luc-140/stipple_default.png) ·
 [stipple_fine](docs/images/luc-140/stipple_fine.png) ·
 [stipple_bold](docs/images/luc-140/stipple_bold.png) ·
-[spiral_sawtooth:fine](docs/images/luc-88/spiral_sawtooth_plot.png) ·
+[spiral_sawtooth circle](docs/images/luc-176/santa_circle.png) ·
 [hatch:default on the photo](docs/images/luc-167/photo_hatch_default.png) ·
 [hatch:crosshatch on the face](docs/images/luc-167/face_hatch_crosshatch.png) ·
 [patch_hatch on the face](docs/images/patch-hatch/face_patch_hatch.png) ·
