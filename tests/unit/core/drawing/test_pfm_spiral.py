@@ -11,7 +11,15 @@ import pytest
 from PIL import Image
 from shapely import LineString
 
-from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
+from penpath.core.drawing.pfm_spiral import (
+    SpiralSettings,
+    _advance,
+    _build_geometry,
+    _position,
+    _StrokeCollector,
+    _tooth_and_velocity,
+    spiral_strokes,
+)
 from penpath.core.image.load import load_image
 from penpath.core.models import Paper, Pen
 from penpath.core.output.svg import write_penpath_svg
@@ -85,6 +93,57 @@ class TestSpiralSettings:
     def test_invalid_settings_raise(self, kwargs: dict[str, object], message: str):
         with pytest.raises(ValueError, match=message):
             SpiralSettings(**kwargs)
+
+
+class TestSpiralHelpers:
+    """Tests for the extracted geometry, tooth and stroke-collection helpers."""
+
+    def test_build_geometry_derives_ring_bounds(self):
+        settings = SpiralSettings()
+        geometry = _build_geometry(settings, 160, 100)
+        assert geometry is not None
+        assert geometry.centre_x == 79.5
+        assert geometry.centre_y == 49.5
+        assert geometry.scale_x == 79.5
+        assert geometry.scale_y == 49.5
+        assert geometry.scale == 49.5
+        assert geometry.end_radius == pytest.approx(49.5 - 3.5)
+        assert _build_geometry(settings, 1, 100) is None
+        assert _build_geometry(SpiralSettings(centre_x=0.0), 100, 100) is None
+
+    def test_geometry_parabolic_scales_tooth_reach_and_velocity(self):
+        default = _build_geometry(SpiralSettings(), 160, 100)
+        parabolic = _build_geometry(SpiralSettings(spiral_type="parabolic"), 160, 100)
+        assert default is not None and parabolic is not None
+        assert parabolic.tooth_reach == pytest.approx(default.tooth_reach / 15.0)
+        assert parabolic.min_velocity == pytest.approx(default.min_velocity / 10.0)
+        tooth, velocity = _tooth_and_velocity(default, 0.0)
+        assert tooth == pytest.approx(default.tooth_reach)
+        assert velocity == pytest.approx(default.min_velocity)
+        tooth, velocity = _tooth_and_velocity(default, 255.0)
+        assert tooth == pytest.approx(0.0)
+        assert velocity == pytest.approx(default.max_velocity)
+
+    def test_position_and_advance_match_ring_geometry(self):
+        geometry = _build_geometry(SpiralSettings(), 160, 100)
+        assert geometry is not None
+        x, y = _position(geometry, 10.0, 90.0, 1)
+        assert (x, y) == pytest.approx((79.5, 59.5))
+        alpha, radius = _advance(100.0, 0.0, 50.0, 7.0)
+        assert alpha == pytest.approx(0.25)
+        assert radius == pytest.approx(100.0 + 7.0 * 0.25 / 360.0)
+
+    def test_collector_clamps_teeth_and_drops_tiny_steps(self):
+        settings = SpiralSettings(shape="cover")
+        geometry = _build_geometry(settings, 160, 100)
+        assert geometry is not None
+        collector = _StrokeCollector(geometry, settings)
+        collector.add(0.0, (-5.0, 0.0), (-4.0, 0.0))
+        collector.flush()
+        assert collector.strokes == []
+        collector.add(0.0, (-5.0, 0.0), (5.0, 0.0))
+        collector.flush()
+        assert [list(line.coords) for line in collector.strokes] == [[(0.0, 0.0), (5.0, 0.0)]]
 
 
 class TestSpiralStrokes:
