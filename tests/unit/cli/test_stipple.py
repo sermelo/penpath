@@ -35,11 +35,11 @@ def test_info_pfms_lists_stipple_and_its_presets() -> None:
     assert by_name["stipple"]["default_settings"]["max_strokes"] == 10000
     assert by_name["stipple"]["default_settings"]["dot_shape"] == "dash"
     assert by_name["stipple"]["presets"] == [
-        "stipple_bold",
-        "stipple_default",
-        "stipple_fine",
+        "stipple:bold",
+        "stipple:default",
+        "stipple:fine",
     ]
-    for name in ("stipple_default", "stipple_fine", "stipple_bold"):
+    for name in ("stipple:default", "stipple:fine", "stipple:bold"):
         assert name in data["presets"]
 
 

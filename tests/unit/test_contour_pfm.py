@@ -28,6 +28,7 @@ from penpath.core.project import load_yaml, save_yaml
 from penpath.presets.pfms import (
     get_pfm_for_preset,
     get_pfm_preset_settings,
+    list_pfm_preset_ids_for_pfm,
     list_presets_for_pfm,
 )
 
@@ -120,5 +121,5 @@ def test_info_pfms_json_groups_presets_by_pfm() -> None:
     result = CliRunner().invoke(main, ["info", "pfms", "--format", "json"])
     assert result.exit_code == 0, result.output
     rows = {row["name"]: row for row in json.loads(result.output)["available_pfms"]}
-    assert rows["contour"]["presets"] == sorted(list_presets_for_pfm("contour"))
+    assert rows["contour"]["presets"] == list_pfm_preset_ids_for_pfm("contour")
     assert not any(name.startswith("contour") for name in rows["sketch_lines"]["presets"])

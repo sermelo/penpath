@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
+from pydantic.fields import FieldInfo
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from penpath.cli.config import load_config
 from penpath.cli.palettes import resolve_palette
-from penpath.core import ProfileError, list_profile_sources, load_profile
+from penpath.core import (
+    ProfileError,
+    field_help,
+    get_pfm_description,
+    list_profile_sources,
+    load_profile,
+)
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.image.load import load_image
 from penpath.core.image.palette_order import order_pens_for_drawing
@@ -23,12 +32,13 @@ from penpath.core.models import Paper
 from penpath.presets.palettes import get_palette, list_palettes
 from penpath.presets.papers import get_paper, list_papers
 from penpath.presets.pens import get_pen, list_pens
-from penpath.presets.pfms import list_pfm_preset_ids, list_pfm_presets, list_presets_for_pfm
+from penpath.presets.pfms import list_pfm_preset_ids, list_pfm_preset_ids_for_pfm
 
 if TYPE_CHECKING:
     pass
 
 console = Console()
+PFM_TABLE_WIDTH = 80
 
 
 def _output_format(data: dict[str, Any], fmt: str) -> None:
@@ -251,30 +261,117 @@ def info_palette_match(image_path: Path, palette_spec: str, fmt: str) -> None:
         _output_format(data, fmt)
 
 
+def _fold_cell(text: str, width: int) -> str:
+    """Fold text on word boundaries so a cell never breaks a preset id."""
+    return "\n".join(
+        textwrap.wrap(text, width=width, break_long_words=False, break_on_hyphens=False)
+    )
+
+
+def _print_pfms_table(rows: list[dict[str, Any]]) -> None:
+    """Print one compact row per PFM: name, description and canonical preset ids."""
+    name_width = max((len(row["name"]) for row in rows), default=4)
+    preset_width = max((len(pid) + 1 for row in rows for pid in row["preset_ids"]), default=10)
+    description_width = max(PFM_TABLE_WIDTH - name_width - preset_width - 10, 10)
+    table = Table(title="Pen Follower Modules", width=PFM_TABLE_WIDTH)
+    table.add_column("Name", width=name_width, no_wrap=True)
+    table.add_column("Description", width=description_width, overflow="fold")
+    table.add_column("Preset ids", width=preset_width, overflow="fold")
+    for row in rows:
+        table.add_row(
+            Text(row["name"]),
+            Text(_fold_cell(row["description"], description_width)),
+            Text(_fold_cell(", ".join(row["preset_ids"]), preset_width)),
+        )
+    Console(width=PFM_TABLE_WIDTH).print(table)
+
+
 @info_group.command(name="pfms")
 @click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
 def info_pfms(fmt: str) -> None:
-    """List available PFMs (Pen Follower Modules)."""
-    registered = list_pfms()
-    presets = list_pfm_presets()
+    """List registered PFMs with a description and their canonical preset ids."""
     preset_ids = list_pfm_preset_ids()
-
     pfm_data = []
-    for name in registered:
+    for name in list_pfms():
         _, settings_model = get_pfm(name)
-        default_settings = settings_model()
+        own_preset_ids = list_pfm_preset_ids_for_pfm(name)
         pfm_data.append(
             {
                 "name": name,
+                "description": get_pfm_description(name),
                 "settings_model": settings_model.__name__,
-                "default_settings": default_settings.model_dump(mode="json"),
-                "presets": list_presets_for_pfm(name),
-                "preset_ids": [pid for pid in preset_ids if pid.startswith(f"{name}:")],
+                "default_settings": settings_model().model_dump(mode="json"),
+                "presets": own_preset_ids,
+                "preset_ids": own_preset_ids,
             }
         )
 
-    data = {"available_pfms": pfm_data, "presets": presets, "preset_ids": preset_ids}
-    _output_format(data, fmt)
+    all_preset_ids = sorted({pid for row in pfm_data for pid in row["preset_ids"]})
+    data = {"available_pfms": pfm_data, "presets": all_preset_ids, "preset_ids": preset_ids}
+    if fmt == "table":
+        _print_pfms_table(pfm_data)
+    else:
+        _output_format(data, fmt)
+
+
+def _setting_default(field: FieldInfo) -> Any:
+    """Return a setting's default, or ``-`` for a required field."""
+    if field.is_required():
+        return "-"
+    return field.default
+
+
+def _print_pfm_table(data: dict[str, Any]) -> None:
+    """Print a PFM's description, preset ids and settings above a detail table."""
+    table_console = Console(width=PFM_TABLE_WIDTH)
+    table_console.print(f"{data['name']}: {data['description']}", markup=False)
+    table_console.print(f"Preset ids: {', '.join(data['presets'])}", markup=False)
+    table = Table(title=f"Settings: {data['name']}", width=PFM_TABLE_WIDTH)
+    table.add_column("Setting", no_wrap=True)
+    table.add_column("Default", no_wrap=True)
+    table.add_column("Help", overflow="fold")
+    for setting in data["settings"]:
+        table.add_row(
+            Text(setting["name"]),
+            Text(str(setting["default"])),
+            Text(setting["help"]),
+        )
+    table_console.print(table)
+
+
+@info_group.command(name="pfm")
+@click.argument("name")
+@click.option("--format", "fmt", type=click.Choice(["table", "json", "yaml"]), default="table")
+def info_pfm(name: str, fmt: str) -> None:
+    """Show a registered PFM's description, preset ids and settings.
+
+    NAME is a registered PFM name such as sketch_lines, not a preset id. Run
+    'penpath info pfms' to list the available names.
+    """
+    available = list_pfms()
+    if name not in available:
+        raise click.ClickException(f"Unknown PFM: '{name}'. Available PFMs: {', '.join(available)}")
+
+    _, settings_model = get_pfm(name)
+    help_by_name = field_help(settings_model)
+    settings = [
+        {
+            "name": field_name,
+            "default": _setting_default(field),
+            "help": help_by_name.get(field_name, ""),
+        }
+        for field_name, field in settings_model.model_fields.items()
+    ]
+    data: dict[str, Any] = {
+        "name": name,
+        "description": get_pfm_description(name),
+        "presets": list_pfm_preset_ids_for_pfm(name),
+        "settings": settings,
+    }
+    if fmt == "table":
+        _print_pfm_table(data)
+    else:
+        _output_format(data, fmt)
 
 
 def _format_margin_mm(margin: float | tuple[float, ...] | list[float]) -> str:
