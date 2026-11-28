@@ -158,6 +158,8 @@ penpath convert photo.jpg --pfm spiral_sawtooth:fine -s ring_spacing=4 -o spiral
 
 # Hatch lays down straight, millimetre-spaced lines (not --style hatch)
 penpath convert photo.jpg --pfm hatch:crosshatch -o hatch.svg
+# Fit the tone bands to a flat photo's own range
+penpath convert photo.jpg --pfm hatch:crosshatch -s auto_thresholds=true -o fitted.svg
 
 # Patch Hatch: hand-drawn cross-hatching in small patches that follow the edges
 penpath convert photo.jpg --pfm patch_hatch -s seed=42 -o patch_hatch.svg
