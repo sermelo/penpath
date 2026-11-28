@@ -5,6 +5,7 @@ from penpath.core.contact_sheet import (
     ContactSheetResult,
     render_contact_sheet,
 )
+from penpath.core.convert import Drawing, Reporter, draw_project
 from penpath.core.drawing import (
     PALETTE_ANGLE_STEP_DEG,
     PIXEL_SETTING_FIELDS,
@@ -209,6 +210,7 @@ __all__ = [
     "ContourSettings",
     "CoverageResult",
     "DitherMethod",
+    "Drawing",
     "EngravingSettings",
     "FeedProfile",
     "FilterPipeline",
@@ -251,6 +253,7 @@ __all__ = [
     "ProjectLoadError",
     "ProjectSaveError",
     "RegisteredPFM",
+    "Reporter",
     "SketchLinesPFM",
     "SpiralSettings",
     "SquiggleSettings",
@@ -278,6 +281,7 @@ __all__ = [
     "contour_strokes",
     "contrast",
     "detect_paper_color",
+    "draw_project",
     "draw_styled_lines",
     "drawing_bounds_pen",
     "engraving_strokes",

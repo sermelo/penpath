@@ -170,3 +170,5 @@
 
 - 2026-11-28 — LUC-172 convert options that do nothing: implement `--no-auto-orient` end to end via `ImageRef.auto_orient` (default true) and `load_image(auto_orient=...)`, so the flag skips the EXIF rotation and keeps the stored pixel size; rotation stays on by default and old project files keep it. Remove `--layer-per-pen`/`--single-layer` and its docs rows: export always writes one layer per pen, so the flag never changed the output. Keep `--dpi`: since `--fit none` landed it sets the drawn size and a test proves it.
 
+- 2026-11-28 — LUC-179 part 1 (convert in core): the image-to-geometry pipeline lives in `penpath.core.convert`; `Drawing` carries the pens, optimised strokes, placement and resolution so `to_svg` reproduces the CLI SVG byte for byte on both the vpype and direct paths. Core depends on a small `Reporter` Protocol (`start`, `finish`, `message`, `set_total_stages`) that the CLI's `StageReporter` satisfies structurally, keeping every progress message and stage count unchanged.
+
