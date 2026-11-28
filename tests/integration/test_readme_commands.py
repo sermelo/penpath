@@ -6,9 +6,13 @@ the ``for`` loop and are out of scope, as are the pip/uv/git install lines and
 ``bash scripts/nightly.sh`` (they are not ``penpath`` commands). Commands piped
 to ``jq`` are the one explicit skip: jq is an external tool we do not install.
 
-vpype is deliberately left on PATH so the small synthetic photo exercises the
-default export path too. The fixture is 120x90 px, so every convert stays fast
-and the whole guard fits inside the existing CI budget.
+This guard proves the documented commands run and write their outputs; it is
+not an image-quality check. The synthetic fixture is deliberately small and
+the working resolution is capped on purpose: ``convert`` gets 160 px unless
+the README already sets a cap, and ``compare`` is capped at 1 px because its
+catalog includes the slow ``squiggly`` preset that ignores larger caps. The
+contact sheet's drawing quality is covered by its own tests. vpype stays on
+PATH so the default export path is exercised too; no README example is edited.
 """
 
 from __future__ import annotations
@@ -42,6 +46,11 @@ _SKIPPED: dict[str, str] = {
     "penpath evaluate photo.jpg plot.svg --json | jq "
     "{likeness, masked_likeness, total: .machine_cost.total}": "jq is an external tool",
 }
+
+_CONVERT_MAX_RESOLUTION_PX = 160
+_COMPARE_MAX_RESOLUTION_PX = 1
+_SEED_WIDTH_PX = 32
+_SEED_HEIGHT_PX = 24
 
 _REDIRECT = re.compile(r"^(?P<fd>2)?(?P<op>>>|>)(?P<target>.*)$")
 _VALUE_OPTIONS = frozenset(
@@ -149,6 +158,24 @@ def _parse(command: str) -> ParsedCommand:
     return ParsedCommand(command, argv, stdout_to, stderr_to)
 
 
+def _cap_resolution(parsed: ParsedCommand) -> ParsedCommand:
+    """Cap the working resolution for commands that accept ``--max-resolution``.
+
+    Commands that already set the flag keep their README value; other commands
+    are passed through unchanged.
+    """
+    argv = list(parsed.argv)
+    if argv[0] == "convert" and "--max-resolution" not in argv:
+        argv[1:1] = ["--max-resolution", str(_CONVERT_MAX_RESOLUTION_PX)]
+    elif argv[0] == "compare":
+        if "--max-resolution" in argv:
+            index = argv.index("--max-resolution")
+            argv[index + 1] = str(_COMPARE_MAX_RESOLUTION_PX)
+        else:
+            argv[1:1] = ["--max-resolution", str(_COMPARE_MAX_RESOLUTION_PX)]
+    return ParsedCommand(parsed.text, argv, parsed.stdout_to, parsed.stderr_to)
+
+
 def _positionals(argv: list[str]) -> list[str]:
     """Return positional arguments, skipping values consumed by options."""
     values: list[str] = []
@@ -188,12 +215,12 @@ def _expected_output(parsed: ParsedCommand) -> str | None:
 
 def _seed_workspace(work: Path) -> None:
     """Create the small fixtures the README commands refer to."""
-    image = Image.new("RGB", (120, 90), "white")
+    image = Image.new("RGB", (_SEED_WIDTH_PX, _SEED_HEIGHT_PX), "white")
     pixels = image.load()
-    for y in range(90):
-        for x in range(120):
-            value = int(255 * (1 - (x + y) / 210))
-            if 30 < x < 90 and 20 < y < 70:
+    for y in range(_SEED_HEIGHT_PX):
+        for x in range(_SEED_WIDTH_PX):
+            value = int(255 * (1 - (x + y) / (_SEED_WIDTH_PX + _SEED_HEIGHT_PX)))
+            if 8 < x < 24 and 5 < y < 19:
                 value = int(value * 0.3)
             pixels[x, y] = (value, value, value)
     source = work / "seed.jpg"
@@ -256,7 +283,11 @@ def _pregenerate(runner: CliRunner) -> None:
 
 
 def test_readme_commands_run(workspace: Path) -> None:
-    """Every non-skipped ``penpath`` command in the README must exit 0."""
+    """Every non-skipped ``penpath`` command in the README must exit 0.
+
+    This proves command parsing and plumbing, not image quality, so the
+    working resolution is capped on the commands that accept it.
+    """
     runner = CliRunner()
     _pregenerate(runner)
 
@@ -269,7 +300,7 @@ def test_readme_commands_run(workspace: Path) -> None:
     for command in commands:
         if _normalize(command) in _SKIPPED:
             continue
-        parsed = _parse(command)
+        parsed = _cap_resolution(_parse(command))
         result = runner.invoke(main, parsed.argv)
         assert result.exit_code == 0, f"README command failed: {command}\n{result.output}"
         if parsed.stdout_to is not None:

@@ -1,5 +1,8 @@
 """Integration test for full pipeline: photo → filter → sketch lines → geometry
 optimize → vpype → penpath SVG.
+
+These tests check plumbing, not image quality, so they draw a small synthetic
+image with coarse Sketch Lines settings. Every stage and assertion stays.
 """
 
 from __future__ import annotations
@@ -22,6 +25,9 @@ from penpath.core.output.vpype import optimize_with_vpype
 pytest.importorskip("vpype", reason="vpype not installed, skipping integration tests")
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
+IMAGE_SIDE_PX = 64
+DARK_BOX_MIN = IMAGE_SIDE_PX // 4
+DARK_BOX_MAX = 3 * IMAGE_SIDE_PX // 4
 
 
 class TestFullPipelineIntegration:
@@ -29,29 +35,32 @@ class TestFullPipelineIntegration:
 
     @pytest.fixture
     def synthetic_image(self, tmp_path: Path) -> Path:
-        """Create a simple synthetic test image with a gradient."""
+        """Create a small synthetic gradient image with a darker square."""
         img_path = tmp_path / "test_input.png"
-        img = Image.new("RGB", (200, 200), "white")
+        img = Image.new("RGB", (IMAGE_SIDE_PX, IMAGE_SIDE_PX), "white")
         pixels = img.load()
-        for y in range(200):
-            for x in range(200):
-                val = int(255 * (1 - (x + y) / 400))
-                if 50 < x < 150 and 50 < y < 150:
+        for y in range(IMAGE_SIDE_PX):
+            for x in range(IMAGE_SIDE_PX):
+                val = int(255 * (1 - (x + y) / (2 * IMAGE_SIDE_PX)))
+                if DARK_BOX_MIN < x < DARK_BOX_MAX and DARK_BOX_MIN < y < DARK_BOX_MAX:
                     val = int(val * 0.3)
                 pixels[x, y] = (val, val, val)
         img.save(img_path)
         return img_path
 
     def test_full_pipeline_photo_to_svg(self, synthetic_image: Path, tmp_path: Path):
-        """Round-trip: photo → filters → sketch lines → optimize → vpype → penpath SVG."""
+        """Round-trip: photo → filters → sketch lines → optimize → vpype → penpath SVG.
+
+        Shading stays enabled and the coarse search covers every pipeline stage.
+        """
         image = load_image(synthetic_image)
-        assert image.size == (200, 200)
+        assert image.size == (IMAGE_SIDE_PX, IMAGE_SIDE_PX)
 
         gray = grayscale(image)
         thresholded = threshold(gray, level=128, dither=False)
 
         settings = SketchLinesSettings(
-            line_density=0.5,
+            line_density=0.4,
             min_length=5.0,
             max_length=30.0,
             angle_range=(0.0, 360.0),
@@ -59,8 +68,11 @@ class TestFullPipelineIntegration:
             squiggle_enabled=False,
             erase_enabled=False,
             seed=42,
-            search_angle_step=10.0,
-            sample_step=10.0,
+            search_angle_step=30.0,
+            sample_step=20.0,
+            squiggle_min_length=2,
+            squiggle_max_length=20,
+            max_strokes=40,
         )
         lines = sketch_lines(thresholded, settings)
 
@@ -103,7 +115,10 @@ class TestFullPipelineIntegration:
         assert root.find(".//" + SVG_NS + "path") is not None
 
     def test_full_pipeline_geometry_count_preserved(self, synthetic_image: Path):
-        """Verify geometry count is reasonable through the pipeline."""
+        """Verify geometry count is reasonable through the pipeline.
+
+        The coarse search still produces original, optimized and vpype lines.
+        """
         image = load_image(synthetic_image)
         gray = grayscale(image)
         thresholded = threshold(gray, level=128, dither=False)
@@ -117,6 +132,11 @@ class TestFullPipelineIntegration:
             squiggle_enabled=False,
             erase_enabled=False,
             seed=123,
+            search_angle_step=45.0,
+            sample_step=20.0,
+            squiggle_min_length=2,
+            squiggle_max_length=20,
+            max_strokes=40,
         )
         lines = sketch_lines(thresholded, settings)
         initial_count = len(lines)
@@ -133,7 +153,11 @@ class TestFullPipelineIntegration:
         assert len(strokes) <= len(optimized_lines) * 2
 
     def test_full_pipeline_deterministic_with_seed(self, synthetic_image: Path):
-        """Same seed should produce identical geometry output."""
+        """Same seed should produce identical geometry output.
+
+        Coarse settings keep the two full runs short without changing what the
+        byte-for-byte comparison proves.
+        """
         image = load_image(synthetic_image)
         gray = grayscale(image)
         thresholded = threshold(gray, level=128, dither=False)
@@ -145,6 +169,11 @@ class TestFullPipelineIntegration:
             seed=42,
             squiggle_enabled=False,
             erase_enabled=False,
+            search_angle_step=45.0,
+            sample_step=20.0,
+            squiggle_min_length=2,
+            squiggle_max_length=20,
+            max_strokes=40,
         )
 
         paper = Paper(name="A4", width_mm=210, height_mm=297, dpi=300)
@@ -160,7 +189,11 @@ class TestFullPipelineIntegration:
         assert geometry[0] == geometry[1], "Geometry should be deterministic with same seed"
 
     def test_full_pipeline_different_paper_sizes(self, synthetic_image: Path):
-        """Pipeline should work with different paper sizes."""
+        """Pipeline should work with different paper sizes.
+
+        Paper size only changes optimization and export, so the drawing is
+        computed once; each size still gets its own export and placement check.
+        """
         image = load_image(synthetic_image)
         gray = grayscale(image)
         thresholded = threshold(gray, level=128, dither=False)
@@ -172,7 +205,13 @@ class TestFullPipelineIntegration:
             seed=42,
             squiggle_enabled=False,
             erase_enabled=False,
+            search_angle_step=45.0,
+            sample_step=20.0,
+            squiggle_min_length=2,
+            squiggle_max_length=20,
+            max_strokes=40,
         )
+        lines = sketch_lines(thresholded, settings)
 
         papers = [
             Paper(name="A4", width_mm=210, height_mm=297),
@@ -183,7 +222,6 @@ class TestFullPipelineIntegration:
         pen = Pen(name="fine", width_mm=0.3)
 
         for paper in papers:
-            lines = sketch_lines(thresholded, settings)
             optimized_lines = optimize(lines, paper)
             strokes = optimize_with_vpype([optimized_lines], paper, [pen])[0]
 

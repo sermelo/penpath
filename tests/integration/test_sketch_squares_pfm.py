@@ -53,6 +53,11 @@ class TestSketchSquaresCLI:
     def test_seeded_face_conversion_is_deterministic(
         self, runner: CliRunner, tmp_path: Path
     ) -> None:
+        """Two seeded runs write byte-identical SVGs.
+
+        This checks determinism, not image quality, so both runs cap the
+        working resolution at 160 px.
+        """
         outputs = (tmp_path / "a.svg", tmp_path / "b.svg")
         for output in outputs:
             result = runner.invoke(
@@ -66,6 +71,8 @@ class TestSketchSquaresCLI:
                     "sketch_squares",
                     "-s",
                     "seed=42",
+                    "--max-resolution",
+                    "160",
                     "--no-vpype",
                     "--quiet",
                 ],
