@@ -75,11 +75,10 @@ class TestSketchSquaresPresets:
         with pytest.raises(ValueError, match="did you mean 'sketch_squares:coarse'"):
             get_pfm_preset_by_id("coarse")
 
-    def test_bare_fine_suggests_both_qualified_ids(self) -> None:
-        with pytest.raises(ValueError) as excinfo:
-            get_pfm_preset_by_id("fine")
-        assert "sketch_lines:fine" in str(excinfo.value)
-        assert "sketch_squares:fine" in str(excinfo.value)
+    def test_bare_fine_resolves_to_the_legacy_sketch_lines_preset(self) -> None:
+        pfm_type, settings = get_pfm_preset_by_id("fine")
+        assert pfm_type == "sketch_lines"
+        assert settings == get_pfm_preset("fine")
 
     def test_unknown_pfm_is_reported(self) -> None:
         with pytest.raises(ValueError, match="Unknown PFM: 'nope'"):

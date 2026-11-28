@@ -41,15 +41,15 @@ def _pen_name(metrics: LayerMetrics, layer: str) -> str:
 
 def _cost_table(cost: MachineCostResult) -> Table:
     """Build the human-readable machine cost table."""
-    table = Table(title="Machine Cost", show_header=True, header_style="bold")
+    table = Table(title="Machine Cost", show_header=True, header_style="bold", padding=(0, 0))
     table.add_column("Layer", style="cyan")
     table.add_column("Pen", style="cyan", overflow="fold")
-    table.add_column("Drawing (mm)", justify="right")
-    table.add_column("Pen-up (mm)", justify="right")
+    table.add_column("Draw mm", justify="right")
+    table.add_column("Travel mm", justify="right")
     table.add_column("Lifts", justify="right")
-    table.add_column("Short segments", justify="right")
+    table.add_column("Short", justify="right")
     table.add_column("Strokes", justify="right")
-    table.add_column("Coverage (%)", justify="right")
+    table.add_column("Ink %", justify="right")
 
     per_layer = cast(dict[str, LayerMetrics], cost["per_layer"])
     for layer, metrics in per_layer.items():

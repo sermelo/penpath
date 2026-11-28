@@ -698,6 +698,105 @@ def _shortest_shift(low: float, high: float, target_low: float, target_high: flo
     return 0.0
 
 
+def _fit_pen_points(
+    layers: Sequence[GcodeLayer],
+    frame_points: Sequence[Coordinate],
+    profile: MachineProfile,
+    page_height: float,
+    origin: Coordinate,
+) -> list[Coordinate]:
+    """Map the frame and every drawable stroke point to pen space."""
+    points = [_svg_to_pen(point, page_height, origin, profile) for point in frame_points]
+    points.extend(
+        _svg_to_pen(point, page_height, origin, profile)
+        for layer in layers
+        for polyline in layer.polylines
+        if len(polyline) >= 2
+        for point in polyline
+    )
+    return points
+
+
+def _fit_bounds(points: Sequence[Coordinate]) -> Bounds:
+    """Return the lower and upper corners of a set of pen-space points."""
+    return (
+        (min(point[0] for point in points), min(point[1] for point in points)),
+        (max(point[0] for point in points), max(point[1] for point in points)),
+    )
+
+
+def _fit_transform(
+    bounds: Bounds,
+    area: Bounds,
+    tolerance_mm: float,
+    profile: MachineProfile,
+) -> tuple[float, Coordinate, Coordinate] | None:
+    """Return the scale, offset and overshoot when a drawing needs fitting."""
+    (min_x, min_y), (max_x, max_y) = bounds
+    (x_lo, y_lo), (x_hi, y_hi) = area
+    overshoot = (
+        max(0.0, x_lo - min_x, max_x - x_hi),
+        max(0.0, y_lo - min_y, max_y - y_hi),
+    )
+    if overshoot[0] <= tolerance_mm and overshoot[1] <= tolerance_mm:
+        return None
+    width, height = x_hi - x_lo, y_hi - y_lo
+    if width <= 0.0 or height <= 0.0:
+        raise GcodeError(
+            f"Profile {profile.name!r} has no drawable area left after bed.margin_mm "
+            "and the ramp lead-in; use a larger drawable area"
+        )
+    drawing_width, drawing_height = max_x - min_x, max_y - min_y
+    scale = min(
+        1.0,
+        width / drawing_width if drawing_width > 0.0 else 1.0,
+        height / drawing_height if drawing_height > 0.0 else 1.0,
+    )
+    offset = (
+        _shortest_shift(scale * min_x, scale * max_x, x_lo, x_hi),
+        _shortest_shift(scale * min_y, scale * max_y, y_lo, y_hi),
+    )
+    return scale, offset, overshoot
+
+
+def _fit_point(
+    point: Coordinate,
+    scale: float,
+    offset: Coordinate,
+    page_height: float,
+    origin: Coordinate,
+    profile: MachineProfile,
+) -> Coordinate:
+    """Apply a pen-space fit transform to one SVG page point."""
+    pen_point = _svg_to_pen(point, page_height, origin, profile)
+    pen = (scale * pen_point[0] + offset[0], scale * pen_point[1] + offset[1])
+    return _pen_to_svg(pen, page_height, origin, profile)
+
+
+def _fit_layers(
+    layers: Sequence[GcodeLayer],
+    scale: float,
+    offset: Coordinate,
+    page_height: float,
+    origin: Coordinate,
+    profile: MachineProfile,
+) -> list[GcodeLayer]:
+    """Apply a pen-space fit transform to every point of every layer."""
+    return [
+        GcodeLayer(
+            layer.pen,
+            [
+                tuple(
+                    _fit_point(point, scale, offset, page_height, origin, profile)
+                    for point in polyline
+                )
+                for polyline in layer.polylines
+            ],
+        )
+        for layer in layers
+    ]
+
+
 def fit_layers_to_drawable(
     layers: Sequence[GcodeLayer],
     profile: MachineProfile,
@@ -750,72 +849,38 @@ def fit_layers_to_drawable(
     origin = final_placement.origin_mm
     page_height = page_size_mm[1]
     lead = lead_in_mm(profile) or 0.0
-    x_lo, x_hi = xmin + lead, xmax - lead
-    y_lo, y_hi = ymin + lead, ymax - lead
+    area = ((xmin + lead, ymin + lead), (xmax - lead, ymax - lead))
     unchanged = FitResult(layers, 1.0, (0.0, 0.0), (0.0, 0.0), False, frame)
 
     frame_points = list(frame.points(page_size_mm)) if frame is not None else []
-    pen_points = [_svg_to_pen(point, page_height, origin, profile) for point in frame_points]
-    pen_points.extend(
-        _svg_to_pen(point, page_height, origin, profile)
-        for layer in layers
-        for polyline in layer.polylines
-        if len(polyline) >= 2
-        for point in polyline
-    )
+    pen_points = _fit_pen_points(layers, frame_points, profile, page_height, origin)
     if not pen_points:
         return unchanged
-    min_x = min(point[0] for point in pen_points)
-    max_x = max(point[0] for point in pen_points)
-    min_y = min(point[1] for point in pen_points)
-    max_y = max(point[1] for point in pen_points)
-    overshoot = (
-        max(0.0, x_lo - min_x, max_x - x_hi),
-        max(0.0, y_lo - min_y, max_y - y_hi),
-    )
-    if overshoot[0] <= tolerance_mm and overshoot[1] <= tolerance_mm:
+    transform = _fit_transform(_fit_bounds(pen_points), area, tolerance_mm, profile)
+    if transform is None:
         return unchanged
-
-    width, height = x_hi - x_lo, y_hi - y_lo
-    if width <= 0.0 or height <= 0.0:
-        raise GcodeError(
-            f"Profile {profile.name!r} has no drawable area left after bed.margin_mm "
-            "and the ramp lead-in; use a larger drawable area"
-        )
-    drawing_width, drawing_height = max_x - min_x, max_y - min_y
-    scale = min(
-        1.0,
-        width / drawing_width if drawing_width > 0.0 else 1.0,
-        height / drawing_height if drawing_height > 0.0 else 1.0,
-    )
-    offset = (
-        _shortest_shift(scale * min_x, scale * max_x, x_lo, x_hi),
-        _shortest_shift(scale * min_y, scale * max_y, y_lo, y_hi),
-    )
-
-    def fitted(point: Coordinate) -> Coordinate:
-        pen_point = _svg_to_pen(point, page_height, origin, profile)
-        pen = (scale * pen_point[0] + offset[0], scale * pen_point[1] + offset[1])
-        return _pen_to_svg(pen, page_height, origin, profile)
-
-    fitted_layers = [
-        GcodeLayer(
-            layer.pen,
-            [tuple(fitted(point) for point in polyline) for polyline in layer.polylines],
-        )
-        for layer in layers
-    ]
+    scale, offset, overshoot = transform
     fitted_frame = (
         FrameSpec(
             frame.margin_mm,
             frame.pen,
             frame.pause,
-            [fitted(point) for point in frame_points],
+            [
+                _fit_point(point, scale, offset, page_height, origin, profile)
+                for point in frame_points
+            ],
         )
         if frame is not None
         else None
     )
-    return FitResult(fitted_layers, scale, offset, overshoot, True, fitted_frame)
+    return FitResult(
+        _fit_layers(layers, scale, offset, page_height, origin, profile),
+        scale,
+        offset,
+        overshoot,
+        True,
+        fitted_frame,
+    )
 
 
 def drawing_bounds_pen(

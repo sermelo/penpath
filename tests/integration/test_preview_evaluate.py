@@ -957,7 +957,7 @@ class TestEvaluateMaskedLikeness:
         assert "SSIM (whole page)" in result.output
         assert "SSIM (ink only)" in result.output
         assert "Edge SSIM" in result.output
-        assert "Coverage" in result.output
+        assert "Ink %" in result.output
 
     def test_near_blank_plot_looks_good_only_on_the_whole_page(
         self, runner: CliRunner, mostly_white_source: Path, near_blank_plot: Path
@@ -1064,7 +1064,7 @@ class TestEvaluatePenNames:
         assert "TOTAL" in human.output
 
     def test_long_pen_names_are_readable_at_narrow_width(self, runner: CliRunner) -> None:
-        """Underscore pen names fold at 80 columns instead of truncating (LUC-134 QA)."""
+        """Long pen names fit one line each at 80 columns, with no ellipsis (LUC-221)."""
         fixtures = Path(__file__).resolve().parents[1] / "fixtures"
         image = fixtures / "images/background/pencil_on_pale_grey.png"
         svg = fixtures / "golden/svg/pencil_palette_before_background.svg"
@@ -1075,14 +1075,32 @@ class TestEvaluatePenNames:
 
         assert result.exit_code == 0, result.output
         machine_cost = result.output.split("Machine Cost", 1)[1]
-        pen_column = "".join(
-            line.split("│")[2].replace(" ", "")
-            for line in machine_cost.splitlines()
-            if line.startswith("│")
-        )
-        assert "stabilo_88_light_blue" in pen_column
-        assert "stabilo_88_black" in pen_column
-        assert "…" not in pen_column
+        for header in (
+            "Layer",
+            "Pen",
+            "Draw mm",
+            "Travel mm",
+            "Lifts",
+            "Short",
+            "Strokes",
+            "Ink %",
+        ):
+            assert header in machine_cost
+        assert "…" not in result.output
+        assert max(len(line) for line in result.output.splitlines()) <= 80
+        for name in ("stabilo_88_light_blue", "stabilo_88_black"):
+            assert sum(name in line for line in machine_cost.splitlines()) == 1
+
+    def test_machine_cost_table_uses_short_headers(
+        self, runner: CliRunner, drawing: Path, reference: Path
+    ) -> None:
+        result = runner.invoke(main, ["evaluate", str(reference), str(drawing)])
+
+        assert result.exit_code == 0, result.output
+        for header in ("Draw mm", "Travel mm", "Lifts", "Short", "Strokes", "Ink %"):
+            assert header in result.output
+        for old_header in ("Drawing (mm)", "Pen-up (mm)", "Short segments", "Coverage (%)"):
+            assert old_header not in result.output
 
     def test_svg_without_layers_falls_back_to_hex(
         self, runner: CliRunner, hand_drawing: Path, reference: Path
@@ -1206,7 +1224,7 @@ class TestEvaluateCoverage:
         result = runner.invoke(main, ["evaluate", str(reference), str(drawing)])
 
         assert result.exit_code == 0, result.output
-        assert "Coverage" in result.output
+        assert "Ink %" in result.output
         assert "Machine Cost" in result.output
 
     def test_luc_91_repro_light_blue_layer_reports_coverage(self, runner: CliRunner) -> None:
