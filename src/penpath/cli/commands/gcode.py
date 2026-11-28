@@ -19,6 +19,7 @@ from penpath.core import (
     GcodeError,
     GcodeLayer,
     MachineProfile,
+    PagePlacement,
     PlacementName,
     PointOutsideBedError,
     ProfileError,
@@ -131,6 +132,178 @@ def _estimate_plot_seconds(profile: MachineProfile, total: LayerMetrics) -> floa
     z_distance = z_moves * abs(profile.pen.z_up - profile.pen.z_down)
     z_seconds = z_distance / profile.feed.effective_z_mm_s
     return draw_seconds + travel_seconds + z_seconds
+
+
+def _validate_run_options(
+    frame: bool, place_name: str | None, at: tuple[float, float] | None
+) -> None:
+    """Reject conflicting placement flags and frame options without --frame."""
+    if place_name is not None and at is not None:
+        raise click.UsageError("--place and --at are mutually exclusive; use one, not both.")
+    if not frame:
+        ctx = click.get_current_context()
+        for name, label in FRAME_OPTIONS:
+            if ctx.get_parameter_source(name) is not ParameterSource.DEFAULT:
+                raise click.UsageError(f"{label} requires --frame.")
+
+
+def _load_run_profile(
+    profile_name: str | None, profiles_path: Path | None, margin_mm: float | None
+) -> MachineProfile:
+    """Validate --profile/--profiles and apply a --margin override."""
+    if profile_name is None:
+        raise click.UsageError(f"Missing option '--profile'. {_available_hint(profiles_path)}")
+    if profiles_path is not None and not profiles_path.is_file():
+        raise ProfileValidationError(
+            f"Cannot read profile file {profiles_path}: no such file. "
+            "Pass an existing YAML file to --profiles, or omit it to use the default."
+        )
+    try:
+        profile = load_profile(profile_name, profiles_path)
+    except UnknownProfileError as exc:
+        raise click.UsageError(str(exc)) from exc
+    except ProfileError as exc:
+        raise ProfileValidationError(str(exc)) from exc
+    if margin_mm is not None:
+        profile = with_margin_mm(profile, margin_mm)
+    return profile
+
+
+def _read_drawing_page(drawing_svg: Path) -> tuple[float, float]:
+    """Validate the SVG has strokes and return its page size in millimetres."""
+    try:
+        strokes = parse_svg_strokes(drawing_svg)
+    except (ET.ParseError, OSError, ValueError) as exc:
+        raise click.ClickException(f"Could not parse SVG: {exc}") from exc
+    if not strokes:
+        raise click.ClickException(f"No pen strokes found in {drawing_svg}")
+    page_size = get_svg_paper_size(drawing_svg)
+    if page_size is None:
+        raise click.ClickException(
+            f"Could not read the page size from {drawing_svg}; set width and height in mm"
+        )
+    return page_size
+
+
+def _place_page_for_run(
+    profile: MachineProfile,
+    page_size: tuple[float, float],
+    place_name: str | None,
+    at: tuple[float, float] | None,
+    fit: bool,
+) -> PagePlacement:
+    """Place the page and report a shift into the usable area on stderr."""
+    try:
+        placement = place_page(
+            profile,
+            page_size,
+            place=cast(PlacementName, place_name) if place_name is not None else None,
+            at=at,
+            fit=fit,
+        )
+    except PointOutsideBedError as exc:
+        raise ProfileValidationError(str(exc)) from exc
+    except GcodeError as exc:
+        raise click.UsageError(str(exc)) from exc
+    if placement.shifted:
+        requested_x, requested_y = placement.requested_origin_mm
+        final_x, final_y = placement.origin_mm
+        (x_min, y_min), (x_max, y_max) = usable_area(profile)
+        console.print(
+            f"Warning: page at {requested_x:.3f}, {requested_y:.3f} is outside the "
+            f"{profile.name} drawable area X {x_min:.3f}..{x_max:.3f}, "
+            f"Y {y_min:.3f}..{y_max:.3f}; placed at {final_x:.3f}, {final_y:.3f} mm"
+        )
+    return placement
+
+
+def _fit_layers_and_build(
+    layers: list[GcodeLayer],
+    profile: MachineProfile,
+    page_size: tuple[float, float],
+    placement: PagePlacement,
+    fit: bool,
+    frame_spec: FrameSpec | None,
+) -> tuple[Sequence[GcodeLayer], FrameSpec | None, str]:
+    """Fit the drawing and frame when requested, then emit their G-code."""
+    fit_result: FitResult | None = None
+    if fit:
+        try:
+            fit_result = fit_layers_to_drawable(
+                layers, profile, page_size, placement=placement, frame=frame_spec
+            )
+        except GcodeError as exc:
+            raise ProfileValidationError(str(exc)) from exc
+        emit_layers = fit_result.layers
+        emit_frame = fit_result.frame
+    else:
+        emit_layers = layers
+        emit_frame = frame_spec
+    try:
+        text = build_gcode(emit_layers, profile, page_size, placement, frame=emit_frame)
+    except GcodeError as exc:
+        message = str(exc)
+        if not fit:
+            message += " Pass --fit (the default) or use a smaller --paper."
+        raise ProfileValidationError(message) from exc
+    if fit_result is not None and fit_result.changed:
+        overshoot_x, overshoot_y = fit_result.overshoot_mm
+        shift_x, shift_y = fit_result.offset_mm
+        subject = "drawing and frame are" if frame_spec is not None else "drawing is"
+        console.print(
+            f"Warning: {subject} {max(overshoot_x, overshoot_y):.3f} mm past the "
+            f"{profile.name} usable area; fitted with scale {fit_result.scale:.3f} "
+            f"and shift ({shift_x:.3f}, {shift_y:.3f}) mm"
+        )
+    return emit_layers, emit_frame, text
+
+
+def _summary_machine_cost(
+    layers: Sequence[GcodeLayer], frame_spec: FrameSpec | None, page_size: tuple[float, float]
+) -> LayerMetrics:
+    """Compute summary metrics from the emitted layers and frame."""
+    plot_strokes = [
+        *([_summary_stroke(frame_spec.points(page_size))] if frame_spec is not None else []),
+        *_summary_strokes(layers),
+    ]
+    return cast(LayerMetrics, compute_machine_cost(insert_pen_up_moves(plot_strokes))["total"])
+
+
+def _write_gcode(text: str, dry_run: bool, output_path: Path | None, drawing_svg: Path) -> None:
+    """Send G-code to stdout or write it to the destination file."""
+    if dry_run:
+        click.echo(text, nl=False)
+        return
+    destination = output_path if output_path is not None else drawing_svg.with_suffix(".gcode")
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(text, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        raise click.ClickException(f"Could not write G-code to {destination}: {exc}") from exc
+    console.print(f"G-code saved to: {destination}")
+
+
+def _print_summary(
+    profile: MachineProfile,
+    placement: PagePlacement,
+    layers: Sequence[GcodeLayer],
+    layer_count: int,
+    total: LayerMetrics,
+    page_size: tuple[float, float],
+) -> None:
+    """Print the placement lines and machine-cost summary on stderr."""
+    bed_width, bed_height = profile.bed.size_mm
+    final_x, final_y = placement.origin_mm
+    console.print(f"Page placed at {final_x:.3f}, {final_y:.3f} (bed {bed_width:g}x{bed_height:g})")
+    (x_min, y_min), (x_max, y_max) = drawing_bounds_pen(layers, profile, page_size, placement)
+    console.print(f"Drawing placed at X {x_min:.3f}..{x_max:.3f}, Y {y_min:.3f}..{y_max:.3f} mm")
+    console.print("G-code summary")
+    console.print(f"  Profile: {profile.name}")
+    console.print(f"  Layers: {layer_count}")
+    console.print(f"  Drawing length: {float(total['drawing_length_mm']):.2f} mm")
+    console.print(f"  Pen-up travel: {float(total['pen_up_travel_mm']):.2f} mm")
+    console.print(f"  Pen lifts: {int(total['num_lifts'])}")
+    console.print(f"  Estimated plot time: {_estimate_plot_seconds(profile, total):.1f} s")
 
 
 @click.command(name="gcode")
@@ -280,137 +453,23 @@ def gcode_cmd(
     and emission. With --dry-run, stdout holds only G-code; every message goes
     to stderr.
     """
-    if place_name is not None and at is not None:
-        raise click.UsageError("--place and --at are mutually exclusive; use one, not both.")
-    if not frame:
-        ctx = click.get_current_context()
-        for name, label in FRAME_OPTIONS:
-            if ctx.get_parameter_source(name) is not ParameterSource.DEFAULT:
-                raise click.UsageError(f"{label} requires --frame.")
-    if profile_name is None:
-        raise click.UsageError(f"Missing option '--profile'. {_available_hint(profiles_path)}")
-
-    if profiles_path is not None and not profiles_path.is_file():
-        raise ProfileValidationError(
-            f"Cannot read profile file {profiles_path}: no such file. "
-            "Pass an existing YAML file to --profiles, or omit it to use the default."
-        )
-
-    try:
-        profile = load_profile(profile_name, profiles_path)
-    except UnknownProfileError as exc:
-        raise click.UsageError(str(exc)) from exc
-    except ProfileError as exc:
-        raise ProfileValidationError(str(exc)) from exc
-
-    if margin_mm is not None:
-        profile = with_margin_mm(profile, margin_mm)
-
-    try:
-        strokes = parse_svg_strokes(drawing_svg)
-    except (ET.ParseError, OSError, ValueError) as exc:
-        raise click.ClickException(f"Could not parse SVG: {exc}") from exc
-    if not strokes:
-        raise click.ClickException(f"No pen strokes found in {drawing_svg}")
-
-    page_size = get_svg_paper_size(drawing_svg)
-    if page_size is None:
-        raise click.ClickException(
-            f"Could not read the page size from {drawing_svg}; set width and height in mm"
-        )
-
+    _validate_run_options(frame, place_name, at)
+    profile = _load_run_profile(profile_name, profiles_path, margin_mm)
+    page_size = _read_drawing_page(drawing_svg)
     frame_spec = (
         FrameSpec(margin_mm=frame_margin_mm, pen=frame_pen_name, pause=frame_pause)
         if frame
         else None
     )
-
-    try:
-        placement = place_page(
-            profile,
-            page_size,
-            place=cast(PlacementName, place_name) if place_name is not None else None,
-            at=at,
-            fit=fit,
-        )
-    except PointOutsideBedError as exc:
-        raise ProfileValidationError(str(exc)) from exc
-    except GcodeError as exc:
-        raise click.UsageError(str(exc)) from exc
-
-    if placement.shifted:
-        requested_x, requested_y = placement.requested_origin_mm
-        final_x, final_y = placement.origin_mm
-        (x_min, y_min), (x_max, y_max) = usable_area(profile)
-        console.print(
-            f"Warning: page at {requested_x:.3f}, {requested_y:.3f} is outside the "
-            f"{profile.name} drawable area X {x_min:.3f}..{x_max:.3f}, "
-            f"Y {y_min:.3f}..{y_max:.3f}; placed at {final_x:.3f}, {final_y:.3f} mm"
-        )
-
+    placement = _place_page_for_run(profile, page_size, place_name, at, fit)
     layers = parse_svg_layers(drawing_svg)
     layer_count = sum(1 for layer in layers if any(len(line) >= 2 for line in layer.polylines))
-    fit_result: FitResult | None = None
-    if fit:
-        try:
-            fit_result = fit_layers_to_drawable(
-                layers, profile, page_size, placement=placement, frame=frame_spec
-            )
-        except GcodeError as exc:
-            raise ProfileValidationError(str(exc)) from exc
-        emit_layers = fit_result.layers
-        emit_frame = fit_result.frame
-    else:
-        emit_layers = layers
-        emit_frame = frame_spec
-    try:
-        text = build_gcode(emit_layers, profile, page_size, placement, frame=emit_frame)
-    except GcodeError as exc:
-        message = str(exc)
-        if not fit:
-            message += " Pass --fit (the default) or use a smaller --paper."
-        raise ProfileValidationError(message) from exc
-
-    if fit_result is not None and fit_result.changed:
-        overshoot_x, overshoot_y = fit_result.overshoot_mm
-        shift_x, shift_y = fit_result.offset_mm
-        subject = "drawing and frame are" if frame_spec is not None else "drawing is"
-        console.print(
-            f"Warning: {subject} {max(overshoot_x, overshoot_y):.3f} mm past the "
-            f"{profile.name} usable area; fitted with scale {fit_result.scale:.3f} "
-            f"and shift ({shift_x:.3f}, {shift_y:.3f}) mm"
-        )
-
-    plot_strokes = [
-        *([_summary_stroke(emit_frame.points(page_size))] if emit_frame is not None else []),
-        *_summary_strokes(emit_layers),
-    ]
-    strokes_with_travel = insert_pen_up_moves(plot_strokes)
-    total = cast(LayerMetrics, compute_machine_cost(strokes_with_travel)["total"])
-
-    if dry_run:
-        click.echo(text, nl=False)
-    else:
-        destination = output_path if output_path is not None else drawing_svg.with_suffix(".gcode")
-        try:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(text, encoding="utf-8", newline="\n")
-        except OSError as exc:
-            raise click.ClickException(f"Could not write G-code to {destination}: {exc}") from exc
-        console.print(f"G-code saved to: {destination}")
-
-    bed_width, bed_height = profile.bed.size_mm
-    final_x, final_y = placement.origin_mm
-    console.print(f"Page placed at {final_x:.3f}, {final_y:.3f} (bed {bed_width:g}x{bed_height:g})")
-    (x_min, y_min), (x_max, y_max) = drawing_bounds_pen(emit_layers, profile, page_size, placement)
-    console.print(f"Drawing placed at X {x_min:.3f}..{x_max:.3f}, Y {y_min:.3f}..{y_max:.3f} mm")
-    console.print("G-code summary")
-    console.print(f"  Profile: {profile.name}")
-    console.print(f"  Layers: {layer_count}")
-    console.print(f"  Drawing length: {float(total['drawing_length_mm']):.2f} mm")
-    console.print(f"  Pen-up travel: {float(total['pen_up_travel_mm']):.2f} mm")
-    console.print(f"  Pen lifts: {int(total['num_lifts'])}")
-    console.print(f"  Estimated plot time: {_estimate_plot_seconds(profile, total):.1f} s")
+    emit_layers, emit_frame, text = _fit_layers_and_build(
+        layers, profile, page_size, placement, fit, frame_spec
+    )
+    total = _summary_machine_cost(emit_layers, emit_frame, page_size)
+    _write_gcode(text, dry_run, output_path, drawing_svg)
+    _print_summary(profile, placement, emit_layers, layer_count, total, page_size)
 
 
 __all__ = ["gcode_cmd"]
