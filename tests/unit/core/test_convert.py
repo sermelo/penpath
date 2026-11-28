@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from io import StringIO
 from pathlib import Path
 
@@ -147,6 +148,40 @@ def test_empty_drawing_writes_no_svg(tmp_path: Path) -> None:
     assert empty.to_svg(output, reporter=reporter) == output
     assert not output.exists()
     assert reporter.starts == []
+
+
+def _decision_points(node: ast.AST) -> int:
+    """Count the branch points that make a function hard to follow."""
+    points = 0
+    for child in ast.walk(node):
+        if isinstance(
+            child,
+            (
+                ast.If,
+                ast.For,
+                ast.AsyncFor,
+                ast.While,
+                ast.IfExp,
+                ast.comprehension,
+                ast.ExceptHandler,
+            ),
+        ):
+            points += 1
+        elif isinstance(child, ast.BoolOp):
+            points += len(child.values) - 1
+    return points
+
+
+def test_convert_functions_stay_small() -> None:
+    """The conversion pipeline stays split into small stage functions."""
+    source = Path(__file__).resolve().parents[3] / "src" / "penpath" / "core" / "convert.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    functions = [
+        node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    assert functions
+    oversized = {node.name: points for node in functions if (points := _decision_points(node)) > 15}
+    assert oversized == {}
 
 
 def test_cli_stage_reporter_satisfies_core_protocol() -> None:
