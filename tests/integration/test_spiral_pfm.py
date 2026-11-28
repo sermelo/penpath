@@ -98,6 +98,45 @@ class TestSpiralConvert:
         assert result.exit_code == 0, result.output
         assert parse_svg_strokes(output)
 
+    @pytest.mark.parametrize("shape", ["ellipse", "cover"])
+    def test_shape_override_converts(self, runner: CliRunner, tmp_path: Path, shape: str) -> None:
+        output = tmp_path / f"{shape}.svg"
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(FACE),
+                "-o",
+                str(output),
+                "--pfm",
+                "spiral_sawtooth",
+                "-s",
+                f"shape={shape}",
+                "--no-vpype",
+                "--quiet",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert parse_svg_strokes(output)
+
+    def test_invalid_shape_is_a_usage_error(self, runner: CliRunner, tmp_path: Path) -> None:
+        result = runner.invoke(
+            main,
+            [
+                "convert",
+                str(FACE),
+                "-o",
+                str(tmp_path / "bad.svg"),
+                "--pfm",
+                "spiral_sawtooth",
+                "-s",
+                "shape=square",
+                "--quiet",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "shape" in result.output
+
     def test_info_lists_spiral_and_qualified_presets(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["info", "pfms", "--format", "json"])
         assert result.exit_code == 0, result.output
