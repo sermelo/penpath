@@ -11,11 +11,11 @@ import click
 from click.core import ParameterSource
 from rich.console import Console
 
+from penpath.api import convert
 from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
 from penpath.core import resolve as _resolve
-from penpath.core.convert import draw_project
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
 from penpath.core.image.load import ImageLoadError
 from penpath.core.image.pipeline import FilterPipeline
@@ -474,16 +474,15 @@ def convert_cmd(
     reporter = StageReporter(Console(stderr=True), quiet=quiet)
     try:
         with reporter:
-            drawing = draw_project(
-                project,
-                max_resolution_px=max_resolution_px,
-                no_downscale=no_downscale,
-                reporter=reporter,
-            )
-            drawing.to_svg(
-                project.output_path,
+            convert(
+                input_path,
+                project=project,
+                dpi=project.image.dpi,
+                output=project.output_path,
                 use_vpype=not no_vpype,
                 vpype_path=vpype_path,
+                max_resolution_px=max_resolution_px,
+                no_downscale=no_downscale,
                 reporter=reporter,
             )
     except ImageLoadError as e:
