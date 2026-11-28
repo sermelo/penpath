@@ -2,6 +2,7 @@
 
 from penpath.core.drawing.outline import OutlineSettings, outline_strokes
 from penpath.core.drawing.pfm_contour import ContourSettings, contour_strokes
+from penpath.core.drawing.pfm_engraving import EngravingSettings, engraving_strokes
 from penpath.core.drawing.pfm_hatch import (
     PALETTE_ANGLE_STEP_DEG,
     HatchSettings,
@@ -31,6 +32,7 @@ __all__ = [
     "PALETTE_ANGLE_STEP_DEG",
     "PIXEL_SETTING_FIELDS",
     "ContourSettings",
+    "EngravingSettings",
     "HatchSettings",
     "OutlineSettings",
     "PFMRegistry",
@@ -41,6 +43,7 @@ __all__ = [
     "StippleSettings",
     "TSPSettings",
     "contour_strokes",
+    "engraving_strokes",
     "get_pfm",
     "get_registry",
     "hatch_strokes",

@@ -239,6 +239,7 @@ class TestInfoPFMs:
             "patch_hatch",
             "tsp",
             "squiggle",
+            "engraving",
         }
         assert rows["sketch_lines"]["settings_model"] == "SketchLinesSettings"
         assert rows["sketch_lines"]["presets"]  # legacy bare names still listed
