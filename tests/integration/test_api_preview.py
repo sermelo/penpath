@@ -73,3 +73,30 @@ def test_public_preview_and_cli_write_the_same_png(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.stderr
     assert api_output.read_bytes() == cli_output.read_bytes()
+
+
+def test_public_preview_renders_a_gcode_file(tmp_path: Path) -> None:
+    svg = tmp_path / "plot.svg"
+    svg.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" '
+        'viewBox="0 0 100 100">'
+        '<g xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" '
+        'inkscape:groupmode="layer" inkscape:label="fine" stroke="#000000" '
+        'stroke-width="1"><path d="M 10 10 L 90 90"/></g>'
+        "</svg>",
+        encoding="utf-8",
+    )
+    gcode = tmp_path / "plot.gcode"
+    result = CliRunner().invoke(main, ["gcode", str(svg), "--profile", "generic", "-o", str(gcode)])
+    assert result.exit_code == 0, result.output
+
+    api_output = preview(gcode, tmp_path / "api.png", px_per_mm=3)
+    cli_output = tmp_path / "cli.png"
+    result = CliRunner().invoke(
+        main, ["preview", str(gcode), "-o", str(cli_output), "--px-per-mm", "3"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert api_output.read_bytes() == cli_output.read_bytes()
+    with Image.open(api_output) as image:
+        assert image.size == (630, 891)
