@@ -278,8 +278,15 @@ def resolve_paper(
     )
 
 
-def _coerce_setting_value(annotation: object, value_str: str, key: str) -> object:
-    """Convert a ``KEY=VALUE`` string using the settings model's field type."""
+def _coerce_setting_value(annotation: object, value_str: object, key: str) -> object:
+    """Convert a CLI string using the settings model's field type.
+
+    Library callers may pass already-typed values; those go straight to model
+    validation instead of being parsed as ``KEY=VALUE`` strings.
+    """
+    if not isinstance(value_str, str):
+        return value_str
+
     origin = get_origin(annotation)
     if origin in (Union, UnionType):
         args = [arg for arg in get_args(annotation) if arg is not NoneType]
@@ -318,11 +325,11 @@ def _coerce_setting_value(annotation: object, value_str: str, key: str) -> objec
 
 def resolve_pfm(
     pfm_name: str | None,
-    pfm_settings: Mapping[str, str],
+    pfm_settings: Mapping[str, object],
     style_name: str | None = None,
     base_pfm: PFMSettingsUnion | None = None,
 ) -> PFMSettingsUnion:
-    """Resolve a registered id, legacy preset, saved look and ``KEY=VALUE`` overrides.
+    """Resolve a registered id, legacy preset, saved look and setting overrides.
 
     An explicit non-default PFM picks the algorithm or preset; otherwise a
     style picks the settings bundle, and settings win on top of either. With a
@@ -469,7 +476,7 @@ def build_project(
     paper: str | None = None,
     palette: str | None = None,
     pen: str | None = None,
-    settings: Mapping[str, str] | None = None,
+    settings: Mapping[str, object] | None = None,
     filters: Iterable[str] | None = None,
     style: StyleName | None = None,
     dpi: int = 300,
