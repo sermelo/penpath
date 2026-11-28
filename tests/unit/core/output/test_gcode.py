@@ -21,6 +21,7 @@ from penpath.core import (
     PlacementName,
     PointOutsideBedError,
     build_gcode,
+    drawing_bounds_pen,
     fit_layers_to_drawable,
     frame_polyline,
     get_svg_paper_size,
@@ -635,6 +636,51 @@ def test_fit_layers_to_drawable_reports_an_empty_drawable_area() -> None:
 
     with pytest.raises(GcodeError, match="no drawable area left"):
         fit_layers_to_drawable(_one_layer(((9.0, 9.0), (10.0, 9.0))), profile, (10.0, 10.0))
+
+
+def test_drawing_bounds_pen_maps_emitted_points_to_pen_space() -> None:
+    layers = _one_layer(
+        ((10.0, 5.0), (30.0, 5.0)),
+        ((20.0, 40.0), (25.0, 40.0)),
+    )
+
+    (x_lo, y_lo), (x_hi, y_hi) = drawing_bounds_pen(layers, _profile(), (50.0, 60.0))
+
+    assert (x_lo, y_lo) == pytest.approx((10.0, 20.0))
+    assert (x_hi, y_hi) == pytest.approx((30.0, 55.0))
+
+
+def test_drawing_bounds_pen_uses_the_fitted_geometry() -> None:
+    profile = _profile()
+    page = (50.0, 50.0)
+    fitted = fit_layers_to_drawable(_one_layer(((0.0, 0.0), (200.0, 50.0))), profile, page)
+
+    assert fitted.changed
+    assert fitted.scale == pytest.approx(0.5)
+    (x_lo, y_lo), (x_hi, y_hi) = drawing_bounds_pen(fitted.layers, profile, page)
+    (u_xlo, u_ylo), (u_xhi, u_yhi) = usable_area(profile)
+    assert u_xlo <= x_lo <= x_hi <= u_xhi
+    assert u_ylo <= y_lo <= y_hi <= u_yhi
+    assert x_hi - x_lo == pytest.approx(100.0)
+    assert y_hi - y_lo == pytest.approx(25.0)
+
+
+def test_drawing_bounds_pen_honours_an_explicit_placement() -> None:
+    profile = _profile()
+    page = (50.0, 60.0)
+    placement = place_page(profile, page, at=(20.0, 10.0))
+
+    (x_lo, y_lo), (x_hi, y_hi) = drawing_bounds_pen(
+        _one_layer(((1.0, 2.0), (3.0, 2.0))), profile, page, placement
+    )
+
+    assert (x_lo, y_lo) == pytest.approx((21.0, 68.0))
+    assert (x_hi, y_hi) == pytest.approx((23.0, 68.0))
+
+
+def test_drawing_bounds_pen_rejects_a_drawing_with_no_drawn_points() -> None:
+    with pytest.raises(GcodeError, match="no drawn points"):
+        drawing_bounds_pen(_one_layer(((1.0, 1.0),)), _profile(), (50.0, 50.0))
 
 
 @pytest.mark.parametrize(

@@ -1222,16 +1222,24 @@ requested origin, the valid X/Y range and the fix (`use --fit (the default)`
 or choose another placement). No `.gcode` file is written in that case. A page
 shift can be followed by a separate drawing-fit warning when both apply.
 
-Every successful run prints one line on stderr, also under `--dry-run`:
+Every successful run prints two lines on stderr, also under `--dry-run`:
 
 ```
 Page placed at 33.650, 59.200 (bed 220x220)
+Drawing placed at X 13.512..187.300, Y 10.000..181.400 mm
 ```
 
+The second line gives the pen-space bounding box of the emitted drawing in
+millimetres at three decimals, after any `--fit` scaling and shift. It uses the
+same page-to-pen mapping as the G-code emitter and excludes the optional frame,
+so the reported ink is exactly where the drawing lands on the bed.
+
 The stderr summary reports the number of layers, drawing length, pen-up travel
-and pen lifts measured from the SVG's strokes, plus an estimated plot time
-from the profile's draw, travel and Z feeds (one down and one up per stroke plus
-a final lift).
+and pen lifts measured from the emitted (post-fit) strokes, not from the input
+SVG, plus an estimated plot time from the profile's draw, travel and Z feeds
+(one down and one up per stroke plus a final lift). With `--fit` the lengths,
+travel and time describe the G-code that was written; without it the same
+definitions apply to the unscaled drawing.
 
 The first G-code line is a header comment written for `penpath preview`. It
 carries the profile name, page size, the effective placement name, the page

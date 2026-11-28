@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
@@ -16,6 +17,7 @@ from penpath.core import (
     FitResult,
     FrameSpec,
     GcodeError,
+    GcodeLayer,
     MachineProfile,
     PlacementName,
     PointOutsideBedError,
@@ -23,6 +25,7 @@ from penpath.core import (
     UnknownProfileError,
     build_gcode,
     compute_machine_cost,
+    drawing_bounds_pen,
     fit_layers_to_drawable,
     get_svg_paper_size,
     list_profiles,
@@ -87,13 +90,23 @@ def _at_callback(
         raise click.BadParameter(str(exc), ctx=ctx, param=param) from exc
 
 
-def _frame_stroke(frame: FrameSpec, page_size_mm: tuple[float, float]) -> PenStroke:
-    """Return the frame as one drawn stroke for the summary's machine cost."""
+def _summary_stroke(points: Sequence[tuple[float, float]]) -> PenStroke:
+    """Return emitted drawn points as one stroke for the summary's machine cost."""
     return PenStroke(
-        [(point[0], point[1]) for point in frame.points(page_size_mm)],
+        [(point[0], point[1]) for point in points],
         FRAME_SUMMARY_WIDTH_MM,
         FRAME_SUMMARY_COLOR,
     )
+
+
+def _summary_strokes(layers: Sequence[GcodeLayer]) -> list[PenStroke]:
+    """Return the emitted layers' drawn polylines as summary strokes."""
+    return [
+        _summary_stroke(polyline)
+        for layer in layers
+        for polyline in layer.polylines
+        if len(polyline) >= 2
+    ]
 
 
 def _available_hint(profiles_path: Path | None) -> str:
@@ -243,7 +256,11 @@ def gcode_cmd(
     bed.page.placement: front-right on the Aquila, origin on generic and ramped.
     A requested page outside the usable area is shifted into it by default with
     a warning on stderr; --no-fit makes it an exit-3 error instead. One
-    ``Page placed at X.XXX, Y.YYY (bed WxH)`` line is always printed on stderr.
+    ``Page placed at X.XXX, Y.YYY (bed WxH)`` line is always printed on stderr,
+    followed by ``Drawing placed at X ... .., Y ... .. mm`` with the pen-space
+    bounds of the emitted drawing after fitting, excluding the frame. The
+    summary below describes that same emitted geometry, not the input SVG, so
+    its lengths, travel and time match the G-code that was written.
 
     With --frame, one closed rectangle is plotted before the drawing, expanded
     from the page by --frame-margin mm on all four sides (0 is the page edge).
@@ -364,12 +381,10 @@ def gcode_cmd(
             f"and shift ({shift_x:.3f}, {shift_y:.3f}) mm"
         )
 
-    drawn_strokes = parse_svg_strokes(drawing_svg)
-    plot_strokes = (
-        [_frame_stroke(frame_spec, page_size), *drawn_strokes]
-        if frame_spec is not None
-        else drawn_strokes
-    )
+    plot_strokes = [
+        *([_summary_stroke(emit_frame.points(page_size))] if emit_frame is not None else []),
+        *_summary_strokes(emit_layers),
+    ]
     strokes_with_travel = insert_pen_up_moves(plot_strokes)
     total = cast(LayerMetrics, compute_machine_cost(strokes_with_travel)["total"])
 
@@ -387,6 +402,8 @@ def gcode_cmd(
     bed_width, bed_height = profile.bed.size_mm
     final_x, final_y = placement.origin_mm
     console.print(f"Page placed at {final_x:.3f}, {final_y:.3f} (bed {bed_width:g}x{bed_height:g})")
+    (x_min, y_min), (x_max, y_max) = drawing_bounds_pen(emit_layers, profile, page_size, placement)
+    console.print(f"Drawing placed at X {x_min:.3f}..{x_max:.3f}, Y {y_min:.3f}..{y_max:.3f} mm")
     console.print("G-code summary")
     console.print(f"  Profile: {profile.name}")
     console.print(f"  Layers: {layer_count}")

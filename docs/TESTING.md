@@ -2003,17 +2003,20 @@ The stderr reported (G-code goes to stdout):
 ```text
 Warning: drawing is 15.417 mm past the aquila usable area; fitted with scale 0.923 and shift (0.000, -0.342) mm
 Page placed at -2.700, 10.000 (bed 220x220)
+Drawing placed at X 20.959..150.588, Y 10.750..180.650 mm
 G-code summary
   Profile: aquila
   Layers: 1
-  Drawing length: 37566.74 mm
+  Drawing length: 34678.38 mm
   Pen-up travel: 0.00 mm
   Pen lifts: 0
-  Estimated plot time: 1503.7 s
+  Estimated plot time: 1388.2 s
 ```
 
 The 190x190 page does not fit the Aquila usable area, so `--fit` scales by 0.923;
-the 10 mm machine margin was not overridden. The lift count is 0 because the
+the 10 mm machine margin was not overridden. The length, travel and time are
+measured from the emitted (post-fit) strokes, and the drawing bounds line gives
+the pen-space rectangle those strokes occupy. The lift count is 0 because the
 whole drawing is one pen-down run.
 
 ### Visual acceptance (required)
