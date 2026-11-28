@@ -1397,7 +1397,7 @@ almost neutral there, and a mostly-white source gives a near-blank plot a high
 score just for agreeing with the paper. `masked_likeness` averages the same
 SSIM map over the source image's ink pixels only, so a blank or near-blank plot
 cannot score well by agreeing with white paper. Ink the plot adds outside the
-source mask is not counted here; the per-layer `Coverage (%)` column and
+source mask is not counted here; the per-layer `Ink %` column and
 `ink_coverage_pct` field remain the place to see it. `edge_likeness` compares
 the Sobel gradient magnitudes of the same two prepared images, so spurious
 structure the original does not have is penalised. All three use the same crop,
