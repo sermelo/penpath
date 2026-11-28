@@ -90,7 +90,7 @@ penpath/
 **Acceptance criterion:** the shipped defaults must pass the SSIM-gated likeness
 test for all five reference images. The enforced floors — SSIM plus covered
 width/height, bounding-box area, ink spread and tone ratio — are recorded in
-[docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47), measured on the
+[docs/TESTING.md](TESTING.md#enforced-gates), measured on the
 same image → SVG → strokes → simulator path used by `penpath convert` and
 `penpath evaluate`. Part 1 (LUC-52) defined the yardstick, part 2 (LUC-53)
 rewrote the algorithm to meet it, and part 3 (LUC-54) calibrated the defaults,
@@ -174,7 +174,7 @@ Eight parts in order, from the approved LUC-51 plan; one pull request each:
 |-----------|--------|-------------|
 | M0: Scaffold | Week 1 | Runnable `penpath config show` |
 | M1: Image Pipeline | Week 2 | `penpath convert --filter grayscale --filter threshold input.png -o out.svg` (no drawing yet) |
-| M2: Sketch Lines | Week 3 | Sketch Lines PFM passes the SSIM-gated likeness test in [docs/TESTING.md](TESTING.md#sketch-lines-likeness-gate-luc-47) for all five reference images |
+| M2: Sketch Lines | Week 3 | Sketch Lines PFM passes the SSIM-gated likeness test in [docs/TESTING.md](TESTING.md#enforced-gates) for all five reference images |
 | M3: Optimized SVG | Week 4 | `penpath convert input.png -o out.svg` produces plottable SVG |
 | M4: Project Files | Week 5 | `penpath convert --project project.yaml` round-trips |
 | M5: Release Prep | Week 6 | PyPI package, docs, CI green |
