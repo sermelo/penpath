@@ -2255,3 +2255,25 @@ One stroke per row as required. `tests/unit/core/drawing/test_pfm_squiggle.py`
 checks rows, straight white rows, more ink for darker tones, waves inside their
 band, the pen-width frequency cap, serpentine order, `skip_white` and angle.
 
+## Engraving measurements (2026-11-28)
+
+Accepted by looking at the previews: on Santa (A4) the straight layout reads
+as a copper-plate portrait, `contour` shows the face best (rings around eyes
+and beard), and `swirl` is a decorative look that reads less well on a
+portrait. Setup: 0.3 mm pen, `penpath evaluate --px-per-mm 3`.
+
+| image | preset / paper | SSIM | ink-only SSIM | strokes | line m | ink % | convert s | peak MB |
+|-------|----------------|------|---------------|---------|--------|-------|-----------|---------|
+| face | straight, A5 | 0.517 | 0.441 | 1,289 | 34.1 | 25.4 | 6.6 | 680 |
+| face | contour, A5 | 0.479 | 0.401 | 783 | 33.6 | 29.7 | 7.4 | 620 |
+| santa | `default`, A4 | 0.412 | 0.359 | 1,965 | 99.3 | 36.4 | 16.8 | 1,050 |
+| santa | `contour`, A4 | 0.400 | 0.347 | 1,558 | 97.7 | 42.9 | 12.5 | 940 |
+| santa | `swirl`, A4 | 0.351 | 0.308 | 13,930 | 141.5 | 46.6 | 38.9 | 1,340 |
+
+The level-line grid makes this PFM memory hungry (about 1 GB on A4); keep
+heavy conversions under a memory cap on shared machines.
+`tests/unit/core/drawing/test_pfm_engraving.py` checks blank input, more ink
+for darker tone, all five strokes one pen width apart at full black, angle,
+hairline, swirl bending, contour rings, bounds, validation, registration and
+the CLI.
+

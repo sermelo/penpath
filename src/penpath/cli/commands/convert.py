@@ -19,6 +19,7 @@ from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
 from penpath.core.drawing.key_layer import key_layer_strokes
+from penpath.core.drawing.pfm_engraving import EngravingSettings
 from penpath.core.drawing.pfm_hatch import (
     PALETTE_ANGLE_STEP_DEG,
     HatchSettings,
@@ -610,7 +611,7 @@ def _run_convert_pipeline(
         }
         if updates:
             pfm_settings = pfm_settings.model_copy(update=updates)
-    # Hatch, Patch Hatch, TSP and Squiggle need the physical scale, which the
+    # Hatch, Patch Hatch, TSP, Squiggle and Engraving need the physical scale, which the
     # serialisable settings do not
     # carry. A palette rotates the angle set per pen so colour layers do not
     # sit exactly on top of one another; a single pen keeps the original angles.
@@ -620,7 +621,8 @@ def _run_convert_pipeline(
         pen_settings = pfm_settings
         pfm_kwargs: dict[str, object] = {}
         if isinstance(
-            pen_settings, (HatchSettings, PatchHatchSettings, TSPSettings, SquiggleSettings)
+            pen_settings,
+            (HatchSettings, PatchHatchSettings, TSPSettings, SquiggleSettings, EngravingSettings),
         ):
             if use_palette and isinstance(pen_settings, HatchSettings):
                 pen_settings = with_angle_offset(pen_settings, index * PALETTE_ANGLE_STEP_DEG)

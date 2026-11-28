@@ -9,6 +9,7 @@ from math import ceil
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 
+from penpath.core.drawing.pfm_engraving import EngravingSettings
 from penpath.core.drawing.pfm_hatch import HatchSettings
 from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings
 from penpath.core.drawing.pfm_squiggle import SquiggleSettings
@@ -240,7 +241,14 @@ def render_contact_sheet(
             settings = entry.settings.model_copy(deep=True)
             pfm_kwargs: dict[str, float] = {}
             if isinstance(
-                settings, (HatchSettings, PatchHatchSettings, TSPSettings, SquiggleSettings)
+                settings,
+                (
+                    HatchSettings,
+                    PatchHatchSettings,
+                    TSPSettings,
+                    SquiggleSettings,
+                    EngravingSettings,
+                ),
             ):
                 pfm_kwargs = {
                     "pixels_per_mm": working_width / TILE_WIDTH_MM,

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from penpath.core.drawing.pfm_contour import ContourSettings, contour_strokes
+from penpath.core.drawing.pfm_engraving import EngravingSettings, engraving_strokes
 from penpath.core.drawing.pfm_hatch import HatchSettings, hatch_strokes
 from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings, patch_hatch_strokes
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
@@ -140,6 +141,7 @@ register_pfm("hatch", hatch_strokes, HatchSettings)
 register_pfm("patch_hatch", patch_hatch_strokes, PatchHatchSettings)
 register_pfm("tsp", tsp_strokes, TSPSettings)
 register_pfm("squiggle", squiggle_strokes, SquiggleSettings)
+register_pfm("engraving", engraving_strokes, EngravingSettings)
 
 __all__ = [
     "PFMRegistry",
