@@ -634,7 +634,7 @@ supplied by `convert`.
 | `max_points` | int | 100–200000 | `30000` | Cap on the number of dots, which bounds run time. |
 | `relax_iterations` | int | 0–50 | `8` | Lloyd iterations that spread the dots evenly. |
 | `two_opt_passes` | int | 0–20 | `6` | 2-opt passes over each dot's nearest neighbours; removes crossings and long jumps. |
-| `closed` | bool | — | `true` | Return to the first dot, closing the loop. |
+| `closed` | bool | — | `false` | Return to the first dot, closing the loop. Off by default: the tour is opened at its longest jump, so no long straight segment crosses the picture. |
 | `seed` | int or `null` | any | `null` | Seed for dot placement; fix it for identical reruns. |
 
 | Preset id | Character |
@@ -644,7 +644,7 @@ supplied by `convert`.
 
 ```bash
 penpath convert photo.jpg --pfm tsp -s seed=42 -o one_line.svg
-penpath convert photo.jpg --pfm tsp:fine -s seed=42 -s closed=false -o open_line.svg
+penpath convert photo.jpg --pfm tsp:fine -s seed=42 -s closed=true -o loop.svg
 ```
 
 #### PFM Settings (Patch Hatch)
