@@ -183,6 +183,11 @@ class ImageRef(BaseModel):
     auto_equalize : bool
         Stretch the working image's luminance range to 0-255 once, before
         palette separation. True by default; old project files load as true.
+    equalize_levels : bool
+        Equalise each pen's image onto the drawing algorithm's own tone steps
+        just before drawing, so every step gets about the same share of the
+        inked pixels (see ``penpath.core.drawing.tone_targets``). False by
+        default.
     background : bool | None
         Mask paper-level pixels before palette separation. ``None`` follows
         the mode: on for a palette, off for a single pen, so old project files
@@ -212,6 +217,7 @@ class ImageRef(BaseModel):
     dpi: int = Field(default=300, ge=72, le=2400)
     auto_orient: bool = True
     auto_equalize: bool = True
+    equalize_levels: bool = False
     background: bool | None = None
     background_threshold: float = Field(
         default=DEFAULT_BACKGROUND_THRESHOLD, ge=0.0, allow_inf_nan=False

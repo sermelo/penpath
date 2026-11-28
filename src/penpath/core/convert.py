@@ -27,6 +27,7 @@ from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.pfm_squiggle import SquiggleSettings
 from penpath.core.drawing.pfm_tsp import TSPSettings
 from penpath.core.drawing.registry import get_pfm
+from penpath.core.drawing.tone_targets import pfm_tone_targets
 from penpath.core.geometry.pipeline import optimize
 from penpath.core.image.background import mask_background
 from penpath.core.image.filters import auto_equalize
@@ -39,6 +40,7 @@ from penpath.core.image.resolution import (
 )
 from penpath.core.image.saturation import NO_BOOST_FACTOR, adapt_saturation, boost_saturation
 from penpath.core.image.separate import separate_palette
+from penpath.core.image.tone_levels import apply_tone_levels
 from penpath.core.models import FitMode, Paper, Pen, Project
 from penpath.core.output.svg import (
     ImagePlacement,
@@ -413,6 +415,8 @@ def draw_project(
                 "pixels_per_mm": pixels_per_mm,
                 "pen_width_mm": pens[index].width_mm,
             }
+        if project.image.equalize_levels:
+            img = apply_tone_levels(img, pfm_tone_targets(pen_settings, pens[index].width_mm))
         lines_by_pen.append(draw_styled_lines(img, pfm_fn, pen_settings, project.style, pfm_kwargs))
     report.finish()
 
