@@ -517,16 +517,18 @@ setting, as with Sketch Lines):
 Select this PFM with `--pfm spiral_sawtooth`. It walks outwards from a centre
 point and draws a radial sawtooth at every step: dark samples make longer teeth
 and slow the angular step, so the spiral follows the image's tones in one
-continuous stroke. Every field of `SpiralSettings` is accepted by `-s
-KEY=VALUE` with the same boolean spellings as Sketch Lines; invalid keys,
-values or out-of-range numbers exit 2 naming the setting.
+continuous stroke. Rings are round by default; `shape` selects how far they
+grow and how the rectangle is filled. Every field of `SpiralSettings` is
+accepted by `-s KEY=VALUE` with the same boolean spellings as Sketch Lines;
+invalid keys, values or out-of-range numbers exit 2 naming the setting.
 
 | Key | Type | Range | Default | Effect |
 |-----|------|-------|---------|--------|
 | `spiral_type` | str | `archimedean`, `parabolic` | `archimedean` | One spiral in one pass, or two opposed branches in two passes. Parabolic also divides ring spacing and velocity by 10 and amplitude by 1.5. |
+| `shape` | str | `circle`, `ellipse`, `cover` | `circle` | Ring geometry. `circle` grows true round rings to the nearest page edge and may leave corners empty; `ellipse` keeps the old per-axis scaling; `cover` grows round rings to the farthest page corner and clips teeth to the page so no corner is left blank. |
 | `centre_x` | float | 0–1 | `0.5` | Centre X as a fraction of image width; `0.5` is the middle. |
 | `centre_y` | float | 0–1 | `0.5` | Centre Y as a fraction of image height; `0.5` is the middle. |
-| `spiral_size` | float | 0.05–1 | `1.0` | Fraction of the largest spiral that fits from the centre, measured against the nearest page edge on each axis with the tooth reach reserved. |
+| `spiral_size` | float | 0.05–1 | `1.0` | Fraction of the largest spiral that fits. For `circle` and `ellipse` this is measured from the centre to the nearest page edge, with the tooth reach reserved; for `cover` it is measured to the farthest page corner, then clipped to the page. |
 | `ring_spacing` | float | >0–1000 px | `7.0` | Distance between turns in working-image pixels; smaller resolves more detail. |
 | `amplitude` | float | 0–10 | `1.0` | Tooth multiplier; a tooth reaches at most `ring_spacing/2 * amplitude` pixels either side of the spiral. |
 | `variable_velocity` | bool | — | `true` | Ease the angular step by luminance; off uses `min_velocity` for every step. |
@@ -538,6 +540,11 @@ values or out-of-range numbers exit 2 naming the setting.
 | `max_strokes` | int or `null` | ≥1 | `null` | Optional cap on emitted strokes, mainly for disconnected output. |
 
 **Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s ring_spacing=5 -s amplitude=0.8`
+
+Round rings fill a landscape photo's corners only with `-s shape=cover`; use
+`-s shape=ellipse` for the pre-LUC-203 stretched look.
+
+**Example**: `penpath convert photo.jpg --pfm spiral_sawtooth -s shape=cover`
 
 #### PFM Settings (Squiggle)
 

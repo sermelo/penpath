@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from pathlib import Path
 
@@ -28,6 +29,14 @@ def _sphere_image(width: int = 100, height: int = 120) -> Image.Image:
     return Image.fromarray(luminance.astype(np.uint8))
 
 
+def _landscape_image(width: int = 160, height: int = 100) -> Image.Image:
+    """Return a landscape image with a dark disc, as an L image."""
+    yy, xx = np.mgrid[0:height, 0:width]
+    disc = ((xx - width / 2) / (width / 4)) ** 2 + ((yy - height / 2) / (height * 3 / 10)) ** 2 < 1
+    luminance = np.where(disc, 30.0, 240.0 - 120.0 * xx / (width - 1))
+    return Image.fromarray(luminance.astype(np.uint8))
+
+
 def _signature(lines: list[LineString]) -> str:
     return repr([tuple(line.coords) for line in lines])
 
@@ -38,6 +47,7 @@ class TestSpiralSettings:
     def test_default_settings(self):
         defaults = {
             "spiral_type": "archimedean",
+            "shape": "circle",
             "centre_x": 0.5,
             "centre_y": 0.5,
             "spiral_size": 1.0,
@@ -59,6 +69,7 @@ class TestSpiralSettings:
         ("kwargs", "message"),
         [
             ({"spiral_type": "logarithmic"}, "spiral_type"),
+            ({"shape": "square"}, "shape"),
             ({"centre_x": -0.01}, "centre_x"),
             ({"centre_x": 1.01}, "centre_x"),
             ({"centre_y": -0.01}, "centre_y"),
@@ -166,6 +177,61 @@ class TestSpiralStrokes:
     def test_ignore_white_on_blank_image_returns_no_strokes(self):
         image = Image.fromarray(np.full((100, 100), 255, dtype=np.uint8))
         assert spiral_strokes(image, SpiralSettings(ignore_white=True)) == []
+
+    def test_ellipse_reproduces_the_previous_geometry(self):
+        lines = spiral_strokes(_landscape_image(), SpiralSettings(shape="ellipse"))
+        signature = hashlib.sha256(_signature(lines).encode()).hexdigest()
+        assert signature == ("218fa5caa83379c3dd017ca4448e0e915fa9668eca50e5ee064a9ea0d0ded297")
+
+    def test_circle_is_round_on_a_landscape_image(self):
+        image = _landscape_image()
+        lines = spiral_strokes(image, SpiralSettings(shape="circle"))
+        assert len(lines) == 1
+        centre_x, centre_y = (image.width - 1) / 2, (image.height - 1) / 2
+        points = [point for line in lines for point in line.coords]
+        horizontal = max(abs(x - centre_x) for x, _ in points)
+        vertical = max(abs(y - centre_y) for _, y in points)
+        defaults = SpiralSettings()
+        tooth_reach = defaults.ring_spacing / 2 * defaults.amplitude
+        assert horizontal > 0.0 and vertical > 0.0
+        assert abs(horizontal - vertical) <= tooth_reach
+
+    def test_cover_reaches_all_corners_and_spans_the_page(self):
+        image = _landscape_image()
+        lines = spiral_strokes(image, SpiralSettings(shape="cover"))
+        assert len(lines) == 1
+        points = [point for line in lines for point in line.coords]
+        assert min(x for x, _ in points) == 0.0
+        assert max(x for x, _ in points) == image.width - 1
+        assert min(y for _, y in points) == 0.0
+        assert max(y for _, y in points) == image.height - 1
+        for near_corner in (
+            lambda x, y: x < image.width * 0.125 and y < image.height * 0.15,
+            lambda x, y: x > image.width * 0.875 and y < image.height * 0.15,
+            lambda x, y: x < image.width * 0.125 and y > image.height * 0.85,
+            lambda x, y: x > image.width * 0.875 and y > image.height * 0.85,
+        ):
+            assert any(near_corner(x, y) for x, y in points)
+
+    @pytest.mark.parametrize("shape", ["circle", "ellipse", "cover"])
+    def test_all_shapes_stay_inside_image_without_zero_segments(self, shape: str):
+        image = _landscape_image()
+        lines = spiral_strokes(image, SpiralSettings(shape=shape))
+        assert lines
+        for line in lines:
+            assert line.length > 0.0
+            for x, y in line.coords:
+                assert 0.0 <= x <= image.width - 1
+                assert 0.0 <= y <= image.height - 1
+            for (x0, y0), (x1, y1) in zip(line.coords, line.coords[1:], strict=False):
+                assert math.hypot(x1 - x0, y1 - y0) > 0.0
+
+    def test_cover_parabolic_stays_one_stroke_per_pass(self):
+        lines = spiral_strokes(
+            _landscape_image(), SpiralSettings(shape="cover", spiral_type="parabolic")
+        )
+        assert 0 < len(lines) <= 2
+        assert all(line.length > 0.0 for line in lines)
 
 
 def test_exports_are_available_from_core():
