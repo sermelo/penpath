@@ -1,5 +1,6 @@
 """Unit tests for penpath.core.image.filters."""
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -642,3 +643,14 @@ class TestHelperFunctions:
         rgb = Image.new("RGB", (1, 1), color=(255, 128, 64))
         result = _grayscale_average(rgb)
         assert result.getpixel((0, 0)) == round((255 + 128 + 64) / 3)
+
+
+def test_auto_equalize_ignores_a_few_extreme_pixels() -> None:
+    """A flat photo with one black speck and one white highlight is stretched."""
+    row = np.linspace(110, 150, 200)
+    values = np.tile(row, (100, 1)).astype(np.uint8)
+    values[0, 0], values[0, 1] = 0, 255
+    image = Image.fromarray(values)
+    assert np.array_equal(np.asarray(auto_equalize(image)), values)  # default: unchanged
+    result = np.asarray(auto_equalize(image, clip_percent=0.5))
+    assert np.percentile(result, 1) < 20 and np.percentile(result, 99) > 235

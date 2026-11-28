@@ -188,6 +188,10 @@ class ImageRef(BaseModel):
         just before drawing, so every step gets about the same share of the
         inked pixels (see ``penpath.core.drawing.tone_targets``). False by
         default.
+    auto_levels_clip : float
+        Percent of pixels ignored at each end when auto equalize measures the
+        tonal range (0 - 10, default 0 = darkest and lightest pixel). 0.5
+        makes it robust to a few extreme pixels.
     max_coverage : float
         Largest share of the paper ink may cover where the source is black,
         measured with the pen width (0 - 1, default 0.8). Lighter tones scale
@@ -223,6 +227,7 @@ class ImageRef(BaseModel):
     auto_orient: bool = True
     auto_equalize: bool = True
     equalize_levels: bool = False
+    auto_levels_clip: float = Field(default=0.0, ge=0.0, le=10.0, allow_inf_nan=False)
     max_coverage: float = Field(default=0.8, gt=0.0, le=1.0, allow_inf_nan=False)
     background: bool | None = None
     background_threshold: float = Field(
