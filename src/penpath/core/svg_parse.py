@@ -353,6 +353,79 @@ def _element_layer_labels(
     return labels
 
 
+def _is_drawable_stroke(
+    element: ET.Element,
+    inherited_fill: str | None,
+    layer: str | None,
+    parent_map: dict[ET.Element, ET.Element],
+) -> bool:
+    """Check visibility, layer selection and fill for a stroke element."""
+    if element.get("display") == "none" or element.get("visibility") == "hidden":
+        return False
+    if _has_hidden_ancestor(element, parent_map):
+        return False
+    if layer is not None and layer not in _element_layer_labels(element, parent_map):
+        return False
+    fill = element.get("fill", inherited_fill)
+    return fill is None or fill == "none"
+
+
+def _element_subpaths(element: ET.Element, tag: str) -> list[list[tuple[float, float]]]:
+    """Extract point lists from a path, polyline, polygon or line element."""
+    if tag == "path":
+        return _parse_path_subpaths(element.get("d", ""))
+    if tag in ("polyline", "polygon"):
+        points = _parse_points(element.get("points", ""))
+        if tag == "polygon":
+            points = _close_points(points)
+        return [points] if len(points) >= 2 else []
+    try:
+        return [
+            [
+                (float(element.get("x1", "0")), float(element.get("y1", "0"))),
+                (float(element.get("x2", "0")), float(element.get("y2", "0"))),
+            ]
+        ]
+    except ValueError:
+        return []
+
+
+def _stroke_style(
+    element: ET.Element,
+    inherited: tuple[str | None, str | None, str | None],
+    parent_map: dict[ET.Element, ET.Element],
+    unit_scale: float,
+) -> tuple[_Transform, str, float]:
+    """Return the transform, colour and stroke width in mm for an element."""
+    inherited_stroke, inherited_width, _ = inherited
+    transform = _element_transform(element, parent_map)
+    color = _parse_color(element.get("stroke", inherited_stroke))
+    width_mm = _length_to_mm(element.get("stroke-width", inherited_width), unit_scale)
+    if width_mm is None or width_mm <= 0:
+        width_mm = unit_scale
+    return transform, color, width_mm
+
+
+def _to_pen_strokes(
+    subpaths: list[list[tuple[float, float]]],
+    transform: _Transform,
+    unit_scale: float,
+    width_mm: float,
+    color: str,
+) -> list[PenStroke]:
+    """Transform subpaths into pen strokes in paper millimetres."""
+    strokes: list[PenStroke] = []
+    for points in subpaths:
+        polyline: list[tuple[float, float]] = []
+        for x, y in points:
+            transformed_x, transformed_y = _apply_transform(transform, x, y)
+            polyline.append((transformed_x * unit_scale, transformed_y * unit_scale))
+        if len(polyline) < 2:
+            continue
+        strokes.append(PenStroke(polyline=polyline, width_mm=width_mm, color=color, pen_up=False))
+    return strokes
+
+
 def parse_svg_strokes(
     svg_path: str | Path,
     layer: str | None = None,
@@ -394,61 +467,14 @@ def parse_svg_strokes(
         tag = _local_name(element.tag).lower()
         if tag not in ("path", "polyline", "polygon", "line"):
             continue
-        if element.get("display") == "none" or element.get("visibility") == "hidden":
+        inherited = _inherited_style(element, parent_map)
+        if not _is_drawable_stroke(element, inherited[2], layer, parent_map):
             continue
-        if _has_hidden_ancestor(element, parent_map):
-            continue
-        if layer is not None and layer not in _element_layer_labels(element, parent_map):
-            continue
-
-        inherited_stroke, inherited_width, inherited_fill = _inherited_style(element, parent_map)
-        fill = element.get("fill", inherited_fill)
-        if fill is not None and fill != "none":
-            continue
-
-        if tag == "path":
-            subpaths = _parse_path_subpaths(element.get("d", ""))
-        elif tag in ("polyline", "polygon"):
-            points = _parse_points(element.get("points", ""))
-            if tag == "polygon":
-                points = _close_points(points)
-            subpaths = [points] if len(points) >= 2 else []
-        else:
-            try:
-                subpaths = [
-                    [
-                        (float(element.get("x1", "0")), float(element.get("y1", "0"))),
-                        (float(element.get("x2", "0")), float(element.get("y2", "0"))),
-                    ]
-                ]
-            except ValueError:
-                subpaths = []
-
+        subpaths = _element_subpaths(element, tag)
         if not subpaths:
             continue
-
-        transform = _element_transform(element, parent_map)
-        stroke_color = _parse_color(element.get("stroke", inherited_stroke))
-        width_value = element.get("stroke-width", inherited_width)
-        width_mm = _length_to_mm(width_value, unit_scale)
-        if width_mm is None or width_mm <= 0:
-            width_mm = unit_scale
-
-        for points in subpaths:
-            polyline: list[tuple[float, float]] = []
-            for x, y in points:
-                transformed_x, transformed_y = _apply_transform(transform, x, y)
-                polyline.append((transformed_x * unit_scale, transformed_y * unit_scale))
-            if len(polyline) < 2:
-                continue
-            strokes.append(
-                PenStroke(
-                    polyline=polyline,
-                    width_mm=width_mm,
-                    color=stroke_color,
-                    pen_up=False,
-                )
-            )
+        transform, color, width_mm = _stroke_style(element, inherited, parent_map, unit_scale)
+        strokes.extend(_to_pen_strokes(subpaths, transform, unit_scale, width_mm, color))
 
     return insert_pen_up_moves(strokes) if include_pen_up else strokes
 
