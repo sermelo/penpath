@@ -131,6 +131,324 @@ def _resolve_output_path(
     return positional_path if positional_path is not None else option_path
 
 
+def _validate_convert_args(
+    ctx: click.Context,
+    input_path: Path,
+    output_path: Path | None,
+    output_option: Path | None,
+    margin_spec: str | None,
+    max_resolution_px: int | None,
+    background_threshold: float | None,
+    saturation: float,
+    pen_spec: str | None,
+    palette_spec: str | None,
+) -> tuple[bool, bool, float | tuple[float, float, float, float] | None, Path | None]:
+    """Validate scalar flags, pen/palette exclusivity, margins and output paths."""
+    if max_resolution_px is not None and max_resolution_px <= 0:
+        raise click.BadParameter(
+            "must be a positive number of pixels", param_hint="--max-resolution"
+        )
+
+    if background_threshold is not None and (
+        not math.isfinite(background_threshold) or background_threshold < 0
+    ):
+        raise click.BadParameter(
+            "must be a finite, non-negative Lab distance", param_hint="--background-threshold"
+        )
+
+    explicit_background_method = (
+        ctx.get_parameter_source("background_method") is ParameterSource.COMMANDLINE
+    )
+    explicit_saturation = ctx.get_parameter_source("saturation") is ParameterSource.COMMANDLINE
+    if not math.isfinite(saturation) or not 0.0 <= saturation <= 3.0:
+        raise click.BadParameter("must be a finite number in [0, 3]", param_hint="--saturation")
+
+    try:
+        _resolve.check_pen_palette_conflict(pen_spec, palette_spec)
+    except _resolve.ResolutionError as e:
+        raise click.UsageError(e.message) from e
+
+    margins = (
+        _parse_margin_parts(margin_spec.split(","), "--margin") if margin_spec is not None else None
+    )
+    resolved_output = _resolve_output_path(input_path, output_path, output_option)
+    return explicit_background_method, explicit_saturation, margins, resolved_output
+
+
+def _override_project_selection(
+    project: Project,
+    config: Config,
+    *,
+    filter_specs: tuple[str, ...],
+    style_name: StyleName | None,
+    pfm_name: str | None,
+    pfm_settings: tuple[str, ...],
+    pen_spec: str | None,
+    palette_spec: str | None,
+    paper_spec: str | None,
+    resolved_output: Path | None,
+) -> None:
+    """Apply filter, PFM, pen, palette, paper and output flags to a loaded project."""
+    if filter_specs:
+        project.image.filters = _build_filter_pipeline(list(filter_specs))
+    if style_name is not None:
+        project.style = style_name
+    if pfm_name or pfm_settings or style_name:
+        project.pfm = _resolve_pfm(
+            pfm_name,
+            _parse_pfm_settings(pfm_settings),
+            style_name,
+            base_pfm=project.pfm if not (pfm_name or style_name) else None,
+        )
+    if pen_spec:
+        project.pen = _resolve_pen(pen_spec, config)
+    if palette_spec:
+        _apply_palette(project, _resolve_palette(palette_spec))
+    if paper_spec:
+        project.paper = _resolve_paper(paper_spec, config)
+    if resolved_output:
+        project.output_path = resolved_output
+
+
+def _override_project_processing(
+    project: Project,
+    *,
+    dpi: int,
+    no_auto_orient: bool,
+    auto_equalize_flag: bool | None,
+    equalize_levels_flag: bool | None,
+    auto_levels_clip_opt: float | None,
+    max_coverage_opt: float | None,
+    key_layer_flag: bool | None,
+) -> None:
+    """Apply image-processing flags to a loaded project."""
+    if dpi != 300:
+        project.image.dpi = dpi
+    if no_auto_orient:
+        project.image.auto_orient = False
+    if auto_equalize_flag is not None:
+        project.image.auto_equalize = auto_equalize_flag
+    if equalize_levels_flag is not None:
+        project.image.equalize_levels = equalize_levels_flag
+    if auto_levels_clip_opt is not None:
+        project.image.auto_levels_clip = auto_levels_clip_opt
+    if max_coverage_opt is not None:
+        project.image.max_coverage = max_coverage_opt
+    if key_layer_flag is not None:
+        project.image.key_layer = key_layer_flag
+
+
+def _override_project_background(
+    project: Project,
+    *,
+    background_flag: bool | None,
+    background_threshold: float | None,
+    explicit_background_method: bool,
+    background_method: Literal["global", "local"],
+    saturation: float,
+    explicit_saturation: bool,
+    palette_adapt: bool,
+) -> None:
+    """Apply background and saturation flags to a loaded project."""
+    if background_flag is not None:
+        project.image.background = background_flag
+    if background_threshold is not None:
+        project.image.background_threshold = background_threshold
+        if background_flag is None:
+            project.image.background = True
+    if explicit_background_method:
+        project.image.background_method = background_method
+        if background_flag is None:
+            project.image.background = True
+    if explicit_saturation:
+        project.image.saturation = saturation
+        project.image.palette_adapt = False
+    elif palette_adapt:
+        project.image.palette_adapt = True
+        project.image.saturation = 1.0
+
+
+def _load_project_with_overrides(
+    project_path: Path,
+    input_path: Path,
+    config: Config,
+    *,
+    filter_specs: tuple[str, ...],
+    style_name: StyleName | None,
+    pfm_name: str | None,
+    pfm_settings: tuple[str, ...],
+    pen_spec: str | None,
+    palette_spec: str | None,
+    paper_spec: str | None,
+    resolved_output: Path | None,
+    dpi: int,
+    no_auto_orient: bool,
+    auto_equalize_flag: bool | None,
+    equalize_levels_flag: bool | None,
+    auto_levels_clip_opt: float | None,
+    max_coverage_opt: float | None,
+    background_flag: bool | None,
+    key_layer_flag: bool | None,
+    background_threshold: float | None,
+    explicit_background_method: bool,
+    background_method: Literal["global", "local"],
+    saturation: float,
+    explicit_saturation: bool,
+    palette_adapt: bool,
+) -> Project:
+    """Load a project YAML and override its settings with CLI flags."""
+    try:
+        project = load_yaml(project_path)
+    except ProjectLoadError as e:
+        raise click.ClickException(f"Failed to load project: {e}") from e
+
+    _override_project_selection(
+        project,
+        config,
+        filter_specs=filter_specs,
+        style_name=style_name,
+        pfm_name=pfm_name,
+        pfm_settings=pfm_settings,
+        pen_spec=pen_spec,
+        palette_spec=palette_spec,
+        paper_spec=paper_spec,
+        resolved_output=resolved_output,
+    )
+    _override_project_processing(
+        project,
+        dpi=dpi,
+        no_auto_orient=no_auto_orient,
+        auto_equalize_flag=auto_equalize_flag,
+        equalize_levels_flag=equalize_levels_flag,
+        auto_levels_clip_opt=auto_levels_clip_opt,
+        max_coverage_opt=max_coverage_opt,
+        key_layer_flag=key_layer_flag,
+    )
+    _override_project_background(
+        project,
+        background_flag=background_flag,
+        background_threshold=background_threshold,
+        explicit_background_method=explicit_background_method,
+        background_method=background_method,
+        saturation=saturation,
+        explicit_saturation=explicit_saturation,
+        palette_adapt=palette_adapt,
+    )
+    project.image.path = input_path  # Always use CLI input path
+    return project
+
+
+def _build_project_from_args(
+    input_path: Path,
+    config: Config,
+    *,
+    pfm_name: str | None,
+    paper_spec: str | None,
+    palette_spec: str | None,
+    pen_spec: str | None,
+    pfm_settings: tuple[str, ...],
+    filter_specs: tuple[str, ...],
+    style_name: StyleName | None,
+    dpi: int,
+    resolved_output: Path | None,
+    background_flag: bool | None,
+    background_threshold: float | None,
+    background_method: Literal["global", "local"],
+    explicit_background_method: bool,
+    saturation: float,
+    explicit_saturation: bool,
+    palette_adapt: bool,
+    key_layer_flag: bool | None,
+    no_auto_orient: bool,
+    auto_equalize_flag: bool | None,
+    equalize_levels_flag: bool | None,
+    auto_levels_clip_opt: float | None,
+    max_coverage_opt: float | None,
+) -> Project:
+    """Build a project from CLI flags when no project file is given."""
+    try:
+        return _resolve.build_project(
+            input_path,
+            pfm=pfm_name,
+            paper=paper_spec,
+            palette=palette_spec,
+            pen=pen_spec,
+            settings=_parse_pfm_settings(pfm_settings),
+            filters=list(filter_specs) if filter_specs else None,
+            style=style_name,
+            dpi=dpi,
+            output_path=resolved_output,
+            background=background_flag,
+            background_threshold=background_threshold,
+            background_method=background_method if explicit_background_method else None,
+            saturation=saturation if explicit_saturation else None,
+            palette_adapt=palette_adapt,
+            key_layer=key_layer_flag,
+            auto_orient=not no_auto_orient,
+            auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
+            equalize_levels=bool(equalize_levels_flag),
+            auto_levels_clip=auto_levels_clip_opt or 0.0,
+            max_coverage=0.8 if max_coverage_opt is None else max_coverage_opt,
+            default_pen=config.default_pen,
+            default_paper=config.default_paper,
+            pen_presets=config.pens,
+            paper_presets=config.papers,
+        )
+    except _resolve.ResolutionError as e:
+        raise _click_error(e) from e
+
+
+def _finalize_paper(
+    project: Project,
+    margins: float | tuple[float, float, float, float] | None,
+    fit_mode: Literal["fit", "fill", "none"] | None,
+    paper_spec: str | None,
+) -> None:
+    """Apply margin and fit overrides, then check the paper has room to draw."""
+    if margins is not None:
+        project.paper.margin_mm = margins
+    if fit_mode is not None:
+        project.paper.fit = fit_mode
+    margin_hint = "--margin" if margins is not None else "--paper" if paper_spec else "paper"
+    _check_drawable_area(project.paper, margin_hint)
+
+
+def _run_conversion(
+    input_path: Path,
+    project: Project,
+    *,
+    no_vpype: bool,
+    vpype_path: str,
+    max_resolution_px: int | None,
+    no_downscale: bool,
+    quiet: bool,
+) -> None:
+    """Run the conversion pipeline and report stages and the result on stderr."""
+    # Report to stderr so stdout stays clean for pipelines and agents. The
+    # console is created here so its terminal detection sees the current stderr.
+    reporter = StageReporter(Console(stderr=True), quiet=quiet)
+    try:
+        with reporter:
+            convert(
+                input_path,
+                project=project,
+                dpi=project.image.dpi,
+                output=project.output_path,
+                use_vpype=not no_vpype,
+                vpype_path=vpype_path,
+                max_resolution_px=max_resolution_px,
+                no_downscale=no_downscale,
+                reporter=reporter,
+            )
+    except ImageLoadError as e:
+        raise click.ClickException(f"Image load error: {e}") from e
+    except Exception as e:
+        raise click.ClickException(f"Conversion failed: {e}") from e
+
+    reporter.summary()
+    reporter.message(f"[green]✓[/green] SVG saved to: {project.output_path}")
+
+
 @click.command(name="convert")
 @click.argument("input_path", type=click.Path(exists=True, path_type=Path))
 @click.argument("output_path", required=False, type=click.Path(path_type=Path))
@@ -366,160 +684,93 @@ def convert_cmd(
     INPUT_PATH: Path to input image (PNG, JPG, TIFF, BMP)
     OUTPUT_PATH: Output SVG path (default: <input>_plot.svg beside input)
     """
-    if max_resolution_px is not None and max_resolution_px <= 0:
-        raise click.BadParameter(
-            "must be a positive number of pixels", param_hint="--max-resolution"
-        )
-
-    if background_threshold is not None and (
-        not math.isfinite(background_threshold) or background_threshold < 0
-    ):
-        raise click.BadParameter(
-            "must be a finite, non-negative Lab distance", param_hint="--background-threshold"
-        )
-
-    explicit_background_method = (
-        ctx.get_parameter_source("background_method") is ParameterSource.COMMANDLINE
+    (
+        explicit_background_method,
+        explicit_saturation,
+        margins,
+        resolved_output,
+    ) = _validate_convert_args(
+        ctx,
+        input_path,
+        output_path,
+        output_option,
+        margin_spec,
+        max_resolution_px,
+        background_threshold,
+        saturation,
+        pen_spec,
+        palette_spec,
     )
-    explicit_saturation = ctx.get_parameter_source("saturation") is ParameterSource.COMMANDLINE
-    if not math.isfinite(saturation) or not 0.0 <= saturation <= 3.0:
-        raise click.BadParameter("must be a finite number in [0, 3]", param_hint="--saturation")
-
-    try:
-        _resolve.check_pen_palette_conflict(pen_spec, palette_spec)
-    except _resolve.ResolutionError as e:
-        raise click.UsageError(e.message) from e
-
-    margins = (
-        _parse_margin_parts(margin_spec.split(","), "--margin") if margin_spec is not None else None
-    )
-
-    resolved_output = _resolve_output_path(input_path, output_path, output_option)
 
     # Load config
     config = load_config(config_path)
 
-    # If project file provided, load it and override with CLI flags
     if project_path:
-        try:
-            project = load_yaml(project_path)
-        except ProjectLoadError as e:
-            raise click.ClickException(f"Failed to load project: {e}") from e
-
-        # Override with CLI flags
-        if filter_specs:
-            project.image.filters = _build_filter_pipeline(list(filter_specs))
-        if style_name is not None:
-            project.style = style_name
-        if pfm_name or pfm_settings or style_name:
-            parsed_settings = _parse_pfm_settings(pfm_settings)
-            project.pfm = _resolve_pfm(
-                pfm_name,
-                parsed_settings,
-                style_name,
-                base_pfm=project.pfm if not (pfm_name or style_name) else None,
-            )
-        if pen_spec:
-            project.pen = _resolve_pen(pen_spec, config)
-        if palette_spec:
-            _apply_palette(project, _resolve_palette(palette_spec))
-        if paper_spec:
-            project.paper = _resolve_paper(paper_spec, config)
-        if resolved_output:
-            project.output_path = resolved_output
-        if dpi != 300:
-            project.image.dpi = dpi
-        if no_auto_orient:
-            project.image.auto_orient = False
-        if auto_equalize_flag is not None:
-            project.image.auto_equalize = auto_equalize_flag
-        if equalize_levels_flag is not None:
-            project.image.equalize_levels = equalize_levels_flag
-        if auto_levels_clip_opt is not None:
-            project.image.auto_levels_clip = auto_levels_clip_opt
-        if max_coverage_opt is not None:
-            project.image.max_coverage = max_coverage_opt
-        if background_flag is not None:
-            project.image.background = background_flag
-        if key_layer_flag is not None:
-            project.image.key_layer = key_layer_flag
-        if background_threshold is not None:
-            project.image.background_threshold = background_threshold
-            if background_flag is None:
-                project.image.background = True
-        if explicit_background_method:
-            project.image.background_method = background_method
-            if background_flag is None:
-                project.image.background = True
-        if explicit_saturation:
-            project.image.saturation = saturation
-            project.image.palette_adapt = False
-        elif palette_adapt:
-            project.image.palette_adapt = True
-            project.image.saturation = 1.0
-        project.image.path = input_path  # Always use CLI input path
+        project = _load_project_with_overrides(
+            project_path,
+            input_path,
+            config,
+            filter_specs=filter_specs,
+            style_name=style_name,
+            pfm_name=pfm_name,
+            pfm_settings=pfm_settings,
+            pen_spec=pen_spec,
+            palette_spec=palette_spec,
+            paper_spec=paper_spec,
+            resolved_output=resolved_output,
+            dpi=dpi,
+            no_auto_orient=no_auto_orient,
+            auto_equalize_flag=auto_equalize_flag,
+            equalize_levels_flag=equalize_levels_flag,
+            auto_levels_clip_opt=auto_levels_clip_opt,
+            max_coverage_opt=max_coverage_opt,
+            background_flag=background_flag,
+            key_layer_flag=key_layer_flag,
+            background_threshold=background_threshold,
+            explicit_background_method=explicit_background_method,
+            background_method=background_method,
+            saturation=saturation,
+            explicit_saturation=explicit_saturation,
+            palette_adapt=palette_adapt,
+        )
     else:
-        try:
-            project = _resolve.build_project(
-                input_path,
-                pfm=pfm_name,
-                paper=paper_spec,
-                palette=palette_spec,
-                pen=pen_spec,
-                settings=_parse_pfm_settings(pfm_settings),
-                filters=list(filter_specs) if filter_specs else None,
-                style=style_name,
-                dpi=dpi,
-                output_path=resolved_output,
-                background=background_flag,
-                background_threshold=background_threshold,
-                background_method=background_method if explicit_background_method else None,
-                saturation=saturation if explicit_saturation else None,
-                palette_adapt=palette_adapt,
-                key_layer=key_layer_flag,
-                auto_orient=not no_auto_orient,
-                auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
-                equalize_levels=bool(equalize_levels_flag),
-                auto_levels_clip=auto_levels_clip_opt or 0.0,
-                max_coverage=0.8 if max_coverage_opt is None else max_coverage_opt,
-                default_pen=config.default_pen,
-                default_paper=config.default_paper,
-                pen_presets=config.pens,
-                paper_presets=config.papers,
-            )
-        except _resolve.ResolutionError as e:
-            raise _click_error(e) from e
+        project = _build_project_from_args(
+            input_path,
+            config,
+            pfm_name=pfm_name,
+            paper_spec=paper_spec,
+            palette_spec=palette_spec,
+            pen_spec=pen_spec,
+            pfm_settings=pfm_settings,
+            filter_specs=filter_specs,
+            style_name=style_name,
+            dpi=dpi,
+            resolved_output=resolved_output,
+            background_flag=background_flag,
+            background_threshold=background_threshold,
+            background_method=background_method,
+            explicit_background_method=explicit_background_method,
+            saturation=saturation,
+            explicit_saturation=explicit_saturation,
+            palette_adapt=palette_adapt,
+            key_layer_flag=key_layer_flag,
+            no_auto_orient=no_auto_orient,
+            auto_equalize_flag=auto_equalize_flag,
+            equalize_levels_flag=equalize_levels_flag,
+            auto_levels_clip_opt=auto_levels_clip_opt,
+            max_coverage_opt=max_coverage_opt,
+        )
 
-    if margins is not None:
-        project.paper.margin_mm = margins
-    if fit_mode is not None:
-        project.paper.fit = fit_mode
-    margin_hint = "--margin" if margins is not None else "--paper" if paper_spec else "paper"
-    _check_drawable_area(project.paper, margin_hint)
-
-    # Report to stderr so stdout stays clean for pipelines and agents. The
-    # console is created here so its terminal detection sees the current stderr.
-    reporter = StageReporter(Console(stderr=True), quiet=quiet)
-    try:
-        with reporter:
-            convert(
-                input_path,
-                project=project,
-                dpi=project.image.dpi,
-                output=project.output_path,
-                use_vpype=not no_vpype,
-                vpype_path=vpype_path,
-                max_resolution_px=max_resolution_px,
-                no_downscale=no_downscale,
-                reporter=reporter,
-            )
-    except ImageLoadError as e:
-        raise click.ClickException(f"Image load error: {e}") from e
-    except Exception as e:
-        raise click.ClickException(f"Conversion failed: {e}") from e
-
-    reporter.summary()
-    reporter.message(f"[green]✓[/green] SVG saved to: {project.output_path}")
+    _finalize_paper(project, margins, fit_mode, paper_spec)
+    _run_conversion(
+        input_path,
+        project,
+        no_vpype=no_vpype,
+        vpype_path=vpype_path,
+        max_resolution_px=max_resolution_px,
+        no_downscale=no_downscale,
+        quiet=quiet,
+    )
 
 
 __all__ = ["convert_cmd"]
