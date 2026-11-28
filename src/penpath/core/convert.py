@@ -9,12 +9,16 @@ same bytes as before this module was extracted.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
+from PIL import Image
 from shapely import LineString
 
+from penpath.core.coverage import calibrate_darkness_scale, cap_coverage, scale_darkness
 from penpath.core.drawing.key_layer import key_layer_strokes
 from penpath.core.drawing.pfm_engraving import EngravingSettings
 from penpath.core.drawing.pfm_hatch import (
@@ -24,6 +28,7 @@ from penpath.core.drawing.pfm_hatch import (
 )
 from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings, with_layer_angle_offset
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
+from penpath.core.drawing.pfm_spiral import SpiralSettings
 from penpath.core.drawing.pfm_squiggle import SquiggleSettings
 from penpath.core.drawing.pfm_tsp import TSPSettings
 from penpath.core.drawing.registry import get_pfm
@@ -227,6 +232,56 @@ class Drawing:
         return output_path
 
 
+_CALIBRATED_SETTINGS = (
+    HatchSettings,
+    PatchHatchSettings,
+    EngravingSettings,
+    SquiggleSettings,
+    SpiralSettings,
+)
+"""Algorithms whose regular structure is thinned by calibration, not by stroke removal."""
+
+
+def _draw_with(
+    image: Image.Image,
+    *,
+    pfm_fn: Callable[..., list[LineString]],
+    settings: object,
+    style: object,
+    kwargs: dict[str, object],
+) -> list[LineString]:
+    """Run one PFM (with its style) on ``image``; used as a bound draw function."""
+    return draw_styled_lines(image, pfm_fn, settings, style, kwargs)  # type: ignore[arg-type]
+
+
+def _draw_capped(
+    image: Image.Image,
+    draw: Callable[[Image.Image], list[LineString]],
+    max_coverage: float,
+    pixels_per_mm: float,
+    pen_width_mm: float,
+    calibrate: bool,
+) -> list[LineString]:
+    """Draw ``image`` so black covers at most ``max_coverage`` of the paper.
+
+    With ``calibrate`` (algorithms with a regular line structure), a darkness
+    scale is first found on a black test patch and the image is scaled by
+    it, so the structure thins evenly. Then, for every algorithm, the latest
+    strokes are removed wherever the real coverage still exceeds the cap
+    (see :mod:`penpath.core.coverage`).
+    """
+    if max_coverage >= 1.0:
+        return draw(image)
+    if calibrate:
+        scale = calibrate_darkness_scale(draw, max_coverage, pixels_per_mm, pen_width_mm)
+        if scale < 1.0:
+            image = scale_darkness(image, scale)
+    lines = draw(image)
+    return cap_coverage(
+        lines, (image.height, image.width), pixels_per_mm, pen_width_mm, max_coverage
+    )
+
+
 def draw_project(
     project: Project,
     *,
@@ -417,7 +472,19 @@ def draw_project(
             }
         if project.image.equalize_levels:
             img = apply_tone_levels(img, pfm_tone_targets(pen_settings, pens[index].width_mm))
-        lines_by_pen.append(draw_styled_lines(img, pfm_fn, pen_settings, project.style, pfm_kwargs))
+        draw_pen = partial(
+            _draw_with, pfm_fn=pfm_fn, settings=pen_settings, style=project.style, kwargs=pfm_kwargs
+        )
+        lines_by_pen.append(
+            _draw_capped(
+                img,
+                draw_pen,
+                project.image.max_coverage,
+                pixels_per_mm,
+                pens[index].width_mm,
+                isinstance(pen_settings, _CALIBRATED_SETTINGS),
+            )
+        )
     report.finish()
 
     drawing_pens = order_pens_for_drawing(pens)

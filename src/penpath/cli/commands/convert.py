@@ -159,6 +159,16 @@ def _resolve_output_path(
     help="Normalize tonal range before drawing (default: on; use --no-auto-equalize to keep tones)",
 )
 @click.option(
+    "--max-coverage",
+    "max_coverage_opt",
+    type=click.FloatRange(0.0, 1.0, min_open=True),
+    default=None,
+    help=(
+        "Largest share of the paper ink may cover where the image is black, measured "
+        "with the pen width (default: 0.8; 1 turns the cap off)"
+    ),
+)
+@click.option(
     "--equalize-levels/--no-equalize-levels",
     "equalize_levels_flag",
     default=None,
@@ -317,6 +327,7 @@ def convert_cmd(
     no_auto_orient: bool,
     auto_equalize_flag: bool | None,
     equalize_levels_flag: bool | None,
+    max_coverage_opt: float | None,
     background_flag: bool | None,
     background_threshold: float | None,
     background_method: Literal["global", "local"],
@@ -413,6 +424,8 @@ def convert_cmd(
             project.image.auto_equalize = auto_equalize_flag
         if equalize_levels_flag is not None:
             project.image.equalize_levels = equalize_levels_flag
+        if max_coverage_opt is not None:
+            project.image.max_coverage = max_coverage_opt
         if background_flag is not None:
             project.image.background = background_flag
         if key_layer_flag is not None:
@@ -454,6 +467,7 @@ def convert_cmd(
                 auto_orient=not no_auto_orient,
                 auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
                 equalize_levels=bool(equalize_levels_flag),
+                max_coverage=0.8 if max_coverage_opt is None else max_coverage_opt,
                 default_pen=config.default_pen,
                 default_paper=config.default_paper,
                 pen_presets=config.pens,

@@ -57,6 +57,7 @@ _VALUE_OPTIONS = frozenset(
         "--pen",
         "--palette",
         "--paper",
+        "--max-coverage",
         "--pfm",
         "--style",
         "--max-resolution",
