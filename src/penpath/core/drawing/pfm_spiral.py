@@ -7,9 +7,12 @@ sampled luminance and the step length follows an ease-in-sine velocity curve.
 As with the Sketch Lines and Sketch Squares ports, the ported logic follows
 DrawingBotV3's GPL-3.0 licence handling (see the repository LICENSE).
 
-Penpath builds the spiral in normalised coordinates and scales it to the
-nearest page edge on each axis, so the default spiral stays on the page and
-connected output is a single stroke; DrawingBotV3 stops at the far corner.
+Penpath builds the spiral in normalised coordinates. ``shape="circle"`` (the
+default) grows true circular rings out to the nearest page edge,
+``shape="ellipse"`` keeps the original per-axis scaling, and
+``shape="cover"`` grows circular rings out to the farthest page corner with
+teeth clipped to the page. Connected output is one stroke (parabolic at most
+two); DrawingBotV3 stops at the far corner without clipping.
 """
 
 from __future__ import annotations
@@ -25,9 +28,11 @@ if TYPE_CHECKING:
     from PIL import Image
 
 SpiralType = Literal["archimedean", "parabolic"]
+SpiralShape = Literal["circle", "ellipse", "cover"]
 _PathPoint = tuple[float, float]
 _WHITE_MASK = 240.0
 _MAX_STEPS = 2_000_000
+_COVER_MIN_STEP = 1.5
 
 
 class SpiralSettings(BaseModel):
@@ -37,14 +42,19 @@ class SpiralSettings(BaseModel):
     ----------
     spiral_type : Literal["archimedean", "parabolic"]
         One spiral in one pass, or the reference's two opposed branches in two.
+    shape : Literal["circle", "ellipse", "cover"]
+        Ring geometry. ``circle`` (default) grows round rings to the nearest
+        page edge; ``ellipse`` keeps the original per-axis scaling; ``cover``
+        grows round rings to the farthest corner and clips teeth to the page.
     centre_x : float
         Centre X as a fraction of image width (0 - 1); 0.5 is the middle.
     centre_y : float
         Centre Y as a fraction of image height (0 - 1); 0.5 is the middle.
     spiral_size : float
         Fraction (0.05 - 1) of the largest spiral that fits from the centre.
-        Penpath measures against the nearest page edge on each axis, not
-        DrawingBotV3's far corner, so the default spiral stays on the page.
+        ``circle`` and ``ellipse`` measure against the nearest page edge;
+        ``cover`` measures against the farthest page corner. The tooth reach
+        is reserved so teeth stay on the page for circle and ellipse.
     ring_spacing : float
         Distance between turns in working-image pixels (>0 - 1000); smaller
         values resolve more detail.
@@ -72,6 +82,7 @@ class SpiralSettings(BaseModel):
     """
 
     spiral_type: SpiralType = "archimedean"
+    shape: SpiralShape = "circle"
     centre_x: float = Field(default=0.5, ge=0.0, le=1.0)
     centre_y: float = Field(default=0.5, ge=0.0, le=1.0)
     spiral_size: float = Field(default=1.0, ge=0.05, le=1.0)
@@ -102,11 +113,16 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
     luminance is averaged with the previous sample, and the result sets both
     the radial tooth length (dark = long) and the ease-in-sine step velocity.
     Parabolic runs the reference's two passes with ring spacing and velocity
-    divided by 10 and amplitude divided by 1.5. Coordinates are in image
-    pixels (origin top-left), always inside ``[0, width-1] x [0, height-1]``:
-    teeth reaching the page edge are clamped to it so a connected pass stays
-    one stroke, while teeth skipped over white paper (``ignore_white``) close
-    a stroke, and duplicate consecutive points are dropped.
+    divided by 10 and amplitude divided by 1.5. ``shape="circle"`` grows round
+    rings to the nearest page edge, ``shape="ellipse"`` keeps the original
+    per-axis scaling and ``shape="cover"`` grows round rings to the farthest
+    corner with every point clipped to the page. Coordinates are in image pixels
+    (origin top-left), always inside ``[0, width-1] x [0, height-1]``: teeth
+    reaching the page edge are clamped to it so a connected pass stays one
+    stroke, while teeth skipped over white paper (``ignore_white``) close a
+    stroke, and duplicate consecutive points are dropped. For ``cover``,
+    clamped teeth that barely advance are dropped too, so the clipped rings have
+    no sub-pixel segments.
 
     Parameters
     ----------
@@ -133,11 +149,24 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
         return []
 
     scale = min(scale_x, scale_y)
+    shape = settings.shape
     parabolic = settings.spiral_type == "parabolic"
     ring_spacing = settings.ring_spacing / 10.0 if parabolic else settings.ring_spacing
     amplitude = settings.amplitude / 1.5 if parabolic else settings.amplitude
     tooth_reach = (ring_spacing / 2.0) * amplitude
-    end_radius = scale * settings.spiral_size - tooth_reach * (max(scale_x, scale_y) / scale)
+    if shape == "cover":
+        base_radius = math.hypot(
+            max(centre_x, (width - 1) - centre_x),
+            max(centre_y, (height - 1) - centre_y),
+        )
+    else:
+        base_radius = scale
+    if shape == "ellipse":
+        end_radius = base_radius * settings.spiral_size - tooth_reach * (
+            max(scale_x, scale_y) / scale
+        )
+    else:
+        end_radius = base_radius * settings.spiral_size - tooth_reach
     if end_radius <= 0.0:
         return []
     min_velocity = settings.min_velocity / 10.0 if parabolic else settings.min_velocity
@@ -157,8 +186,18 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
         current = []
 
     def append(point: _PathPoint) -> None:
-        if not current or current[-1] != point:
+        if not current:
             current.append(point)
+            return
+        last = current[-1]
+        if last == point:
+            return
+        if (
+            shape == "cover"
+            and math.hypot(point[0] - last[0], point[1] - last[1]) < _COVER_MIN_STEP
+        ):
+            return
+        current.append(point)
 
     def clamp_to_page(point: _PathPoint) -> _PathPoint:
         x, y = point
@@ -169,9 +208,13 @@ def spiral_strokes(image: Image.Image, settings: SpiralSettings) -> list[LineStr
         offset = radius * (-1.0 if pass_index == 2 else 1.0) if parabolic else radius
         if parabolic:
             offset *= math.sqrt(theta)
-        fraction = offset / scale
-        x = centre_x + fraction * scale_x * math.cos(theta)
-        y = centre_y + fraction * scale_y * math.sin(theta)
+        if shape == "ellipse":
+            fraction = offset / scale
+            x = centre_x + fraction * scale_x * math.cos(theta)
+            y = centre_y + fraction * scale_y * math.sin(theta)
+        else:
+            x = centre_x + offset * math.cos(theta)
+            y = centre_y + offset * math.sin(theta)
         return x, y
 
     def advance(radius: float, alpha: float, velocity: float) -> tuple[float, float]:
