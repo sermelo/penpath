@@ -266,9 +266,10 @@ def _draw_capped(
 
     With ``calibrate`` (algorithms with a regular line structure), a darkness
     scale is first found on a black test patch and the image is scaled by
-    it, so the structure thins evenly. Then, for every algorithm, the latest
-    strokes are removed wherever the real coverage still exceeds the cap
-    (see :mod:`penpath.core.coverage`).
+    it, so the structure thins evenly. Then the latest strokes are removed
+    wherever the real coverage still exceeds the cap; for calibrated
+    algorithms only beyond a 10-point margin, so their regular lines do not
+    break into dashes (see :mod:`penpath.core.coverage`).
     """
     if max_coverage >= 1.0:
         return draw(image)
@@ -277,9 +278,11 @@ def _draw_capped(
         if scale < 1.0:
             image = scale_darkness(image, scale)
     lines = draw(image)
-    return cap_coverage(
-        lines, (image.height, image.width), pixels_per_mm, pen_width_mm, max_coverage
-    )
+    # Calibrated algorithms already thin their structure evenly; removing
+    # pieces of their regular lines leaves visible dashes, so the safety pass
+    # only steps in when they are clearly (10 points) over the cap.
+    limit = min(1.0, max_coverage + 0.1) if calibrate else max_coverage
+    return cap_coverage(lines, (image.height, image.width), pixels_per_mm, pen_width_mm, limit)
 
 
 def draw_project(
