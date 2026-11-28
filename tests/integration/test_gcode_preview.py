@@ -12,9 +12,9 @@ import yaml
 from click.testing import CliRunner
 from PIL import Image, ImageChops, ImageColor
 
-from penpath.cli.commands.preview import OUTLINE_COLOR
 from penpath.cli.main import main
 from penpath.core import load_profile
+from penpath.core.preview import OUTLINE_COLOR
 from penpath.presets.palettes import STABILO_88
 
 PX_PER_MM = 5

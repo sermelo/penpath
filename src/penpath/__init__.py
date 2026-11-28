@@ -5,7 +5,7 @@ __author__ = "Sergio Merino"
 __email__ = "sergio.merino.a@gmail.com"
 
 from penpath.cli.main import main  # ruff: ignore[unsorted-imports]
-from penpath.api import convert
+from penpath.api import convert, preview
 from penpath.core import Drawing
 
-__all__ = ["Drawing", "convert", "main"]
+__all__ = ["Drawing", "convert", "main", "preview"]

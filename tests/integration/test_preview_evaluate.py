@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from importlib import import_module
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -11,7 +12,6 @@ from click.testing import CliRunner
 from PIL import Image, ImageDraw
 
 from penpath.cli.commands import evaluate as evaluate_module
-from penpath.cli.commands import preview as preview_module
 from penpath.cli.main import main
 from penpath.core import (
     CoverageResult,
@@ -20,6 +20,8 @@ from penpath.core import (
     parse_svg_strokes,
     simulate_plot,
 )
+
+preview_core = import_module("penpath.core.preview")
 
 
 def _svg(with_metadata: bool = True) -> str:
@@ -368,7 +370,7 @@ class TestPreview:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         simulate = Mock(side_effect=AssertionError("simulate_plot must not be called"))
-        monkeypatch.setattr(preview_module, "simulate_plot", simulate)
+        monkeypatch.setattr(preview_core, "simulate_plot", simulate)
         output = tmp_path / "huge.png"
         result = runner.invoke(
             main, ["preview", str(a5_drawing), "-o", str(output), "--px-per-mm", "1000"]
@@ -389,7 +391,7 @@ class TestPreview:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         simulate = Mock(return_value=Image.new("RGB", (8, 8), "white"))
-        monkeypatch.setattr(preview_module, "simulate_plot", simulate)
+        monkeypatch.setattr(preview_core, "simulate_plot", simulate)
         output = tmp_path / "forced.png"
         result = runner.invoke(
             main,

@@ -3,8 +3,9 @@
 ``convert`` is the one entry point from an image and a few simple names or
 objects to an in-memory :class:`~penpath.core.convert.Drawing`. It resolves the
 same project a ``penpath convert`` run uses, runs the core pipeline and writes
-the SVG only when ``output`` is given. ``penpath`` re-exports it with
-``Drawing`` so library callers need no CLI import.
+the SVG only when ``output`` is given. ``preview`` renders an SVG, G-code file
+or ``Drawing`` with the same simulator as ``penpath preview``. ``penpath``
+re-exports both with ``Drawing`` so library callers need no CLI import.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from penpath.core import (
     build_filter_pipeline,
     build_project,
     draw_project,
+    preview,
     resolve_output_path,
     resolve_palette,
     resolve_paper,
@@ -292,4 +294,4 @@ def convert(
     return drawing
 
 
-__all__ = ["convert"]
+__all__ = ["convert", "preview"]
