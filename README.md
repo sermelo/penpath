@@ -77,7 +77,7 @@ writes the final SVG: vpype contributes geometry only.
 
 | Concept | Description |
 |---------|-------------|
-| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, `contour` (scikit-image + Shapely outlines), `stipple` (weighted Poisson-disk dots), `spiral_sawtooth` (continuous-line sawtooth spiral, ported from DrawingBotV3), `hatch` (straight and cross-hatched millimetre-spaced lines), `patch_hatch` (hand-drawn style cross-hatching in small patches) and `tsp` (the whole picture as one continuous line). Run `penpath info pfms` for the full list. |
+| **PFM** (Pen Follower Module) | Algorithm that converts pixels to lines. Built in: `sketch_lines` (hatching), `sketch_squares` (grid hatching), both ported from DrawingBotV3, `contour` (scikit-image + Shapely outlines), `stipple` (weighted Poisson-disk dots), `spiral_sawtooth` (continuous-line sawtooth spiral, ported from DrawingBotV3), `hatch` (straight and cross-hatched millimetre-spaced lines), `patch_hatch` (hand-drawn style cross-hatching in small patches), `tsp` (the whole picture as one continuous line) and `squiggle` (rows of waves that grow with darkness). Run `penpath info pfms` for the full list. |
 | **Palette** | An ordered set of pens. Each pixel is drawn by its nearest palette colour; each used pen becomes one SVG layer. |
 | **Filters** | Image preprocessing: grayscale, threshold, blur, contrast, etc. Applied in order before PFM. |
 | **Geometry optimization** | Simplify (RDP), merge (collinear join), sort (greedy NN + 2-opt) — runs automatically. |
@@ -166,6 +166,9 @@ penpath convert photo.jpg --pfm patch_hatch -s seed=42 -o patch_hatch.svg
 
 # TSP art: one continuous line through darkness-weighted dots (one pen lift)
 penpath convert photo.jpg --pfm tsp -s seed=42 -o tsp.svg
+
+# Squiggle: one wavy line per row, taller and tighter waves in dark areas
+penpath convert photo.jpg --pfm squiggle -o squiggle.svg
 
 # Opt into the full tonal range (solid black areas included)
 penpath convert photo.jpg -s max_fill=100 -o full-range.svg
@@ -473,7 +476,7 @@ plot (SSIM 0.4917, only 41% of the placement width covered). Compare the
 
 ### One example per algorithm
 
-All seven use the free [Santa portrait](tests/fixtures/images/reference/santa.jpg)
+All eight use the free [Santa portrait](tests/fixtures/images/reference/santa.jpg)
 as the source. Presets were picked after opening the rendered previews: the
 hatching and contour read as a face, stipple keeps the beard as paper, and
 `spiral_sawtooth:fine` is the cleanest of that PFM's three presets (an abstract
@@ -586,6 +589,20 @@ penpath preview build/gallery/tsp.gcode -o docs/images/tsp/tsp_gcode.png --px-pe
 TSP art needs contrast: the [face on A5](docs/images/tsp/face_tsp.png) reads
 clearly, while a dark, low-contrast portrait like Santa keeps only its main
 light shapes.
+
+#### `squiggle`
+
+| Original | Simulated SVG plot | Simulated G-code |
+|:--------:|:------------------:|:----------------:|
+| ![Free Santa portrait](tests/fixtures/images/reference/santa.jpg) | ![squiggle SVG plot](docs/images/squiggle/squiggle_plot.png) | ![squiggle G-code preview](docs/images/squiggle/squiggle_gcode.png) |
+| Santa's red hat, white beard and glasses on a dark background. | Horizontal rows 2 mm apart: tall, tight waves over the dark background and coat, nearly straight lines over the white beard. | The same rows on the A4 page: one stroke per row. |
+
+```bash
+penpath convert tests/fixtures/images/reference/santa.jpg -o build/gallery/squiggle.svg --paper a4 --max-resolution 800 -s seed=42 -q --pfm squiggle
+penpath preview build/gallery/squiggle.svg -o docs/images/squiggle/squiggle_plot.png --px-per-mm 2.86
+penpath gcode build/gallery/squiggle.svg --profile generic -o build/gallery/squiggle.gcode
+penpath preview build/gallery/squiggle.gcode -o docs/images/squiggle/squiggle_gcode.png --px-per-mm 2.86
+```
 
 ### Pen width and colour
 
@@ -709,14 +726,15 @@ penpath convert photo.jpg --pen "0.4,#000000,fineliner"
 
 ### PFM presets
 
-`--pfm` selects one of eight registered algorithms: `sketch_lines` (the default
+`--pfm` selects one of nine registered algorithms: `sketch_lines` (the default
 hatching), `sketch_squares` (grid hatching), `contour` (scikit-image + Shapely
 outlines), `stipple` (weighted Poisson-disk dots), `spiral_sawtooth` (one
 continuous sawtooth line), `hatch` (straight / cross-hatched lines, optionally
 joined into continuous zig-zag strokes with `-s join_runs=true`, which requires
 `serpentine=true`), `patch_hatch` (hand-drawn style cross-hatching in small
-patches whose lines follow the image's edges) or `tsp` (one continuous line
-through darkness-weighted dots). Each PFM accepts its own
+patches whose lines follow the image's edges), `tsp` (one continuous line
+through darkness-weighted dots) or `squiggle` (one wavy line per row, waves
+taller and tighter where the image is darker). Each PFM accepts its own
 `-s KEY=VALUE` settings.
 `--pfm hatch` is different from `--style hatch`, which is a Sketch Lines look.
 Use a qualified `PFM:PRESET` id below; bare names are the legacy Sketch Lines,
@@ -731,6 +749,7 @@ lists every PFM, its defaults and its presets.
 | `stipple` | `stipple_default`, `stipple_fine`, `stipple_bold` | 1–3 px dots for balanced tone and cost; finer denser texture, or fewer coarser marks. `-s dot_shape=circle\|tap` switches dots from the default `dash` to closed rings or in-place pen taps. |
 | `spiral_sawtooth` | `spiral_sawtooth:fine`, `spiral_sawtooth:bold`, `spiral_sawtooth:parabolic` | One continuous line: tight rings for fine detail, wide teeth for bold, or two opposed parabolic branches. |
 | `patch_hatch` | `patch_hatch:default`, `patch_hatch:fine`, `patch_hatch:bold`, `patch_hatch:fast` | Hand-drawn cross-hatching in 4–10 mm patches, each with its own direction along the local edges; darker tones add crossing layers. `fine` and `bold` change spacing and patch size; `fast` joins every patch into zig-zag strokes (about 2x fewer pen lifts, with visible patch borders). |
+| `squiggle` | `squiggle:default`, `squiggle:fine`, `squiggle:diagonal` | One wavy stroke per row: 2 mm horizontal rows for `default`, 1.2 mm rows with tighter waves for `fine`, 45° rows for `diagonal`. Very few pen lifts. |
 | `tsp` | `tsp:default`, `tsp:fine` | One continuous closed line through dots placed by darkness: about 0.8 mm apart in black areas for `default`, 0.55 mm for `fine` (more detail, longer plot). One pen lift. |
 | `hatch` | `hatch:default`, `hatch:crosshatch`, `hatch:fine`, `hatch:single` | Straight parallel lines: two joined directions for `default` (`min_gap=0.5`, `join_runs=true`), four unjoined directions for `crosshatch`, 0.6 mm spacing for `fine`, or progressively tighter same-direction bands for `single`. |
 
@@ -747,7 +766,9 @@ Simulated plot previews on the free Santa portrait:
 [patch_hatch on the face](docs/images/patch-hatch/face_patch_hatch.png) ·
 [patch_hatch on the photo](docs/images/patch-hatch/photo_patch_hatch.png) ·
 [tsp on the face](docs/images/tsp/face_tsp.png) ·
-[tsp on the photo](docs/images/tsp/photo_tsp.png).
+[tsp on the photo](docs/images/tsp/photo_tsp.png) ·
+[squiggle on the face](docs/images/squiggle/face_squiggle.png) ·
+[squiggle on the photo](docs/images/squiggle/photo_squiggle.png).
 The
 [Sketch Squares gate](docs/TESTING.md#sketch-squares-readability-and-plot-cost-gate-luc-149-2026-11-27),
 [Contour gate](docs/TESTING.md#contour-readability-and-plot-cost-gate-luc-146-2026-11-27),
@@ -769,6 +790,7 @@ penpath convert photo.jpg --pfm spiral_sawtooth:bold -s seed=42 -o spiral.svg
 penpath convert photo.jpg --pfm hatch:crosshatch -o hatch.svg
 penpath convert photo.jpg --pfm patch_hatch:fine -s seed=42 -o patches.svg
 penpath convert photo.jpg --pfm tsp:fine -s seed=42 -o one_line.svg
+penpath convert photo.jpg --pfm squiggle:diagonal -o waves.svg
 # Every PFM and preset side by side; stdout stays empty
 penpath compare photo.jpg -o compare.png --dpi 2 --max-resolution 64
 ```

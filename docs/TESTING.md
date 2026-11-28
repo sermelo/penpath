@@ -2288,3 +2288,21 @@ under 60 s (6.6 s, 140 MB peak), deterministic with a seed
 (`tests/unit/core/drawing/test_pfm_tsp.py`, which also checks that 2-opt
 shortens the tour and removes crossings, and that dots follow darkness).
 
+## Squiggle measurements (LUC-178, 2026-11-28)
+
+Accepted by looking at the previews: the [face](images/squiggle/face_squiggle.png)
+reads on A5 (dark background in tight waves, white suit and helmet rim as calm
+lines), and so do the [photo](images/squiggle/photo_squiggle.png) and the
+[Santa](images/squiggle/squiggle_plot.png) A4 plot. Setup: 0.3 mm pen,
+`penpath evaluate --px-per-mm 3`.
+
+| image | paper | SSIM | ink-only SSIM | strokes (rows) | lifts | line m | convert s |
+|-------|-------|------|---------------|----------------|-------|--------|-----------|
+| face | A5 | 0.437 | 0.409 | 80 | 79 | 29.0 | 2.4 |
+| photo | A5 | 0.225 | 0.230 | 43 | 42 | 12.8 | 1.9 |
+| santa | A4 | 0.370 | 0.331 | 123 | 122 | 82.9 | — |
+
+One stroke per row as required. `tests/unit/core/drawing/test_pfm_squiggle.py`
+checks rows, straight white rows, more ink for darker tones, waves inside their
+band, the pen-width frequency cap, serpentine order, `skip_white` and angle.
+

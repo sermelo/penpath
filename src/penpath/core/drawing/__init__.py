@@ -15,6 +15,7 @@ from penpath.core.drawing.pfm_patch_hatch import (
 )
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings, sketch_lines
 from penpath.core.drawing.pfm_spiral import SpiralSettings, spiral_strokes
+from penpath.core.drawing.pfm_squiggle import SquiggleSettings, squiggle_strokes
 from penpath.core.drawing.pfm_stipple import StippleSettings, stipple
 from penpath.core.drawing.pfm_tsp import TSPSettings, tsp_strokes
 from penpath.core.drawing.registry import (
@@ -36,6 +37,7 @@ __all__ = [
     "PatchHatchSettings",
     "SketchLinesSettings",
     "SpiralSettings",
+    "SquiggleSettings",
     "StippleSettings",
     "TSPSettings",
     "contour_strokes",
@@ -49,6 +51,7 @@ __all__ = [
     "scale_pixel_settings",
     "sketch_lines",
     "spiral_strokes",
+    "squiggle_strokes",
     "stipple",
     "tsp_strokes",
     "with_angle_offset",
