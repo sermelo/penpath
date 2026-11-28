@@ -154,6 +154,20 @@ def test_palette_object_adds_each_pen(tmp_path: Path) -> None:
     assert {"red", "blue"} <= {pen.name for pen in drawing.pens}
 
 
+def test_builtin_palette_name_is_resolved() -> None:
+    """A palette name string resolves to that palette's pens."""
+    drawing = convert(
+        CIRCLE,
+        palette="stabilo_88",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=48,
+    )
+
+    assert len(drawing.pens) == 12
+    assert "stabilo_88_blue" in {pen.name for pen in drawing.pens}
+
+
 def test_pen_and_palette_together_is_rejected() -> None:
     """The library rejects the same conflict the CLI rejects."""
     with pytest.raises(ResolutionError, match="mutually exclusive"):
