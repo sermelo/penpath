@@ -79,14 +79,35 @@ def _pfm_type_of(settings: BaseModel) -> str | None:
     return None
 
 
+def _apply_mode_background(project: Project, *, palette: bool) -> None:
+    """Apply the background default of the selected pen mode.
+
+    ``build_project`` masks the paper with a palette and not with a single pen.
+    A base project that deliberately chose the other value keeps its choice;
+    otherwise the chosen mode's default applies.
+    """
+    previous_palette = len(project.palette) > 1
+    if project.image.background is None or project.image.background == previous_palette:
+        project.image.background = palette
+
+
 def _apply_palette(project: Project, palette: Palette | list[Pen]) -> None:
     """Replace a project's single pen with an explicit palette."""
+    _apply_mode_background(project, palette=True)
     pens = list(palette.pens) if isinstance(palette, Palette) else list(palette)
     project.pens = pens
     project.pen = None
     project.palette_name = (
         palette.name if isinstance(palette, Palette) and palette.name in list_palettes() else None
     )
+
+
+def _apply_pen(project: Project, pen: Pen) -> None:
+    """Replace a project's palette with a single pen."""
+    _apply_mode_background(project, palette=False)
+    project.pen = pen
+    project.pens = []
+    project.palette_name = None
 
 
 def convert(
@@ -240,9 +261,7 @@ def convert(
         if isinstance(paper, str):
             resolved.paper = resolve_paper(paper)
         if isinstance(pen, str):
-            resolved.pen = resolve_pen(pen)
-            resolved.pens = []
-            resolved.palette_name = None
+            _apply_pen(resolved, resolve_pen(pen))
         elif isinstance(palette, str):
             _apply_palette(resolved, resolve_palette(palette))
         if filter_specs is not None:
@@ -253,9 +272,7 @@ def convert(
     if pipeline is not None:
         resolved.image.filters = pipeline
     if isinstance(pen, Pen):
-        resolved.pen = pen
-        resolved.pens = []
-        resolved.palette_name = None
+        _apply_pen(resolved, pen)
     elif palette is not None and not isinstance(palette, str):
         _apply_palette(resolved, palette)
 

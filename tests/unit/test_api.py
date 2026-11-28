@@ -10,13 +10,21 @@ from shapely import LineString
 
 import penpath
 from penpath import Drawing, convert
-from penpath.core import ResolutionError, build_project
+from penpath.core import ResolutionError, build_project, resolve_palette
 from penpath.core.drawing.registry import get_registry, register_pfm
 from penpath.core.models import Paper, Pen
 from penpath.presets.pfms import list_pfm_presets, register_pfm_preset
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 CIRCLE = FIXTURES / "images" / "reference" / "circle.png"
+SPHERE = FIXTURES / "images" / "reference" / "sphere.png"
+
+
+def _svg_bytes(drawing: Drawing, tmp_path: Path, name: str) -> bytes:
+    """Export a drawing without vpype so two runs can be compared byte for byte."""
+    path = tmp_path / f"{name}.svg"
+    drawing.to_svg(path, use_vpype=False)
+    return path.read_bytes()
 
 
 class SpySettings(BaseModel):
@@ -166,6 +174,82 @@ def test_builtin_palette_name_is_resolved() -> None:
 
     assert len(drawing.pens) == 12
     assert "stabilo_88_blue" in {pen.name for pen in drawing.pens}
+
+
+def test_palette_name_and_objects_produce_identical_drawings(tmp_path: Path) -> None:
+    """A name, its resolved Palette and its pens all take the palette path."""
+    palette = resolve_palette("stabilo_88")
+    by_name = convert(
+        SPHERE,
+        palette="stabilo_88",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+    by_object = convert(
+        SPHERE,
+        palette=palette,
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+    by_list = convert(
+        SPHERE,
+        palette=list(palette.pens),
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+
+    assert by_object.strokes_by_pen == by_name.strokes_by_pen
+    assert by_list.strokes_by_pen == by_name.strokes_by_pen
+    assert _svg_bytes(by_object, tmp_path, "object") == _svg_bytes(by_name, tmp_path, "name")
+    assert _svg_bytes(by_list, tmp_path, "list") == _svg_bytes(by_name, tmp_path, "same")
+
+
+def test_pen_and_palette_overrides_on_base_match_direct_mode(tmp_path: Path) -> None:
+    """Switching mode on a project base applies build_project's mode defaults."""
+    pen_direct = convert(
+        SPHERE,
+        pen="fine",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+    palette_base = build_project(SPHERE, palette="stabilo_88", settings={"seed": 42})
+    pen_override = convert(
+        SPHERE,
+        project=palette_base,
+        pen="fine",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+    assert pen_override.strokes_by_pen == pen_direct.strokes_by_pen
+    assert _svg_bytes(pen_override, tmp_path, "pen_override") == _svg_bytes(
+        pen_direct, tmp_path, "pen_direct"
+    )
+
+    palette_direct = convert(
+        SPHERE,
+        palette="stabilo_88",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+    pen_base = build_project(SPHERE, pen="fine", settings={"seed": 42})
+    palette_override = convert(
+        SPHERE,
+        project=pen_base,
+        palette="stabilo_88",
+        settings={"seed": 42},
+        use_vpype=False,
+        max_resolution_px=64,
+    )
+    assert palette_override.strokes_by_pen == palette_direct.strokes_by_pen
+    assert _svg_bytes(palette_override, tmp_path, "palette_override") == _svg_bytes(
+        palette_direct, tmp_path, "palette_direct"
+    )
 
 
 def test_pen_and_palette_together_is_rejected() -> None:
