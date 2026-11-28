@@ -489,6 +489,7 @@ def build_project(
     key_layer: bool | None = None,
     auto_orient: bool = True,
     auto_equalize: bool = True,
+    equalize_levels: bool = False,
     default_pen: str | None = None,
     default_paper: str | None = None,
     pen_presets: Mapping[str, PenPreset] | None = None,
@@ -541,6 +542,7 @@ def build_project(
             dpi=dpi,
             auto_orient=auto_orient,
             auto_equalize=auto_equalize,
+            equalize_levels=equalize_levels,
             background=resolved_background,
             background_threshold=(
                 DEFAULT_BACKGROUND_THRESHOLD

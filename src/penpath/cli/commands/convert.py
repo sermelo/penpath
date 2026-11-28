@@ -159,6 +159,15 @@ def _resolve_output_path(
     help="Normalize tonal range before drawing (default: on; use --no-auto-equalize to keep tones)",
 )
 @click.option(
+    "--equalize-levels/--no-equalize-levels",
+    "equalize_levels_flag",
+    default=None,
+    help=(
+        "Equalise the image onto the drawing algorithm's own tone steps, so every "
+        "step gets the same share of inked pixels (default: off)"
+    ),
+)
+@click.option(
     "--background/--no-background",
     "background_flag",
     default=None,
@@ -307,6 +316,7 @@ def convert_cmd(
     filter_specs: tuple[str, ...],
     no_auto_orient: bool,
     auto_equalize_flag: bool | None,
+    equalize_levels_flag: bool | None,
     background_flag: bool | None,
     background_threshold: float | None,
     background_method: Literal["global", "local"],
@@ -401,6 +411,8 @@ def convert_cmd(
             project.image.auto_orient = False
         if auto_equalize_flag is not None:
             project.image.auto_equalize = auto_equalize_flag
+        if equalize_levels_flag is not None:
+            project.image.equalize_levels = equalize_levels_flag
         if background_flag is not None:
             project.image.background = background_flag
         if key_layer_flag is not None:
@@ -441,6 +453,7 @@ def convert_cmd(
                 key_layer=key_layer_flag,
                 auto_orient=not no_auto_orient,
                 auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
+                equalize_levels=bool(equalize_levels_flag),
                 default_pen=config.default_pen,
                 default_paper=config.default_paper,
                 pen_presets=config.pens,
