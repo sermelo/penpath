@@ -13,8 +13,8 @@ from click.testing import CliRunner, Result
 from PIL import Image
 from shapely import LineString
 
-from penpath.cli.commands import convert as convert_module
 from penpath.cli.main import main
+from penpath.core import convert as convert_module
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
 from penpath.core.drawing.registry import get_pfm
 from penpath.core.image.pipeline import FilterPipeline
