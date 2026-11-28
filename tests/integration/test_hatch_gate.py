@@ -188,10 +188,21 @@ def test_photo_hatch_uses_five_times_fewer_pen_lifts(
     hatch_report_factory: Callable[[str, str], HatchReport],
     tmp_path: Path,
 ) -> None:
-    """Hatch should use at most one fifth of Sketch Lines' pen lifts."""
+    """Hatch should use at most one fifth of Sketch Lines' pen lifts.
+
+    The comparison uses the uncapped Sketch Lines cost this gate was calibrated
+    against. The per-tone cap deliberately stops the dark tone early, so its
+    capped stroke count is not the baseline for an unrelated hatch cost gate.
+    """
     hatch = hatch_report_factory("photo.jpg", GATE_PRESET)
     sketch_svg = tmp_path / "sketch_photo.svg"
-    convert_preset(REFERENCE_DIR / "photo.jpg", "sketch_lines", sketch_svg)
+    convert_preset(
+        REFERENCE_DIR / "photo.jpg",
+        "sketch_lines",
+        sketch_svg,
+        "-s",
+        "max_tone_ink=1.0",
+    )
     sketch_lifts = pen_lifts(parse_svg_strokes(sketch_svg))
     click.echo(f"Measured pen lifts on photo.jpg: hatch {hatch.lifts}, Sketch Lines {sketch_lifts}")
     assert hatch.lifts * 5 <= sketch_lifts, (

@@ -389,6 +389,7 @@ with a message naming the setting.
 | `tone_coverage` | float | 0–1 | `0.5` | Fraction of a pixel's distance to white that may be spent on ink. `1` restores the pre-LUC-128 search. |
 | `tone_exponent` | float | 0–2 | `0.55` | Shape of the tone budget curve; below 1 gives mid tones a clearer hatch step. |
 | `texture_limit` | float | 0–1 | `0.8` | How much local texture reduces the budget in dark areas, so hair and foliage keep white gaps. |
+| `max_tone_ink` | float | 0–1 | `0.85` | Largest share of the darkest source tenth that may receive ink; the rest stays blank paper as a hatch. Only the tone rule uses it. `1.0` opts out, `0` draws nothing. |
 | `min_length` | float | 1–1000 px | `2.0` | Shortest segment the ray search may end at (pixels). Must be ≤ `max_length`. |
 | `max_length` | float | 1–5000 px | `40.0` | Longest segment the ray search may take (pixels). Must be ≥ `min_length`. |
 | `angle_range` | tuple | −360–360° each | `-72,-52` | Band of degrees for each random ray's start angle; the reference uses −72..−52. Min ≤ max. |
@@ -434,6 +435,16 @@ blank paper: segmented strokes stop on the near side and the next ray starts
 from there, so no single segment bridges the gap. Isolated bright pixels do not
 cut a stroke. Use `-s white_threshold=1.0` to draw through near-white areas as
 before.
+
+The ink cap uses the original grayscale source, before `max_fill` is applied.
+While strokes are drawn it counts the darkest tenth of those pixels that have
+received ink, and stops the run at `max_tone_ink` (about 85% by default), so the
+remaining pixels keep visible white gaps in a dark tree mass or hair. The
+setting applies only when the tone rule is active: flat shapes, smooth gradients,
+`--palette` channels and Sketch Squares are unchanged. Use
+`-s max_tone_ink=1.0` for the uncapped drawing; `0` draws no strokes. The cap
+counts centre-line pixels while the simulator draws a 0.3 mm pen, so the
+engine's internal budget is scaled by 0.83 (see `docs/DECISIONS.md`).
 
 **Breaking change**: `line_density` now scales the luminance-progress stop
 rule instead of counting lines per millimetre, and `min_length` and
