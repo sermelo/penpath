@@ -23,7 +23,7 @@ from penpath.core.image.filters import (
     threshold,
 )
 from penpath.core.image.load import ImageLoadError, UnsupportedFormatError, load_image
-from penpath.core.image.palette_order import order_pens_for_drawing
+from penpath.core.image.palette_order import is_near_black_pen, order_pens_for_drawing
 from penpath.core.image.pipeline import (
     FilterPipeline,
     FilterStep,
@@ -73,6 +73,7 @@ __all__ = [
     "get_filter",
     "grayscale",
     "invert",
+    "is_near_black_pen",
     "list_filters",
     "load_image",
     "mask_background",

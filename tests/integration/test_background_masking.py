@@ -37,6 +37,8 @@ def _convert(
     are held at their previous values; only the background flags vary.
     """
     options = ["--palette", "stabilo_88"] if palette else []
+    # These goldens pin background masking, not the LUC-166 key edge layer.
+    options.append("--no-key-layer")
     legacy_pfm = [
         "-s",
         "max_fill=80",
@@ -191,7 +193,7 @@ output_path: "{off}"
         )
         result = runner.invoke(
             main,
-            ["convert", str(PENCIL), "-p", str(project), "--no-vpype"],
+            ["convert", str(PENCIL), "-p", str(project), "--no-key-layer", "--no-vpype"],
             env={"XDG_CONFIG_HOME": str(tmp_path / "config")},
         )
         assert result.exit_code == 0, result.output
@@ -200,7 +202,16 @@ output_path: "{off}"
         project.write_text(project.read_text().replace("background: false", "background: true"))
         result = runner.invoke(
             main,
-            ["convert", str(PENCIL), "-p", str(project), "-o", str(on), "--no-vpype"],
+            [
+                "convert",
+                str(PENCIL),
+                "-p",
+                str(project),
+                "-o",
+                str(on),
+                "--no-key-layer",
+                "--no-vpype",
+            ],
             env={"XDG_CONFIG_HOME": str(tmp_path / "config")},
         )
         assert result.exit_code == 0, result.output
@@ -247,6 +258,7 @@ output_path: "{masked}"
                 str(project),
                 "--background-threshold",
                 "5",
+                "--no-key-layer",
                 "--no-vpype",
             ],
             env={"XDG_CONFIG_HOME": str(tmp_path / "config")},
@@ -269,6 +281,7 @@ output_path: "{masked}"
                 "--no-background",
                 "-o",
                 str(disabled),
+                "--no-key-layer",
                 "--no-vpype",
             ],
             env={"XDG_CONFIG_HOME": str(tmp_path / "config")},

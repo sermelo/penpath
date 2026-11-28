@@ -197,6 +197,10 @@ class ImageRef(BaseModel):
     palette_adapt : bool
         Choose the multiplier automatically from the image and the palette.
         False by default; an explicit ``saturation`` takes precedence.
+    key_layer : bool | None
+        Trace a final black layer of edge/contour strokes on top of the colour
+        layers. ``None`` follows the mode: on with more than one pen, off for a
+        single pen. Old project files load as ``None``, so they keep one layer.
     """
 
     path: Path
@@ -210,6 +214,7 @@ class ImageRef(BaseModel):
     background_method: Literal["global", "local"] = "local"
     saturation: float = Field(default=1.0, ge=0.0, le=3.0, allow_inf_nan=False)
     palette_adapt: bool = False
+    key_layer: bool | None = None
 
     @field_validator("path")
     @classmethod

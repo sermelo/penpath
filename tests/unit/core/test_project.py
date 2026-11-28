@@ -50,6 +50,24 @@ class TestLoadYaml:
         assert loaded.pen.width_mm == project.pen.width_mm
         assert loaded.output_path == project.output_path
 
+    @pytest.mark.parametrize("key_layer", [None, True, False])
+    def test_key_layer_round_trips_without_writer_changes(
+        self, tmp_path: Path, key_layer: bool | None
+    ) -> None:
+        """The tri-state key layer survives save_yaml/load_yaml unchanged."""
+        img_path = tmp_path / "input.png"
+        img_path.write_bytes(b"fake png")
+        project = Project(
+            image=ImageRef(path=img_path, filters=FilterPipeline(), key_layer=key_layer),
+            paper=Paper(name="a4", width_mm=210.0, height_mm=297.0),
+            pen=Pen(name="fine", width_mm=0.3),
+            pfm=SketchLinesPFM(),
+            output_path=tmp_path / "output.svg",
+        )
+        path = tmp_path / "project.yaml"
+        save_yaml(project, path)
+        assert load_yaml(path).image.key_layer == key_layer
+
     def test_load_nonexistent_file(self) -> None:
         """Test loading a nonexistent file raises ProjectLoadError."""
         with pytest.raises(ProjectLoadError, match="not found"):

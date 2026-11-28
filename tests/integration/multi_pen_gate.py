@@ -155,6 +155,7 @@ def convert_photo(work_dir: Path, seed: int = SEED) -> Path:
             "global",
             "--pfm-setting",
             f"seed={seed}",
+            "--no-key-layer",  # this gate measures colour layers, not the key edges
             "--quiet",
         ],
         env={"XDG_CONFIG_HOME": str(work_dir / "config")},

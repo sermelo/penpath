@@ -113,6 +113,7 @@ with `--palette`: a single pen ignores them rather than failing.
 | `--style [sketch\|hatch\|outline]` | — | — | Saved look: chooses the Sketch Lines settings, and the outline pass for `outline`. See **Saved Looks** below. |
 | `--pen SPEC` | — | `fine` | Pen preset name or inline `WIDTH[,COLOR[,TYPE]]` (see **Pens** below) |
 | `--palette NAME\|LIST` | — | — | Built-in palette name (`stabilo_88`) or inline `name=width,#hex;name2=width,#hex`. Mutually exclusive with `--pen`. |
+| `--key-layer` / `--no-key-layer` | — | mode-dependent | Trace a final black layer of edge strokes. On with `--palette`, off for a single pen; the flag overrides either mode. |
 | `--paper NAME` | — | `a4` | Paper preset name or `WIDTHxHEIGHT[,MARGINS]` (e.g., `a4`, `210x297,10`, `190x190,20,5,20,5`) |
 | `--margin MM` | — | paper value | Override the paper margin for one run: one value or four in top,right,bottom,left order |
 | `--fit [fit\|fill\|none]` | — | `fit` | Image placement on the paper: contain, cover and crop, or use the `--dpi` pixel size |
@@ -269,6 +270,21 @@ choosing one silently. Without `--palette`, the default single pen draws the
 whole image and produces a single layer, exactly as before. The library helper
 behind both paths is `penpath.core.order_pens_for_drawing(pens)`.
 
+A final **key layer** traces the working colour image's edges once, after paper
+masking and saturation and before palette separation, and draws them on top of
+the colour layers in one black layer. It is on by default in palette mode (more
+than one pen) and off for a single pen; `--key-layer` forces it on and
+`--no-key-layer` forces it off in either mode. The strokes reuse the already
+tuned edge settings of the `outline` saved look through the library function
+`penpath.core.key_layer_strokes(image)`, which returns deterministic strokes in
+image pixel coordinates. In palette mode the key strokes join the palette's
+near-black pen (relative luminance `<= 0.02`), which drawing order places last,
+so colour-black strokes and key edges share one final layer. If the palette has
+no black pen, penpath appends `Pen(name="key", color="#000000")` at the smallest
+palette pen width as the last pen; a single pen with `--key-layer` gets that
+extra layer too. The key pass does not change the Sketch Lines, `outline` style
+or any other PFM.
+
 #### Output Options
 
 | Option | Short | Default | Description |
@@ -313,8 +329,9 @@ The downscale stage is reported only when the image is actually downscaled, so
 the counter ends at 5 when it is skipped. A `[n/N] Masking paper
 background...` stage and a `Paper colour: #...... (local method); masked N% of
 pixels as no ink` line appear when masking runs (palette mode by default),
-raising the counter by one. The working-resolution line is written to stderr
-too. `--quiet` removes all of this, including the "SVG saved to" line; errors
+raising the counter by one. A `[n/N] Tracing key edges...` stage appears when
+the key layer runs (palette mode by default), raising it by one again. The
+working-resolution line is written to stderr too. `--quiet` removes all of this, including the "SVG saved to" line; errors
 are still reported on stderr and the SVG is still written.
 
 #### Optional: vpype
@@ -1629,6 +1646,7 @@ input:
   background: true             # mask paper before separation (palette default)
   background_threshold: 10.0   # CIE Lab ΔE treated as paper
   background_method: local     # local paper field, or global single colour
+  key_layer: null              # final black edge layer (palette on, single pen off)
   saturation: 1.0              # Lab chroma multiplier (0-3; 1.0 = off)
   palette_adapt: false         # choose the multiplier from image and palette
 
@@ -1705,6 +1723,13 @@ unset `background` so a single-pen project round-trips with today's output.
 `--background`, `--no-background`, `--background-threshold` and
 `--background-method` override the file for one run; `--no-background` wins on
 the same command line.
+
+`image.key_layer` is tri-state: `true` and `false` force the final black edge
+layer on or off, while `null` (or an omitted key) follows the mode — on for
+`palette:`/`pens:`, off for a single `pen:`. Old project files load as `null`
+and keep their single-pen or colour-layer output. `save_yaml` writes the key as
+`key_layer: true|false|null`; `--key-layer` and `--no-key-layer` override it for
+one run.
 
 The paper keys are `width_mm`, `height_mm`, `margin_mm` and `fit`. A scalar
 `margin_mm` applies to all four sides; a four-item list uses
