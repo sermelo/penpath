@@ -14,7 +14,12 @@ from shapely import LineString
 
 from penpath.cli.commands.convert import _resolve_pfm
 from penpath.cli.main import main
-from penpath.core.drawing.pfm_tsp import TSPSettings, stipple_points, tsp_strokes
+from penpath.core.drawing.pfm_tsp import (
+    TSPSettings,
+    open_at_longest_jump,
+    stipple_points,
+    tsp_strokes,
+)
 from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.models import RegisteredPFM
 from penpath.presets.pfms import TSP_PRESETS, get_pfm_preset_by_id
@@ -44,15 +49,33 @@ def _crossings(line: LineString) -> int:
     return count
 
 
-def test_one_closed_stroke() -> None:
+def test_one_open_stroke_by_default() -> None:
     lines = _draw(_disc())
     assert len(lines) == 1
-    assert lines[0].coords[0] == lines[0].coords[-1]
+    assert lines[0].coords[0] != lines[0].coords[-1]
 
 
-def test_open_path_when_not_closed() -> None:
-    (line,) = _draw(_disc(), closed=False)
-    assert line.coords[0] != line.coords[-1]
+def test_closed_loop_on_request() -> None:
+    (line,) = _draw(_disc(), closed=True)
+    assert line.coords[0] == line.coords[-1]
+
+
+def test_open_path_drops_the_longest_jump() -> None:
+    closed = _draw(_disc(), closed=True)[0]
+    opened = _draw(_disc())[0]
+    jumps = np.hypot(*np.diff(np.asarray(closed.coords), axis=0).T)
+    open_jumps = np.hypot(*np.diff(np.asarray(opened.coords), axis=0).T)
+    assert open_jumps.max() < jumps.max() or np.isclose(open_jumps.max(), np.sort(jumps)[-2])
+    assert opened.length == pytest.approx(closed.length - jumps.max())
+
+
+def test_open_at_longest_jump_rotates_the_cycle() -> None:
+    path = np.array([[0.0, 0.0], [1.0, 0.0], [10.0, 0.0], [11.0, 0.0]])
+    # Edges: 1, 9, 1, and the closing 11: the closing jump is already longest.
+    assert open_at_longest_jump(path).tolist() == path.tolist()
+    path = np.array([[0.0, 0.0], [9.0, 0.0], [10.0, 0.0], [1.0, 0.0]])
+    # Longest edge is 0 -> 9; the open path must start at 9 and end at 0.
+    assert open_at_longest_jump(path).tolist() == [[9.0, 0.0], [10.0, 0.0], [1.0, 0.0], [0.0, 0.0]]
 
 
 def test_blank_image_draws_nothing() -> None:
@@ -77,7 +100,7 @@ def test_point_count_follows_spacing_and_cap() -> None:
     sparse = len(_draw(_disc(), point_spacing=1.0)[0].coords)
     assert dense > 3 * sparse
     capped = len(_draw(_disc(), point_spacing=0.2, max_points=150)[0].coords)
-    assert capped == 151  # closed loop repeats the first dot
+    assert capped == 150
 
 
 def test_two_opt_removes_crossings() -> None:
@@ -114,10 +137,10 @@ def test_registered_with_presets() -> None:
 
 
 def test_cli_override() -> None:
-    pfm = _resolve_pfm("tsp:fine", {"closed": "no"})
+    pfm = _resolve_pfm("tsp:fine", {"closed": "yes"})
     assert isinstance(pfm, RegisteredPFM)
     assert isinstance(pfm.settings, TSPSettings)
-    assert pfm.settings.closed is False
+    assert pfm.settings.closed is True
     assert pfm.settings.point_spacing == TSP_PRESETS["fine"].point_spacing
 
 

@@ -796,7 +796,7 @@ lists every PFM, its defaults and its presets.
 | `patch_hatch` | `patch_hatch:default`, `patch_hatch:fine`, `patch_hatch:bold`, `patch_hatch:fast` | Hand-drawn cross-hatching in 4–10 mm patches, each with its own direction along the local edges; darker tones add crossing layers. `fine` and `bold` change spacing and patch size; `fast` joins every patch into zig-zag strokes (about 2x fewer pen lifts, with visible patch borders). |
 | `squiggle` | `squiggle:default`, `squiggle:fine`, `squiggle:diagonal` | One wavy stroke per row: 2 mm horizontal rows for `default`, 1.2 mm rows with tighter waves for `fine`, 45° rows for `diagonal`. Very few pen lifts. |
 | `engraving` | `engraving:default`, `engraving:fine`, `engraving:swirl`, `engraving:contour` | Lines whose width follows darkness, drawn as up to N strokes one pen width apart: 1.5 mm straight 45° lines for `default`, 0.9 mm for `fine`, lines twisted around the centre for `swirl`, or parallel to the main edges for `contour`. |
-| `tsp` | `tsp:default`, `tsp:fine` | One continuous closed line through dots placed by darkness: about 0.8 mm apart in black areas for `default`, 0.55 mm for `fine` (more detail, longer plot). One pen lift. |
+| `tsp` | `tsp:default`, `tsp:fine` | One continuous line through dots placed by darkness: about 0.8 mm apart in black areas for `default`, 0.55 mm for `fine` (more detail, longer plot). One pen lift. |
 | `hatch` | `hatch:default`, `hatch:crosshatch`, `hatch:fine`, `hatch:single` | Straight parallel lines: two joined directions for `default` (`min_gap=0.5`, `join_runs=true`), four unjoined directions for `crosshatch`, 0.6 mm spacing for `fine`, or progressively tighter same-direction bands for `single`. |
 
 Simulated plot previews on the free Santa portrait:
