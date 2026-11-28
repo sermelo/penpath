@@ -176,6 +176,10 @@ class ImageRef(BaseModel):
         Filter pipeline to apply to the image.
     dpi : int
         Target DPI for the image when converting to plot coordinates.
+    auto_orient : bool
+        Apply the image's EXIF orientation when loading. True by default;
+        false keeps the stored pixel orientation, so old project files load
+        with rotation applied.
     auto_equalize : bool
         Stretch the working image's luminance range to 0-255 once, before
         palette separation. True by default; old project files load as true.
@@ -206,6 +210,7 @@ class ImageRef(BaseModel):
     path: Path
     filters: FilterPipeline
     dpi: int = Field(default=300, ge=72, le=2400)
+    auto_orient: bool = True
     auto_equalize: bool = True
     background: bool | None = None
     background_threshold: float = Field(

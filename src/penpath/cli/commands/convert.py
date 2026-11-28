@@ -490,7 +490,7 @@ def _run_convert_pipeline(
     # from the source size so the drawing rectangle does not move when the
     # working image is downscaled.
     reporter.start("Loading image")
-    image = load_image(project.image.path)
+    image = load_image(project.image.path, auto_orient=project.image.auto_orient)
     source_size_px = image.size
     origin_x_mm, origin_y_mm = project.paper.drawable_origin_mm
     fit_mode = project.paper.fit
@@ -874,11 +874,6 @@ def _run_convert_pipeline(
 @click.option("--no-vpype", is_flag=True, help="Skip vpype optimization (use direct SVG export)")
 @click.option("--vpype-path", default="vpype", help="Path to vpype executable")
 @click.option(
-    "--layer-per-pen/--single-layer",
-    default=True,
-    help="SVG layer structure (default: layer-per-pen)",
-)
-@click.option(
     "--dpi",
     type=int,
     default=300,
@@ -934,7 +929,6 @@ def convert_cmd(
     fit_mode: Literal["fit", "fill", "none"] | None,
     no_vpype: bool,
     vpype_path: str,
-    layer_per_pen: bool,
     dpi: int,
     max_resolution_px: int | None,
     no_downscale: bool,
@@ -1009,6 +1003,8 @@ def convert_cmd(
             project.output_path = resolved_output
         if dpi != 300:
             project.image.dpi = dpi
+        if no_auto_orient:
+            project.image.auto_orient = False
         if auto_equalize_flag is not None:
             project.image.auto_equalize = auto_equalize_flag
         if background_flag is not None:
@@ -1066,6 +1062,7 @@ def convert_cmd(
                 path=input_path,
                 filters=filter_pipeline,
                 dpi=dpi,
+                auto_orient=not no_auto_orient,
                 auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
                 background=background,
                 background_threshold=(
