@@ -9,8 +9,6 @@ import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 _WIDE_RANGE_MIN_SPAN = 224
-ROBUST_CLIP_PERCENT = 0.5
-"""Recommended ``clip_percent`` for robust auto levels."""
 
 
 class GrayscaleMethod(StrEnum):
@@ -38,7 +36,7 @@ def auto_equalize(image: Image.Image, clip_percent: float = 0.0) -> Image.Image:
     The range is measured with the same BT.601 luminance as :func:`grayscale`,
     as the ``clip_percent`` and ``100 - clip_percent`` percentiles. With the
     default 0 these are the single darkest and lightest pixel (the original
-    behaviour); with ``clip_percent=0.5`` (:data:`ROBUST_CLIP_PERCENT`) a few
+    behaviour); with ``clip_percent=0.5`` a few
     extreme pixels (a dark speck, a specular highlight, which nearly every
     JPEG photo has) no longer hide a flat photo's narrow range. One lookup table maps
     ``[lo, hi]`` to ``[0, 255]`` (clipping the few pixels outside) and is
