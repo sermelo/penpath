@@ -5,108 +5,29 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from pathlib import Path
-from types import NoneType, UnionType
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Literal
 
 import click
 from click.core import ParameterSource
-from pydantic import ValidationError
 from rich.console import Console
 
 from penpath.cli.config import Config, load_config
 from penpath.cli.palettes import resolve_palette as _resolve_palette
 from penpath.cli.progress import StageReporter
+from penpath.core import resolve as _resolve
 from penpath.core.convert import draw_project
-from penpath.core.drawing.registry import get_pfm, list_pfms
 from penpath.core.image.background import DEFAULT_BACKGROUND_THRESHOLD
 from penpath.core.image.load import ImageLoadError
-from penpath.core.image.pipeline import FilterPipeline, get_filter
-from penpath.core.models import (
-    ImageRef,
-    Palette,
-    Paper,
-    Pen,
-    PFMSettingsUnion,
-    Project,
-    make_pfm_settings,
-)
+from penpath.core.image.pipeline import FilterPipeline
+from penpath.core.models import Palette, Paper, Pen, PFMSettingsUnion, Project
 from penpath.core.project import ProjectLoadError, load_yaml
-from penpath.core.styles import STYLE_NAMES, StyleName, get_style
+from penpath.core.styles import STYLE_NAMES, StyleName
 from penpath.presets.palettes import list_palettes
-from penpath.presets.papers import get_paper
-from penpath.presets.pens import get_pen
-from penpath.presets.pfms import (
-    DEFAULT_PFM,
-    get_pfm_for_preset,
-    get_pfm_preset_by_id,
-    get_pfm_preset_settings,
-    list_pfm_presets,
-)
-
-_VALID_PEN_TYPES: tuple[str, ...] = tuple(
-    str(item) for item in get_args(Pen.model_fields["pen_type"].annotation)
-)
-_PEN_FIELD_HINTS: dict[str, str] = {
-    "width_mm": "a width in millimetres greater than 0 and at most 10",
-    "color": "a #RRGGBB hex colour or a named CSS colour",
-    "pen_type": f"one of {', '.join(_VALID_PEN_TYPES)}",
-}
-_PEN_FORMAT = "WIDTH[,COLOR[,TYPE]]"
 
 
-def _parse_filter_spec(spec: str) -> tuple[str, dict[str, str]]:
-    """Parse a filter specification string like 'threshold:levels=4,dither=floyd_steinberg'."""
-    if ":" in spec:
-        name, params_str = spec.split(":", 1)
-        params = {}
-        for param in params_str.split(","):
-            if "=" in param:
-                key, value = param.split("=", 1)
-                params[key.strip()] = value.strip()
-        return name.strip(), params
-    return spec.strip(), {}
-
-
-def _convert_filter_params(filter_name: str, params: dict[str, str]) -> dict[str, Any]:
-    """Convert filter parameter strings to appropriate types based on filter signature."""
-    from typing import get_type_hints
-
-    filter_fn = get_filter(filter_name)
-    try:
-        hints = get_type_hints(filter_fn)
-    except Exception:
-        hints = {}
-
-    converted: dict[str, Any] = {}
-    for key, value_str in params.items():
-        if key in hints:
-            annotation = hints[key]
-            # Handle basic types
-            if annotation is int:
-                converted[key] = int(value_str)
-            elif annotation is float:
-                converted[key] = float(value_str)
-            elif annotation is bool:
-                converted[key] = value_str.lower() in ("true", "1", "yes", "on")
-            else:
-                converted[key] = value_str
-        else:
-            converted[key] = value_str
-    return converted
-
-
-def _build_filter_pipeline(filter_specs: list[str]) -> FilterPipeline:
-    """Build a filter pipeline from filter specifications."""
-    pipeline = FilterPipeline()
-    for spec in filter_specs:
-        name, params = _parse_filter_spec(spec)
-        try:
-            get_filter(name)  # Validate filter exists
-        except ValueError as e:
-            raise click.BadParameter(str(e), param_hint="filter") from e
-        converted_params = _convert_filter_params(name, params)
-        pipeline.add_step(name, **converted_params)
-    return pipeline
+def _click_error(error: _resolve.ResolutionError) -> click.BadParameter:
+    """Render a core resolution error as a Click usage error."""
+    return click.BadParameter(error.message, param_hint=error.param_hint)
 
 
 def _parse_pfm_settings(settings: Iterable[str]) -> dict[str, str]:
@@ -120,64 +41,20 @@ def _parse_pfm_settings(settings: Iterable[str]) -> dict[str, str]:
     return result
 
 
+def _build_filter_pipeline(filter_specs: list[str]) -> FilterPipeline:
+    """Build a filter pipeline from filter specifications."""
+    try:
+        return _resolve.build_filter_pipeline(filter_specs)
+    except _resolve.ResolutionError as e:
+        raise _click_error(e) from e
+
+
 def _resolve_pen(pen_spec: str | None, config: Config) -> Pen:
-    """Resolve a preset name or inline 'WIDTH[,COLOR[,TYPE]]' to a Pen.
-
-    Preset names win over inline parsing. The three inline fields are validated by
-    ``Pen``; an invalid field becomes a BadParameter naming that field and what it
-    accepts instead of a generic "Unknown pen".
-    """
-    if pen_spec is None:
-        pen_spec = config.default_pen
-
-    config_pen_names = [p.name for p in config.pens.values()]
-    if pen_spec in config_pen_names:
-        pen_config = config.get_pen(pen_spec)
-        return Pen(
-            name=pen_config.name,
-            width_mm=pen_config.width,
-            color=pen_config.color,
-            opacity=pen_config.opacity,
-            pen_type="rollerball",
-        )
-
+    """Resolve a pen preset or inline spec with config presets taking precedence."""
     try:
-        pen_config = get_pen(pen_spec)
-        return Pen(
-            name=pen_config.name,
-            width_mm=pen_config.width,
-            color=pen_config.color,
-            opacity=pen_config.opacity,
-            pen_type="rollerball",
-        )
-    except ValueError:
-        pass
-
-    parts = [part.strip() for part in pen_spec.split(",")]
-    if not 1 <= len(parts) <= 3:
-        raise click.BadParameter(
-            f"expected inline format '{_PEN_FORMAT}': at most three comma-separated "
-            f"fields, got {len(parts)}",
-            param_hint="--pen",
-        )
-
-    values: dict[str, object] = {
-        "name": "-".join(parts),
-        "width_mm": parts[0],
-        "color": parts[1] if len(parts) > 1 else "#000000",
-        "pen_type": parts[2] if len(parts) > 2 else "rollerball",
-    }
-    try:
-        return Pen.model_validate(values)
-    except ValidationError as e:
-        error = e.errors()[0]
-        field = str(error["loc"][0]) if error.get("loc") else "pen"
-        value = values.get(field, pen_spec)
-        hint = _PEN_FIELD_HINTS.get(field, f"a preset name or inline '{_PEN_FORMAT}'")
-        raise click.BadParameter(
-            f"invalid {field} '{value}': {error['msg']}. Accepted: {hint}",
-            param_hint="--pen",
-        ) from e
+        return _resolve.resolve_pen(pen_spec, default_pen=config.default_pen, presets=config.pens)
+    except _resolve.ResolutionError as e:
+        raise _click_error(e) from e
 
 
 def _apply_palette(project: Project, palette: Palette) -> None:
@@ -187,148 +64,32 @@ def _apply_palette(project: Project, palette: Palette) -> None:
     project.palette_name = palette.name if palette.name in list_palettes() else None
 
 
-_MARGIN_FORMAT = "one margin in mm or four in top,right,bottom,left order"
-
-
 def _parse_margin_parts(
     parts: list[str], param_hint: str
 ) -> float | tuple[float, float, float, float]:
     """Parse one or four comma-separated, non-negative millimetre margins."""
     try:
-        values = [float(part.strip()) for part in parts]
-    except ValueError as e:
-        raise click.BadParameter(
-            f"margins must be numbers in millimetres; expected {_MARGIN_FORMAT}",
-            param_hint=param_hint,
-        ) from e
-
-    if len(values) == 1:
-        margin: float | tuple[float, float, float, float] = values[0]
-    elif len(values) == 4:
-        margin = (values[0], values[1], values[2], values[3])
-    else:
-        raise click.BadParameter(
-            f"expected {_MARGIN_FORMAT}, got {len(values)} values", param_hint=param_hint
-        )
-
-    for value in (margin,) if isinstance(margin, float) else margin:
-        if not math.isfinite(value) or value < 0:
-            raise click.BadParameter(
-                "margins must be finite and non-negative in millimetres", param_hint=param_hint
-            )
-    return margin
+        return _resolve.parse_margin_parts(parts, param_hint)
+    except _resolve.ResolutionError as e:
+        raise _click_error(e) from e
 
 
 def _check_drawable_area(paper: Paper, param_hint: str) -> None:
     """Reject margins that leave no room to draw on the resolved paper."""
-    if paper.drawable_width_mm <= 0 or paper.drawable_height_mm <= 0:
-        sides = "/".join(f"{value:g}" for value in paper.margins_mm)
-        raise click.BadParameter(
-            f"margins {sides} (top/right/bottom/left) leave no drawable area on "
-            f"{paper.width_mm:g}x{paper.height_mm:g} mm paper; "
-            "reduce the margin or use a larger paper",
-            param_hint=param_hint,
-        )
+    try:
+        _resolve.check_drawable_area(paper, param_hint)
+    except _resolve.ResolutionError as e:
+        raise _click_error(e) from e
 
 
 def _resolve_paper(paper_spec: str | None, config: Config) -> Paper:
-    """Resolve paper from a preset or inline 'WIDTHxHEIGHT[,MARGINS]'."""
-    if paper_spec is None:
-        paper_spec = config.default_paper
-
-    # Check config presets
-    if paper_spec in [p.name for p in config.papers.values()]:
-        paper_config = config.get_paper(paper_spec)
-        return Paper(
-            name=paper_config.name,
-            width_mm=paper_config.width,
-            height_mm=paper_config.height,
-            margin_mm=paper_config.margin,
-        )
-
-    # Check built-in presets
+    """Resolve paper from a preset or inline spec with config presets first."""
     try:
-        paper_config = get_paper(paper_spec)
-        return Paper(
-            name=paper_config.name,
-            width_mm=paper_config.width,
-            height_mm=paper_config.height,
-            margin_mm=paper_config.margin,
+        return _resolve.resolve_paper(
+            paper_spec, default_paper=config.default_paper, presets=config.papers
         )
-    except ValueError:
-        pass
-
-    # Parse inline format: WIDTHxHEIGHT[,MARGINS]
-    if "x" in paper_spec:
-        parts = [part.strip() for part in paper_spec.split(",")]
-        try:
-            width_str, height_str = parts[0].split("x", 1)
-            width_mm = float(width_str)
-            height_mm = float(height_str)
-        except ValueError:
-            pass
-        else:
-            if not (
-                math.isfinite(width_mm)
-                and math.isfinite(height_mm)
-                and width_mm > 0
-                and height_mm > 0
-            ):
-                raise click.BadParameter(
-                    "inline size must be two positive numbers in millimetres", param_hint="--paper"
-                )
-            margin_mm: float | tuple[float, float, float, float] = (
-                10.0 if len(parts) == 1 else _parse_margin_parts(parts[1:], "--paper")
-            )
-            return Paper(
-                name=f"inline-{width_mm}x{height_mm}",
-                width_mm=width_mm,
-                height_mm=height_mm,
-                margin_mm=margin_mm,
-            )
-
-    raise click.BadParameter(
-        f"Unknown paper: '{paper_spec}'. Use a preset name or inline format "
-        "'WIDTHxHEIGHT[,MARGINS]'"
-    )
-
-
-def _coerce_setting_value(annotation: object, value_str: str, key: str) -> object:
-    """Convert a ``KEY=VALUE`` string using the settings model's field type."""
-    origin = get_origin(annotation)
-    if origin in (Union, UnionType):
-        args = [arg for arg in get_args(annotation) if arg is not NoneType]
-        if len(args) == 1:
-            return _coerce_setting_value(args[0], value_str, key)
-        return value_str
-
-    if annotation is bool:
-        lowered = value_str.strip().lower()
-        if lowered in ("true", "1", "yes", "on"):
-            return True
-        if lowered in ("false", "0", "no", "off"):
-            return False
-        raise ValueError("expected true, 1, yes, on, false, 0, no or off")
-
-    if annotation is int:
-        return int(value_str)
-
-    if annotation is float:
-        return float(value_str)
-
-    if origin is tuple:
-        tuple_args = get_args(annotation)
-        parts = value_str.split(",")
-        if tuple_args and tuple_args[-1] is Ellipsis:
-            return tuple(_coerce_setting_value(tuple_args[0], part.strip(), key) for part in parts)
-        if tuple_args and len(tuple_args) != len(parts):
-            raise ValueError(f"expected {len(tuple_args)} comma-separated values")
-        return tuple(
-            _coerce_setting_value(arg, part.strip(), key)
-            for arg, part in zip(tuple_args, parts, strict=True)
-        )
-
-    return value_str
+    except _resolve.ResolutionError as e:
+        raise _click_error(e) from e
 
 
 def _resolve_pfm(
@@ -337,88 +98,16 @@ def _resolve_pfm(
     style_name: str | None = None,
     base_pfm: PFMSettingsUnion | None = None,
 ) -> PFMSettingsUnion:
-    """Resolve a registered id, legacy preset, saved look and ``-s`` overrides.
-
-    An explicit non-default ``--pfm`` picks the algorithm or preset. Otherwise a
-    ``--style`` picks the settings bundle, and ``-s KEY=VALUE`` wins on top of
-    either. With ``--project`` and only ``-s``, the file's saved PFM settings are
-    the base so an override does not discard the rest of the saved look.
-    """
-    if base_pfm is not None and pfm_name is None and style_name is None:
-        pfm_type = base_pfm.pfm_type
-        base_model = base_pfm.to_typed_settings()
-    else:
-        if pfm_name is None:
-            pfm_name = DEFAULT_PFM
-
-        if ":" in pfm_name:
-            try:
-                pfm_type, base_model = get_pfm_preset_by_id(pfm_name)
-            except ValueError as e:
-                raise click.BadParameter(str(e), param_hint="--pfm") from e
-        elif pfm_name in list_pfm_presets():
-            pfm_type = get_pfm_for_preset(pfm_name)
-            base_model = get_pfm_preset_settings(pfm_name)
-        elif pfm_name in list_pfms():
-            pfm_type = pfm_name
-            _, settings_model = get_pfm(pfm_type)
-            base_model = settings_model()
-        else:
-            try:
-                get_pfm_preset_by_id(pfm_name)
-            except ValueError as e:
-                raise click.BadParameter(f"Unknown PFM or preset: {e}", param_hint="--pfm") from e
-            raise click.BadParameter(f"Unknown PFM: '{pfm_name}'", param_hint="--pfm")
-
-        # "default" is not a non-default --pfm, so a style still applies to it.
-        if style_name is not None and pfm_name == DEFAULT_PFM:
-            base_model = get_style(style_name).sketch_lines
-            pfm_type = "sketch_lines"
-
-    # Keep the fields the preset, style or caller actually set so the drawing
-    # can tell an explicit value from a model default (flat images keep the
-    # calibrated legacy max_fill/line_density; see the tone rule in pfm_sketch_lines).
-    explicit_keys = set(base_model.model_fields_set) | set(pfm_settings)
-
-    _, settings_model = get_pfm(pfm_type)
-    values = base_model.model_dump()
-    for key, value_str in pfm_settings.items():
-        if key not in settings_model.model_fields:
-            raise click.BadParameter(
-                f"Unknown PFM setting: '{key}' for {pfm_type}",
-                param_hint="-s/--pfm-setting",
-            )
-        annotation = settings_model.model_fields[key].annotation
-        try:
-            values[key] = _coerce_setting_value(annotation, value_str, key)
-        except ValueError as e:
-            raise click.BadParameter(
-                f"Invalid value '{value_str}' for PFM setting '{key}': {e}",
-                param_hint="-s/--pfm-setting",
-            ) from e
-
+    """Resolve a PFM name, saved look, project base and ``-s`` overrides."""
     try:
-        settings = settings_model(
-            **{key: value for key, value in values.items() if key in explicit_keys}
-        )
-    except ValidationError as e:
-        error = e.errors()[0]
-        key = str(error["loc"][0]) if error.get("loc") else "pfm"
-        raise click.BadParameter(
-            f"Invalid value for PFM setting '{key}': {error['msg']}",
-            param_hint="-s/--pfm-setting",
-        ) from e
-    return make_pfm_settings(pfm_type, settings)
+        return _resolve.resolve_pfm(pfm_name, pfm_settings, style_name, base_pfm)
+    except _resolve.ResolutionError as e:
+        raise _click_error(e) from e
 
 
 def _determine_output_path(input_path: Path, output_path: str | None) -> Path:
     """Determine output SVG path."""
-    if output_path:
-        path = Path(output_path)
-        if path.suffix.lower() != ".svg":
-            path = path.with_suffix(".svg")
-        return path
-    return input_path.parent / f"{input_path.stem}_plot.svg"
+    return _resolve.resolve_output_path(input_path, output_path)
 
 
 def _resolve_output_path(
@@ -664,10 +353,10 @@ def convert_cmd(
     if not math.isfinite(saturation) or not 0.0 <= saturation <= 3.0:
         raise click.BadParameter("must be a finite number in [0, 3]", param_hint="--saturation")
 
-    if pen_spec is not None and palette_spec is not None:
-        raise click.UsageError(
-            "Options --pen and --palette are mutually exclusive: use one or the other."
-        )
+    try:
+        _resolve.check_pen_palette_conflict(pen_spec, palette_spec)
+    except _resolve.ResolutionError as e:
+        raise click.UsageError(e.message) from e
 
     margins = (
         _parse_margin_parts(margin_spec.split(","), "--margin") if margin_spec is not None else None
@@ -732,62 +421,33 @@ def convert_cmd(
             project.image.saturation = 1.0
         project.image.path = input_path  # Always use CLI input path
     else:
-        # Build project from CLI flags and config
-        if not filter_specs:
-            # Default filter pipeline: grayscale
-            filter_pipeline = FilterPipeline()
-            filter_pipeline.add_step("grayscale", method="luminance")
-        else:
-            filter_pipeline = _build_filter_pipeline(list(filter_specs))
-
-        if palette_spec:
-            palette = _resolve_palette(palette_spec)
-            pen = None
-            pens = palette.pens
-            palette_name = palette.name if palette.name in list_palettes() else None
-        else:
-            pen = _resolve_pen(pen_spec, config)
-            pens = []
-            palette_name = None
-
-        paper = _resolve_paper(paper_spec, config)
-        pfm = _resolve_pfm(pfm_name, _parse_pfm_settings(pfm_settings), style_name)
-        output = _determine_output_path(
-            input_path, str(resolved_output) if resolved_output else None
-        )
-        if background_flag is not None:
-            background = background_flag
-        elif palette_spec:
-            background = True
-        else:
-            background = background_threshold is not None or explicit_background_method
-
-        project = Project(
-            image=ImageRef(
-                path=input_path,
-                filters=filter_pipeline,
+        try:
+            project = _resolve.build_project(
+                input_path,
+                pfm=pfm_name,
+                paper=paper_spec,
+                palette=palette_spec,
+                pen=pen_spec,
+                settings=_parse_pfm_settings(pfm_settings),
+                filters=list(filter_specs) if filter_specs else None,
+                style=style_name,
                 dpi=dpi,
+                output_path=resolved_output,
+                background=background_flag,
+                background_threshold=background_threshold,
+                background_method=background_method if explicit_background_method else None,
+                saturation=saturation if explicit_saturation else None,
+                palette_adapt=palette_adapt,
+                key_layer=key_layer_flag,
                 auto_orient=not no_auto_orient,
                 auto_equalize=True if auto_equalize_flag is None else auto_equalize_flag,
-                background=background,
-                background_threshold=(
-                    DEFAULT_BACKGROUND_THRESHOLD
-                    if background_threshold is None
-                    else background_threshold
-                ),
-                background_method=background_method,
-                saturation=saturation,
-                palette_adapt=palette_adapt and not explicit_saturation,
-                key_layer=key_layer_flag,
-            ),
-            paper=paper,
-            pen=pen,
-            pens=pens,
-            palette_name=palette_name,
-            pfm=pfm,
-            style=style_name,
-            output_path=output,
-        )
+                default_pen=config.default_pen,
+                default_paper=config.default_paper,
+                pen_presets=config.pens,
+                paper_presets=config.papers,
+            )
+        except _resolve.ResolutionError as e:
+            raise _click_error(e) from e
 
     if margins is not None:
         project.paper.margin_mm = margins

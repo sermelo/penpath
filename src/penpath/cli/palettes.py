@@ -3,46 +3,18 @@
 from __future__ import annotations
 
 import click
-from pydantic import ValidationError
 
-from penpath.core.models import Palette, Pen
-from penpath.presets.palettes import get_palette, list_palettes
+from penpath.core.models import Palette
+from penpath.core.resolve import ResolutionError
+from penpath.core.resolve import resolve_palette as _resolve_palette_core
 
 
 def resolve_palette(palette_spec: str) -> Palette:
-    """Resolve a built-in palette name or an inline 'name=width,#hex;...' list."""
-    if palette_spec in list_palettes():
-        return get_palette(palette_spec)
-
-    pens: list[Pen] = []
-    for index, entry in enumerate(palette_spec.split(";"), start=1):
-        if "=" not in entry:
-            raise click.BadParameter(
-                f"Invalid palette pen {index}: '{entry}'. Use NAME=WIDTH,#HEX",
-                param_hint="palette",
-            )
-        name, value = entry.split("=", 1)
-        parts = value.split(",")
-        if len(parts) != 2:
-            raise click.BadParameter(
-                f"Invalid palette pen {index}: '{entry}'. Use NAME=WIDTH,#HEX",
-                param_hint="palette",
-            )
-        try:
-            pens.append(
-                Pen(
-                    name=name.strip(),
-                    width_mm=float(parts[0].strip()),
-                    color=parts[1].strip(),
-                )
-            )
-        except (ValidationError, ValueError) as e:
-            raise click.BadParameter(
-                f"Invalid palette pen {index}: '{entry}'. {e}",
-                param_hint="palette",
-            ) from e
-
-    return Palette(name="inline", pens=pens)
+    """Resolve a built-in palette name or an inline ``name=width,#hex;...`` list."""
+    try:
+        return _resolve_palette_core(palette_spec)
+    except ResolutionError as e:
+        raise click.BadParameter(e.message, param_hint=e.param_hint) from e
 
 
 __all__ = ["resolve_palette"]
