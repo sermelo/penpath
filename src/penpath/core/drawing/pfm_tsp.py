@@ -50,7 +50,9 @@ class TSPSettings(BaseModel):
         Passes of 2-opt improvement over each dot's nearest neighbours
         (0 - 20). Default 6.
     closed : bool
-        Return to the first dot, closing the loop. Default True.
+        Return to the first dot, closing the loop. When false (the default)
+        the loop is opened at its longest jump, so no long straight segment
+        crosses the picture. Default False.
     seed : int | None
         Random seed for dot placement. None is non-deterministic.
         Default None.
@@ -62,7 +64,7 @@ class TSPSettings(BaseModel):
     max_points: int = Field(default=30000, ge=100, le=200000)
     relax_iterations: int = Field(default=8, ge=0, le=50)
     two_opt_passes: int = Field(default=6, ge=0, le=20)
-    closed: bool = True
+    closed: bool = False
     seed: int | None = None
 
 
@@ -209,6 +211,21 @@ def _two_opt(
     return np.asarray(tour, dtype=np.int64)
 
 
+def open_at_longest_jump(path: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Rotate a closed tour so its longest edge becomes the (dropped) closing edge.
+
+    The tour is a cycle; drawing it as an open path that starts right after
+    its longest jump removes that jump, which a nearest-neighbour start can
+    leave across the whole picture.
+    """
+    if len(path) < 3:
+        return path
+    following = np.roll(path, -1, axis=0)
+    lengths = np.hypot(*(following - path).T)
+    start = (int(np.argmax(lengths)) + 1) % len(path)
+    return np.roll(path, -start, axis=0)
+
+
 def tsp_strokes(
     image: Image.Image,
     settings: TSPSettings,
@@ -260,7 +277,7 @@ def tsp_strokes(
     rng = np.random.default_rng(settings.seed)
     points = stipple_points(weights, count, settings.relax_iterations, rng)
     order = _two_opt(points, _nearest_neighbour_tour(points), settings.two_opt_passes)
-    path = points[order]
+    path = open_at_longest_jump(points[order])
     if settings.closed:
         path = np.vstack((path, path[:1]))
     path[:, 0] = np.clip(path[:, 0], 0.0, width - 1.0)
@@ -269,4 +286,4 @@ def tsp_strokes(
     return [line] if line.length > 0.0 else []
 
 
-__all__ = ["TSPSettings", "stipple_points", "tsp_strokes"]
+__all__ = ["TSPSettings", "open_at_longest_jump", "stipple_points", "tsp_strokes"]
