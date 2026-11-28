@@ -1,5 +1,6 @@
 """End-to-end tests for penpath CLI."""
 
+import sys
 import tempfile
 from pathlib import Path
 
@@ -779,16 +780,13 @@ class TestInfoPaletteMatch:
 
 
 class TestMainModule:
-    CWD = (
-        "/home/paperclip/.paperclip/instances/default/projects/"
-        "f76284ac-2a49-40a6-b858-fb4e88a04f17/8629db6d-47e6-45d0-965d-2befba253fd7/penpath"
-    )
+    CWD = Path(__file__).resolve().parents[1]
 
     def test_main_module_execution(self) -> None:
         import subprocess
 
         result = subprocess.run(
-            ["python", "-m", "penpath", "--help"],
+            [sys.executable, "-m", "penpath", "--help"],
             capture_output=True,
             text=True,
             cwd=self.CWD,
@@ -799,8 +797,9 @@ class TestMainModule:
     def test_penpath_command(self) -> None:
         import subprocess
 
+        penpath_script = Path(sys.executable).parent / "penpath"
         result = subprocess.run(
-            ["penpath", "--help"],
+            [penpath_script, "--help"],
             capture_output=True,
             text=True,
             cwd=self.CWD,
