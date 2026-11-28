@@ -108,6 +108,36 @@ def test_project_auto_orient_false_matches_the_cli_flag(runner: CliRunner, tmp_p
     assert from_project.height == pytest.approx(from_cli.height)
 
 
+def test_project_cli_flag_overrides_auto_orient_true(runner: CliRunner, tmp_path: Path) -> None:
+    """--no-auto-orient overrides a project that leaves auto_orient on."""
+    source = tmp_path / "rotated.jpg"
+    _make_rotated_image(source)
+    project_path = tmp_path / "project.yaml"
+    save_yaml(
+        Project(
+            image=ImageRef(path=source, filters=FilterPipeline(), dpi=DPI),
+            paper=Paper(name="a4", width_mm=210.0, height_mm=297.0, margin_mm=10.0),
+            pen=Pen(name="fine", width_mm=0.3),
+            pfm=SketchLinesPFM(),
+            output_path=tmp_path / "unused.svg",
+        ),
+        project_path,
+    )
+    assert "auto_orient: true" in project_path.read_text(encoding="utf-8")
+    default_output = tmp_path / "default.svg"
+    overridden_output = tmp_path / "overridden.svg"
+
+    _convert(runner, source, default_output)
+    _convert(runner, source, overridden_output, "--no-auto-orient", project=project_path)
+
+    oriented = get_image_placement(default_output, (IMAGE_SIZE[1], IMAGE_SIZE[0]))
+    overridden = get_image_placement(overridden_output, IMAGE_SIZE)
+    assert overridden.width == pytest.approx(IMAGE_SIZE[0] * MM_PER_INCH / DPI)
+    assert overridden.height == pytest.approx(IMAGE_SIZE[1] * MM_PER_INCH / DPI)
+    assert overridden.width == pytest.approx(oriented.height)
+    assert overridden.height == pytest.approx(oriented.width)
+
+
 @pytest.mark.parametrize("flag", ["--single-layer", "--layer-per-pen"])
 def test_removed_layer_options_are_rejected(runner: CliRunner, tmp_path: Path, flag: str) -> None:
     """The no-op SVG layer options are no longer accepted by convert."""
