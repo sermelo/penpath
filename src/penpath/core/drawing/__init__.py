@@ -23,11 +23,13 @@ from penpath.core.drawing.pfm_tsp import TSPSettings, tsp_strokes
 from penpath.core.drawing.registry import (
     PFMRegistry,
     get_pfm,
+    get_pfm_description,
     get_registry,
     list_pfms,
     register_pfm,
 )
 from penpath.core.drawing.settings import PIXEL_SETTING_FIELDS, scale_pixel_settings
+from penpath.core.drawing.settings_help import field_help
 
 __all__ = [
     "PALETTE_ANGLE_STEP_DEG",
@@ -45,7 +47,9 @@ __all__ = [
     "TSPSettings",
     "contour_strokes",
     "engraving_strokes",
+    "field_help",
     "get_pfm",
+    "get_pfm_description",
     "get_registry",
     "hatch_strokes",
     "key_layer_strokes",

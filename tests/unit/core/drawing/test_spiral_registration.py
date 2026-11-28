@@ -60,8 +60,7 @@ class TestSpiralPresets:
     def test_legacy_presets_are_unchanged(self) -> None:
         assert len(PFM_PRESETS) == 8
         assert PFM_PRESETS["fine"].line_density == 0.8
-        with pytest.raises(ValueError, match="sketch_lines:fine"):
-            get_pfm_preset_by_id("fine")
+        assert get_pfm_preset_by_id("fine") == ("sketch_lines", PFM_PRESETS["fine"])
 
     @pytest.mark.parametrize("preset_id", sorted(SPIRAL_PRESETS))
     def test_every_preset_resolves_to_its_model(self, preset_id: str) -> None:

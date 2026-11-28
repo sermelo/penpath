@@ -209,6 +209,22 @@ PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
 _EXTRA_PFM_PRESETS: dict[str, tuple[str, BaseModel]] = {}
 
 
+def _canonical_preset_id(pfm_type: str, preset_name: str) -> str:
+    """Return the canonical ``PFM:PRESET`` id for a registered preset name.
+
+    Names that are already qualified are kept as-is. A redundant leading
+    ``<pfm_type>_`` is dropped from an unqualified name before adding the
+    ``<pfm_type>:`` prefix, so ``contour_portrait`` becomes
+    ``contour:portrait`` while ``fine`` becomes ``sketch_lines:fine``.
+    """
+    if ":" in preset_name:
+        return preset_name
+    prefix = f"{pfm_type}_"
+    if preset_name.startswith(prefix):
+        preset_name = preset_name[len(prefix) :]
+    return f"{pfm_type}:{preset_name}"
+
+
 def register_pfm_preset(name: str, pfm_type: str, settings: BaseModel) -> None:
     """Register a preset for a PFM other than the built-in sketch_lines one."""
     if name in PFM_PRESETS or name in _EXTRA_PFM_PRESETS:
@@ -274,8 +290,8 @@ for _patch_name, _patch_settings in PATCH_HATCH_PRESETS.items():
     register_pfm_preset(f"patch_hatch:{_patch_name}", "patch_hatch", _patch_settings)
 
 PFM_PRESET_TYPES: dict[str, str] = {
-    **{f"sketch_lines:{name}": "sketch_lines" for name in PFM_PRESETS},
-    **{name: owner for name, (owner, _) in _EXTRA_PFM_PRESETS.items() if ":" in name},
+    **{_canonical_preset_id(owner, name): owner for name, owner in PFM_PRESET_OWNERS.items()},
+    **{_canonical_preset_id(owner, name): owner for name, (owner, _) in _EXTRA_PFM_PRESETS.items()},
 }
 
 
@@ -327,6 +343,22 @@ def list_presets_for_pfm(pfm_type: str) -> list[str]:
     return sorted(builtin + extra)
 
 
+def list_pfm_preset_ids_for_pfm(pfm_type: str) -> list[str]:
+    """List the canonical ``PFM:PRESET`` ids of one PFM, sorted.
+
+    Parameters
+    ----------
+    pfm_type : str
+        Registered PFM name, for example ``contour``.
+
+    Returns
+    -------
+    list[str]
+        Canonical id for every built-in preset of that PFM.
+    """
+    return sorted({_canonical_preset_id(pfm_type, name) for name in list_presets_for_pfm(pfm_type)})
+
+
 def list_sheet_entries() -> list[ContactSheetEntry]:
     """Build the default entry and every preset entry for each registered PFM.
 
@@ -363,26 +395,36 @@ def list_pfm_presets() -> list[str]:
 
 
 def list_pfm_preset_ids() -> list[str]:
-    """List all built-in presets as qualified ``PFM:PRESET`` ids.
+    """List all built-in presets as canonical ``PFM:PRESET`` ids.
 
     Returns
     -------
     list[str]
-        Sorted list of qualified preset ids.
+        Sorted list of canonical preset ids, including contour and stipple.
     """
-    return sorted(
-        {f"sketch_lines:{name}" for name in PFM_PRESETS}
-        | {pid for pid in _EXTRA_PFM_PRESETS if ":" in pid}
-    )
+    return sorted(PFM_PRESET_TYPES)
+
+
+def _registered_name_for_id(preset_id: str) -> str | None:
+    """Return the registered preset name a canonical id points at."""
+    for name, owner in PFM_PRESET_OWNERS.items():
+        if _canonical_preset_id(owner, name) == preset_id:
+            return name
+    for name, (owner, _) in _EXTRA_PFM_PRESETS.items():
+        if _canonical_preset_id(owner, name) == preset_id:
+            return name
+    return None
 
 
 def get_pfm_preset_by_id(preset_id: str) -> tuple[str, BaseModel]:
-    """Resolve a qualified ``PFM:PRESET`` id to its PFM type and settings.
+    """Resolve a canonical id, a legacy bare name or a registered preset name.
 
     Parameters
     ----------
     preset_id : str
-        Qualified preset id, for example ``sketch_squares:fine``.
+        A canonical ``PFM:PRESET`` id such as ``contour:portrait``, an
+        already-qualified name such as ``sketch_squares:coarse``, or a legacy
+        bare name such as ``stipple_fine`` or ``fine``.
 
     Returns
     -------
@@ -392,28 +434,33 @@ def get_pfm_preset_by_id(preset_id: str) -> tuple[str, BaseModel]:
     Raises
     ------
     ValueError
-        If the id is unknown, names an unregistered PFM or omits the PFM prefix.
+        If the id is unknown or names an unregistered PFM.
     """
-    if ":" not in preset_id:
-        bare_matches = [pid for pid in list_pfm_preset_ids() if pid.partition(":")[2] == preset_id]
-        if bare_matches:
-            suggestions = " or ".join(f"'{pid}'" for pid in bare_matches)
-            raise ValueError(f"Unknown PFM preset '{preset_id}'; did you mean {suggestions}?")
-        raise ValueError(
-            f"Unknown PFM preset '{preset_id}'. Use a qualified 'PFM:PRESET' id "
-            f"or a registered PFM name: {list_pfms()}"
+    if ":" in preset_id:
+        pfm_name = preset_id.partition(":")[0]
+        if pfm_name not in list_pfms():
+            raise ValueError(f"Unknown PFM: '{pfm_name}'. Available: {list_pfms()}")
+        name = _registered_name_for_id(preset_id)
+        if name is not None:
+            return pfm_name, get_pfm_preset_settings(name).model_copy(deep=True)
+        available = [pid for pid in list_pfm_preset_ids() if pid.startswith(f"{pfm_name}:")]
+        raise ValueError(f"Unknown PFM preset '{preset_id}'. Available for {pfm_name}: {available}")
+
+    if preset_id in PFM_PRESETS:
+        return get_pfm_for_preset(preset_id), get_pfm_preset(preset_id).model_copy(deep=True)
+    if preset_id in _EXTRA_PFM_PRESETS:
+        return get_pfm_for_preset(preset_id), get_pfm_preset_settings(preset_id).model_copy(
+            deep=True
         )
 
-    pfm_name, _, preset_name = preset_id.partition(":")
-    if pfm_name not in list_pfms():
-        raise ValueError(f"Unknown PFM: '{pfm_name}'. Available: {list_pfms()}")
-    if pfm_name == "sketch_lines" and preset_name in PFM_PRESETS:
-        return pfm_name, get_pfm_preset(preset_name).model_copy(deep=True)
-    if preset_id in _EXTRA_PFM_PRESETS and _EXTRA_PFM_PRESETS[preset_id][0] == pfm_name:
-        return pfm_name, get_pfm_preset_settings(preset_id).model_copy(deep=True)
-
-    available = [pid for pid in list_pfm_preset_ids() if pid.startswith(f"{pfm_name}:")]
-    raise ValueError(f"Unknown PFM preset '{preset_id}'. Available for {pfm_name}: {available}")
+    bare_matches = [pid for pid in list_pfm_preset_ids() if pid.partition(":")[2] == preset_id]
+    if bare_matches:
+        suggestions = " or ".join(f"'{pid}'" for pid in bare_matches)
+        raise ValueError(f"Unknown PFM preset '{preset_id}'; did you mean {suggestions}?")
+    raise ValueError(
+        f"Unknown PFM preset '{preset_id}'. Use a qualified 'PFM:PRESET' id "
+        f"or a registered PFM name: {list_pfms()}"
+    )
 
 
 __all__ = [
@@ -433,6 +480,7 @@ __all__ = [
     "get_pfm_preset_by_id",
     "get_pfm_preset_settings",
     "list_pfm_preset_ids",
+    "list_pfm_preset_ids_for_pfm",
     "list_pfm_presets",
     "list_presets_for_pfm",
     "list_sheet_entries",
