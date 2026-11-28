@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from penpath.core.contact_sheet import ContactSheetEntry
 from penpath.core.drawing.pfm_contour import ContourSettings
+from penpath.core.drawing.pfm_engraving import EngravingSettings
 from penpath.core.drawing.pfm_hatch import HatchSettings
 from penpath.core.drawing.pfm_patch_hatch import PatchHatchSettings
 from penpath.core.drawing.pfm_sketch_lines import SketchLinesSettings
@@ -195,6 +196,13 @@ SQUIGGLE_PRESETS: dict[str, SquiggleSettings] = {
     "diagonal": SquiggleSettings(angle=45.0),
 }
 
+ENGRAVING_PRESETS: dict[str, EngravingSettings] = {
+    "default": EngravingSettings(),
+    "fine": EngravingSettings(line_spacing=0.9),
+    "swirl": EngravingSettings(layout="swirl"),
+    "contour": EngravingSettings(layout="contour"),
+}
+
 DEFAULT_PFM = "default"
 
 PFM_PRESET_OWNERS: dict[str, str] = dict.fromkeys(PFM_PRESETS, "sketch_lines")
@@ -255,6 +263,9 @@ for _hatch_name, _hatch_settings in HATCH_PRESETS.items():
 
 for _squiggle_name, _squiggle_settings in SQUIGGLE_PRESETS.items():
     register_pfm_preset(f"squiggle:{_squiggle_name}", "squiggle", _squiggle_settings)
+
+for _engraving_name, _engraving_settings in ENGRAVING_PRESETS.items():
+    register_pfm_preset(f"engraving:{_engraving_name}", "engraving", _engraving_settings)
 
 for _tsp_name, _tsp_settings in TSP_PRESETS.items():
     register_pfm_preset(f"tsp:{_tsp_name}", "tsp", _tsp_settings)
@@ -407,6 +418,7 @@ def get_pfm_preset_by_id(preset_id: str) -> tuple[str, BaseModel]:
 
 __all__ = [
     "DEFAULT_PFM",
+    "ENGRAVING_PRESETS",
     "HATCH_PRESETS",
     "PATCH_HATCH_PRESETS",
     "PFM_PRESETS",

@@ -543,6 +543,41 @@ pen lift per row. Lengths are in millimetres on paper.
 ```bash
 penpath convert photo.jpg --pfm squiggle -o squiggle.svg
 penpath convert photo.jpg --pfm squiggle:fine -s skip_white=true -o waves.svg
+
+#### PFM Settings (Engraving)
+
+Select this PFM with `--pfm engraving` (or `engraving:default`, `:fine`,
+`:swirl`, `:contour`). Copper-plate engraving builds tone with line **width**:
+evenly spaced lines swell in the shadows and thin out to nothing in the
+highlights. A pen has a fixed width, so each line is a bundle of up to
+`N = line_spacing / pen_width` strokes one pen width apart, added from the
+centre out, one side at a time; a bundle of `k` strokes covers
+`k * pen_width / line_spacing` of the paper, so the plotted tone follows the
+image for any pen. The strokes are level lines of a field, so the layout can
+be straight, swirled around a centre (after Jaume Sanchez's "Lines" sketches,
+spite/sketch) or parallel to the image's main edges.
+
+| Key | Type | Range | Default | Effect |
+|-----|------|-------|---------|--------|
+| `line_spacing` | float | >0 mm | `1.5` | Distance between engraved lines; each holds `line_spacing / pen_width` strokes. |
+| `layout` | string | `straight`, `swirl`, `contour` | `straight` | How the lines run. |
+| `angle` | float | −360–360° | `45.0` | Line direction for `straight` and `swirl`. |
+| `swirl_turns` | float | −5–5 | `0.75` | For `swirl`: twist at the centre in turns, fading to zero at the corners. |
+| `swirl_center` | tuple | fractions | `0.5,0.5` | For `swirl`: centre as a fraction of width and height. |
+| `max_width` | float | 0–1 | `1.0` | Line width at full black as a fraction of `line_spacing`; 1 lets lines touch. |
+| `tone_gamma` | float | >0 | `1.0` | Exponent on darkness before it sets the width. |
+| `min_tone` | float | 0–1 | `0.05` | Darkness at or below which lines vanish. |
+| `tone_blur` | float | 0–10 mm | `1.0` | Blur of the tone map so the width changes smoothly. |
+| `hairline` | bool | — | `false` | Keep each line's centre stroke wherever the image is not paper white. |
+| `edge_low`, `edge_high` | float | 0–1 | `0.12`, `0.25` | For `contour`: Canny thresholds for the edges the lines follow. |
+| `contour_min_length` | float | >0 mm | `8.0` | For `contour`: shortest edge kept. |
+| `min_length` | float | >=0 mm | `1.0` | Shortest stroke kept. |
+| `seed` | int or `null` | any | `null` | Accepted for symmetry; deterministic. |
+
+```bash
+penpath convert photo.jpg --pfm engraving -o engraving.svg
+penpath convert photo.jpg --pfm engraving:swirl -s swirl_turns=1.5 -o swirl.svg
+penpath convert photo.jpg --pfm engraving:contour -s hairline=true -o contour.svg
 ```
 
 #### PFM Settings (TSP Art)
