@@ -108,3 +108,98 @@ def test_convert_resolves_builtin_palette_and_registered_pfm(
     assert 'inkscape:label="red"' in svg
     assert 'stroke="#FF0000"' in svg
     assert 'id="layer1"' in svg
+
+
+def test_project_file_cli_overrides_use_core_resolvers(sample_image: Path, tmp_path: Path) -> None:
+    project_path = tmp_path / "project.yaml"
+    project_path.write_text(
+        f"""version: 1
+image:
+  path: "{sample_image}"
+  filters:
+    steps: []
+  dpi: 300
+pen:
+  name: fine
+  width_mm: 0.3
+paper:
+  name: a4
+  width_mm: 210.0
+  height_mm: 297.0
+pfm:
+  pfm_type: sketch_squares
+  settings:
+    seed: 42
+output_path: "{tmp_path / "from_project.svg"}"
+"""
+    )
+    output = tmp_path / "override.svg"
+    result = CliRunner().invoke(
+        main,
+        [
+            "convert",
+            str(sample_image),
+            "-p",
+            str(project_path),
+            "-o",
+            str(output),
+            "--no-vpype",
+            "--max-resolution",
+            "48",
+            "--pen",
+            "0.6,#00FF00,fineliner",
+            "--paper",
+            "100x100",
+            "--pfm",
+            "sketch_lines:fine",
+            "-s",
+            "seed=42",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    svg = output.read_text()
+    assert 'viewBox="0 0 100 100"' in svg
+    assert 'stroke-width="0.6"' in svg
+    assert 'stroke="#00FF00"' in svg
+
+
+def test_config_presets_and_defaults_drive_convert(sample_image: Path, tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """default_pen = "custom"
+default_paper = "custom"
+
+[pens.custom]
+width = 1.0
+color = "blue"
+
+[papers.custom]
+width = 300.0
+height = 300.0
+margin = 20.0
+"""
+    )
+    output = tmp_path / "config.svg"
+    result = CliRunner().invoke(
+        main,
+        [
+            "convert",
+            str(sample_image),
+            "-o",
+            str(output),
+            "--no-vpype",
+            "--max-resolution",
+            "48",
+            "-c",
+            str(config_path),
+            "-s",
+            "seed=42",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    svg = output.read_text()
+    assert 'viewBox="0 0 300 300"' in svg
+    assert 'stroke-width="1"' in svg
+    assert 'stroke="#0000FF"' in svg
